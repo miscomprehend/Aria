@@ -167,6 +167,19 @@ class WebPanelControlTests(unittest.TestCase):
         self.assertEqual(updates_response.json["version"], VERSION)
         self.assertEqual(updates_response.json["commits"][0]["title"], "Improve dashboard version display")
 
+    def test_advanced_analytics_requires_admin(self):
+        response = self.client.get("/api/max/advanced-analytics")
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.json["error"], "Forbidden")
+
+        panel._require_admin = lambda: True
+        panel._analytics_data = lambda: {"success_rate": 98.5, "avg_response_ms": 24}
+        panel._history_data = lambda: {"entries": [{"status": "failure", "duration_ms": 90}]}
+        authorized = self.client.get("/api/max/advanced-analytics")
+        self.assertEqual(authorized.status_code, 200)
+        self.assertEqual(authorized.json["failures"], 1)
+        self.assertEqual(authorized.json["longest_cmd"], 90)
+
     def test_homepage_has_fragment_links_for_search_sections(self):
         panel._read_raw_template = lambda name: (Path(__file__).resolve().parent / name).read_text(encoding="utf-8")
 

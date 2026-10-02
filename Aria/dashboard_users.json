@@ -1,161 +1,311 @@
 {
   "297588166653902849": {
-    "password_hash": "scrypt:32768:8:1$XujrIBrjyQDNxKEK$3ef81abae673541b36f1586494ce0d8997bc6ca57f6068934829371f0bcc9ebec50469c9b2a8d8090f7d3b1a9ef3591c2c818a277aa99cc7e4aa46520a733ed6",
+    "password_hash": "scrypt:32768:8:1$OlbMHriPkGVdx2Ud$19e51d9e5ec56d04b00932def33eb16e5ada43aa06d29c3c453847302d8d2f28d40f7c5f72e707ee0ace161074405c642355f0bd4e421c7f3dc94f248d40cef7",
     "instance_id": "main",
     "username": "renny",
     "role": "admin",
     "created_at": 1790895077,
-    "last_login_at": 1790899947,
-    "last_seen_at": 1790900786,
+    "last_login_at": 1790902963,
+    "last_seen_at": 1790906761,
     "last_login_ip": "127.0.0.1",
     "last_seen_ip": "127.0.0.1",
     "last_actions": [
       {
-        "ts": 1790899947,
-        "action": "login",
-        "details": "Dashboard sign in",
-        "ip": "127.0.0.1"
-      },
-      {
-        "ts": 1790899991,
-        "action": "navigate",
-        "details": "Opened hosted",
-        "ip": "127.0.0.1"
-      },
-      {
-        "ts": 1790899992,
-        "action": "navigate",
-        "details": "Opened chat",
-        "ip": "127.0.0.1"
-      },
-      {
-        "ts": 1790899993,
-        "action": "navigate",
-        "details": "Opened logger",
-        "ip": "127.0.0.1"
-      },
-      {
-        "ts": 1790899994,
-        "action": "navigate",
-        "details": "Opened presence",
-        "ip": "127.0.0.1"
-      },
-      {
-        "ts": 1790899996,
-        "action": "navigate",
-        "details": "Opened analytics",
-        "ip": "127.0.0.1"
-      },
-      {
-        "ts": 1790899996,
-        "action": "navigate",
-        "details": "Opened commands",
-        "ip": "127.0.0.1"
-      },
-      {
-        "ts": 1790899999,
-        "action": "navigate",
-        "details": "Opened overview",
-        "ip": "127.0.0.1"
-      },
-      {
-        "ts": 1790900011,
-        "action": "navigate",
-        "details": "Opened commands",
-        "ip": "127.0.0.1"
-      },
-      {
-        "ts": 1790900012,
+        "ts": 1790906307,
         "action": "navigate",
         "details": "Opened history",
         "ip": "127.0.0.1"
       },
       {
-        "ts": 1790900013,
-        "action": "navigate",
-        "details": "Opened friends",
-        "ip": "127.0.0.1"
-      },
-      {
-        "ts": 1790900013,
-        "action": "navigate",
-        "details": "Opened selfHosted",
-        "ip": "127.0.0.1"
-      },
-      {
-        "ts": 1790900014,
+        "ts": 1790906309,
         "action": "navigate",
         "details": "Opened logger",
         "ip": "127.0.0.1"
       },
       {
-        "ts": 1790900049,
-        "action": "navigate",
-        "details": "Opened rpc",
-        "ip": "127.0.0.1"
-      },
-      {
-        "ts": 1790900051,
-        "action": "spotify_lyrics",
-        "details": "Started Spotify lyrics sync",
-        "ip": "127.0.0.1"
-      },
-      {
-        "ts": 1790900053,
-        "action": "spotify_lyrics",
-        "details": "Stopped Spotify lyrics sync",
-        "ip": "127.0.0.1"
-      },
-      {
-        "ts": 1790900055,
-        "action": "navigate",
-        "details": "Opened account",
-        "ip": "127.0.0.1"
-      },
-      {
-        "ts": 1790900058,
-        "action": "navigate",
-        "details": "Opened commands",
-        "ip": "127.0.0.1"
-      },
-      {
-        "ts": 1790900176,
-        "action": "navigate",
-        "details": "Opened presence",
-        "ip": "127.0.0.1"
-      },
-      {
-        "ts": 1790900244,
-        "action": "navigate",
-        "details": "Opened overview",
-        "ip": "127.0.0.1"
-      },
-      {
-        "ts": 1790900712,
-        "action": "navigate",
-        "details": "Opened rpc",
-        "ip": "127.0.0.1"
-      },
-      {
-        "ts": 1790900713,
+        "ts": 1790906311,
         "action": "navigate",
         "details": "Opened administration",
         "ip": "127.0.0.1"
       },
       {
-        "ts": 1790900714,
+        "ts": 1790906313,
+        "action": "navigate",
+        "details": "Opened chat",
+        "ip": "127.0.0.1"
+      },
+      {
+        "ts": 1790906314,
+        "action": "navigate",
+        "details": "Opened logs",
+        "ip": "127.0.0.1"
+      },
+      {
+        "ts": 1790906316,
+        "action": "navigate",
+        "details": "Opened owner",
+        "ip": "127.0.0.1"
+      },
+      {
+        "ts": 1790906322,
+        "action": "navigate",
+        "details": "Opened users",
+        "ip": "127.0.0.1"
+      },
+      {
+        "ts": 1790906322,
+        "action": "navigate",
+        "details": "Opened friends",
+        "ip": "127.0.0.1"
+      },
+      {
+        "ts": 1790906323,
+        "action": "navigate",
+        "details": "Opened users",
+        "ip": "127.0.0.1"
+      },
+      {
+        "ts": 1790906324,
+        "action": "navigate",
+        "details": "Opened friends",
+        "ip": "127.0.0.1"
+      },
+      {
+        "ts": 1790906324,
+        "action": "navigate",
+        "details": "Opened users",
+        "ip": "127.0.0.1"
+      },
+      {
+        "ts": 1790906325,
+        "action": "navigate",
+        "details": "Opened friends",
+        "ip": "127.0.0.1"
+      },
+      {
+        "ts": 1790906326,
+        "action": "navigate",
+        "details": "Opened users",
+        "ip": "127.0.0.1"
+      },
+      {
+        "ts": 1790906328,
+        "action": "navigate",
+        "details": "Opened logger",
+        "ip": "127.0.0.1"
+      },
+      {
+        "ts": 1790906331,
+        "action": "navigate",
+        "details": "Opened chat",
+        "ip": "127.0.0.1"
+      },
+      {
+        "ts": 1790906332,
+        "action": "navigate",
+        "details": "Opened administration",
+        "ip": "127.0.0.1"
+      },
+      {
+        "ts": 1790906336,
+        "action": "navigate",
+        "details": "Opened logger",
+        "ip": "127.0.0.1"
+      },
+      {
+        "ts": 1790906337,
+        "action": "navigate",
+        "details": "Opened account",
+        "ip": "127.0.0.1"
+      },
+      {
+        "ts": 1790906338,
+        "action": "navigate",
+        "details": "Opened friends",
+        "ip": "127.0.0.1"
+      },
+      {
+        "ts": 1790906339,
+        "action": "navigate",
+        "details": "Opened users",
+        "ip": "127.0.0.1"
+      },
+      {
+        "ts": 1790906340,
+        "action": "navigate",
+        "details": "Opened chat",
+        "ip": "127.0.0.1"
+      },
+      {
+        "ts": 1790906341,
+        "action": "navigate",
+        "details": "Opened logs",
+        "ip": "127.0.0.1"
+      },
+      {
+        "ts": 1790906344,
+        "action": "navigate",
+        "details": "Opened owner",
+        "ip": "127.0.0.1"
+      },
+      {
+        "ts": 1790906350,
         "action": "navigate",
         "details": "Opened commands",
         "ip": "127.0.0.1"
       },
       {
-        "ts": 1790900784,
+        "ts": 1790906350,
+        "action": "navigate",
+        "details": "Opened analytics",
+        "ip": "127.0.0.1"
+      },
+      {
+        "ts": 1790906352,
+        "action": "navigate",
+        "details": "Opened hosted",
+        "ip": "127.0.0.1"
+      },
+      {
+        "ts": 1790906361,
+        "action": "navigate",
+        "details": "Opened rpc",
+        "ip": "127.0.0.1"
+      },
+      {
+        "ts": 1790906383,
+        "action": "navigate",
+        "details": "Opened rpc",
+        "ip": "127.0.0.1"
+      },
+      {
+        "ts": 1790906420,
+        "action": "navigate",
+        "details": "Opened rpc",
+        "ip": "127.0.0.1"
+      },
+      {
+        "ts": 1790906422,
+        "action": "navigate",
+        "details": "Opened presence",
+        "ip": "127.0.0.1"
+      },
+      {
+        "ts": 1790906425,
+        "action": "navigate",
+        "details": "Opened history",
+        "ip": "127.0.0.1"
+      },
+      {
+        "ts": 1790906426,
+        "action": "navigate",
+        "details": "Opened analytics",
+        "ip": "127.0.0.1"
+      },
+      {
+        "ts": 1790906427,
+        "action": "navigate",
+        "details": "Opened rpc",
+        "ip": "127.0.0.1"
+      },
+      {
+        "ts": 1790906483,
+        "action": "navigate",
+        "details": "Opened rpc",
+        "ip": "127.0.0.1"
+      },
+      {
+        "ts": 1790906635,
+        "action": "navigate",
+        "details": "Opened rpc",
+        "ip": "127.0.0.1"
+      },
+      {
+        "ts": 1790906676,
+        "action": "navigate",
+        "details": "Opened account",
+        "ip": "127.0.0.1"
+      },
+      {
+        "ts": 1790906677,
+        "action": "navigate",
+        "details": "Opened friends",
+        "ip": "127.0.0.1"
+      },
+      {
+        "ts": 1790906677,
+        "action": "navigate",
+        "details": "Opened users",
+        "ip": "127.0.0.1"
+      },
+      {
+        "ts": 1790906679,
+        "action": "navigate",
+        "details": "Opened rpc",
+        "ip": "127.0.0.1"
+      },
+      {
+        "ts": 1790906685,
+        "action": "navigate",
+        "details": "Opened rpc",
+        "ip": "127.0.0.1"
+      },
+      {
+        "ts": 1790906741,
+        "action": "navigate",
+        "details": "Opened presence",
+        "ip": "127.0.0.1"
+      },
+      {
+        "ts": 1790906746,
+        "action": "navigate",
+        "details": "Opened history",
+        "ip": "127.0.0.1"
+      },
+      {
+        "ts": 1790906748,
         "action": "navigate",
         "details": "Opened overview",
         "ip": "127.0.0.1"
       },
       {
-        "ts": 1790900786,
+        "ts": 1790906751,
+        "action": "navigate",
+        "details": "Opened users",
+        "ip": "127.0.0.1"
+      },
+      {
+        "ts": 1790906752,
+        "action": "navigate",
+        "details": "Opened account",
+        "ip": "127.0.0.1"
+      },
+      {
+        "ts": 1790906754,
+        "action": "navigate",
+        "details": "Opened administration",
+        "ip": "127.0.0.1"
+      },
+      {
+        "ts": 1790906756,
+        "action": "navigate",
+        "details": "Opened logger",
+        "ip": "127.0.0.1"
+      },
+      {
+        "ts": 1790906758,
+        "action": "navigate",
+        "details": "Opened account",
+        "ip": "127.0.0.1"
+      },
+      {
+        "ts": 1790906760,
+        "action": "navigate",
+        "details": "Opened boost",
+        "ip": "127.0.0.1"
+      },
+      {
+        "ts": 1790906761,
         "action": "navigate",
         "details": "Opened rpc",
         "ip": "127.0.0.1"

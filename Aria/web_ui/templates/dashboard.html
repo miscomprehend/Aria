@@ -8,14 +8,14 @@
     <link rel="icon" type="image/png" href="/static/images/aria-favicon.png">
     <link rel="shortcut icon" type="image/png" href="/static/images/aria-favicon.png">
     <link rel="apple-touch-icon" href="/static/images/aria-favicon.png">
-    <link rel="stylesheet" href="/static/css/style.css">
+    <link rel="stylesheet" href="/static/css/aria_2026.css">
 </head>
 <body class="dashboard-mode">
 
     <div id="globalLoader" role="status" aria-live="polite">
         <div class="loader-console">
             <div class="loader-brand-row">
-                <img src="/static/images/aria-favicon.png" alt="" class="loader-brand-mark">
+                <span class="loader-brand-mark" aria-hidden="true">A</span>
                 <div class="loader-brand-copy"><strong>Aria</strong><span>runtime console</span></div>
                 <span class="loader-live-tag"><i></i> boot</span>
             </div>
@@ -39,97 +39,106 @@
 
     <nav class="sidebar">
         <div class="sidebar-logo">
-            <img class="logo-icon" src="/static/images/aria-favicon.png" alt="Aria" loading="lazy" onerror="this.style.display='none'">
+            <span class="aria-mark" aria-hidden="true">A</span>
             <div class="sidebar-brand-copy">
                 <span class="logo-text">Aria</span>
-                <span class="logo-domain">operator console</span>
+                <span class="logo-domain">control workspace</span>
             </div>
             <span class="logo-badge">v3</span>
         </div>
 
         <ul class="sidebar-nav">
-            <li class="nav-group-label" aria-hidden="true">Workspace</li>
-            <li class="nav-item active" data-section="overview">
+            <li class="nav-item active" data-section="overview" data-pinned="true">
                 <svg class="nav-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="6" height="6" rx="1"/><rect x="11" y="3" width="6" height="6" rx="1"/><rect x="3" y="11" width="6" height="6" rx="1"/><rect x="11" y="11" width="6" height="6" rx="1"/></svg>
                 Overview
-            </li>
-            <li class="nav-item" data-section="commands">
-                <svg class="nav-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M7 5.5L3 10l4 4.5M13 5.5L17 10l-4 4.5"/></svg>
-                Commands
-            </li>
-            <li class="nav-item" data-section="analytics" data-admin-only="true">
-                <svg class="nav-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17V10m4 7V7m4 7V5m4 7V3"/></svg>
-                Telemetry
-            </li>
-            <li class="nav-item" data-section="history">
-                <svg class="nav-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M3 5h14M3 9h14M3 13h10"/></svg>
-                Feed
-            </li>
-            <li class="nav-group-label" aria-hidden="true">Account</li>
-            <li class="nav-item" data-section="account">
-                <svg class="nav-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="10" cy="6.5" r="3"/><path d="M3.5 17c.6-3.2 2.7-4.8 6.5-4.8s5.9 1.6 6.5 4.8"/></svg>
-                Account
-            </li>
-            <li class="nav-item" data-section="friends">
-                <svg class="nav-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="7" cy="7" r="3"/><path d="M1.5 17c.5-3 2.3-4.5 5.5-4.5 1.2 0 2.2.2 3 .7M13 5.5a2.5 2.5 0 010 5M13 13c3 0 4.8 1.4 5.5 4"/></svg>
-                Friends
-            </li>
-            <li class="nav-item" data-section="selfHosted">
-                <svg class="nav-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="16" height="6" rx="1.5"/><rect x="2" y="11" width="16" height="6" rx="1.5"/><path d="M5 6h.01M5 14h.01M9 6h5M9 14h5"/></svg>
-                Self-hosting
-            </li>
-            <li class="nav-item" data-section="users">
-                <svg class="nav-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M10 2L4 5v5c0 3.5 2.5 6.3 6 7.3 3.5-1 6-3.8 6-7.3V5l-6-3z"/></svg>
-                Access
-            </li>
-            <li class="nav-item" data-section="logger">
-                <svg class="nav-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M3 4h14v10H8l-5 3V4z"/><path d="M6 7h8M6 10h5"/></svg>
-                Message Log
-            </li>
-            <li class="nav-item" data-section="boost">
-                <svg class="nav-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M10 2l1.8 5.5H17L12.6 11l1.7 5.5L10 13l-4.3 3.5L7.4 11 3 7.5h5.2L10 2z"/></svg>
-                Nitro
-            </li>
-            <li class="nav-item" data-section="rpc">
-                <svg class="nav-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M2 10h2l2-4 2 8 2-6 2 3 2-1h2"/></svg>
-                Presence
-            </li>
-            <li class="nav-item" data-section="presence">
-                <svg class="nav-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="10" cy="13" r="1.5" fill="currentColor" stroke="none"/><path d="M6.5 10.5a5 5 0 017 0M3.5 7.5a9.5 9.5 0 0113 0"/></svg>
-                Status
             </li>
             <li class="nav-item" data-section="hosted">
                 <svg class="nav-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="16" height="6" rx="1.5"/><rect x="2" y="11" width="16" height="6" rx="1.5"/><circle cx="15.5" cy="6" r="1" fill="currentColor" stroke="none"/><circle cx="15.5" cy="14" r="1" fill="currentColor" stroke="none"/></svg>
                 Instances
             </li>
-            <li class="nav-group-label" aria-hidden="true" data-admin-only="true">Administration</li>
-            <li class="nav-item" data-section="administration" data-admin-only="true">
+
+            <li class="nav-group-label" data-group-toggle="workspace" role="button" tabindex="0" aria-expanded="true"><span>Workspace</span><span class="nav-group-chevron" aria-hidden="true"></span></li>
+            <li class="nav-item" data-nav-group="workspace" data-section="commands">
+                <svg class="nav-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M7 5.5L3 10l4 4.5M13 5.5L17 10l-4 4.5"/></svg>
+                Commands
+            </li>
+            <li class="nav-item" data-nav-group="workspace" data-section="analytics" data-admin-only="true" hidden>
+                <svg class="nav-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17V10m4 7V7m4 7V5m4 7V3"/></svg>
+                Telemetry
+            </li>
+            <li class="nav-item" data-nav-group="workspace" data-section="history">
+                <svg class="nav-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M3 5h14M3 9h14M3 13h10"/></svg>
+                Feed
+            </li>
+
+            <li class="nav-group-label" data-group-toggle="presence" role="button" tabindex="0" aria-expanded="true"><span>Presence</span><span class="nav-group-chevron" aria-hidden="true"></span></li>
+            <li class="nav-item" data-nav-group="presence" data-section="rpc">
+                <svg class="nav-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M2 10h2l2-4 2 8 2-6 2 3 2-1h2"/></svg>
+                Presence Studio
+            </li>
+            <li class="nav-item" data-nav-group="presence" data-section="presence">
+                <svg class="nav-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="10" cy="13" r="1.5" fill="currentColor" stroke="none"/><path d="M6.5 10.5a5 5 0 017 0M3.5 7.5a9.5 9.5 0 0113 0"/></svg>
+                Status
+            </li>
+            <li class="nav-item" data-nav-group="presence" data-section="boost">
+                <svg class="nav-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M10 2l1.8 5.5H17L12.6 11l1.7 5.5L10 13l-4.3 3.5L7.4 11 3 7.5h5.2L10 2z"/></svg>
+                Nitro
+            </li>
+
+            <li class="nav-group-label" data-group-toggle="account" role="button" tabindex="0" aria-expanded="false"><span>Account</span><span class="nav-group-chevron" aria-hidden="true"></span></li>
+            <li class="nav-item" data-nav-group="account" data-section="account">
+                <svg class="nav-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="10" cy="6.5" r="3"/><path d="M3.5 17c.6-3.2 2.7-4.8 6.5-4.8s5.9 1.6 6.5 4.8"/></svg>
+                Profile
+            </li>
+            <li class="nav-item" data-nav-group="account" data-section="friends">
+                <svg class="nav-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="7" cy="7" r="3"/><path d="M1.5 17c.5-3 2.3-4.5 5.5-4.5 1.2 0 2.2.2 3 .7M13 5.5a2.5 2.5 0 010 5M13 13c3 0 4.8 1.4 5.5 4"/></svg>
+                Friends
+            </li>
+            <li class="nav-item" data-nav-group="account" data-section="users">
+                <svg class="nav-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M10 2L4 5v5c0 3.5 2.5 6.3 6 7.3 3.5-1 6-3.8 6-7.3V5l-6-3z"/></svg>
+                Access
+            </li>
+
+            <li class="nav-group-label" data-group-toggle="tools" role="button" tabindex="0" aria-expanded="false"><span>Tools</span><span class="nav-group-chevron" aria-hidden="true"></span></li>
+            <li class="nav-item" data-nav-group="tools" data-section="logger">
+                <svg class="nav-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M3 4h14v10H8l-5 3V4z"/><path d="M6 7h8M6 10h5"/></svg>
+                Message Log
+            </li>
+
+            <li class="nav-group-label" data-group-toggle="administration" data-admin-only="true" role="button" tabindex="0" aria-expanded="false" hidden><span>Operations</span><span class="nav-group-chevron" aria-hidden="true"></span></li>
+            <li class="nav-item" data-nav-group="administration" data-section="administration" data-admin-only="true" hidden>
                 <svg class="nav-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M3 16.5h14M5 13l3-3 2 2 5-5"/><circle cx="15" cy="7" r="1.2"/></svg>
                 Administration
             </li>
-            <li class="nav-item" data-section="chat" data-admin-only="true">
+            <li class="nav-item" data-nav-group="administration" data-section="chat" data-admin-only="true" hidden>
                 <svg class="nav-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h16v10H4l-2 3v-3z"/><circle cx="5" cy="9" r="1" fill="currentColor" stroke="none"/><circle cx="10" cy="9" r="1" fill="currentColor" stroke="none"/><circle cx="15" cy="9" r="1" fill="currentColor" stroke="none"/></svg>
                 Support Chat
             </li>
-            <li class="nav-item" data-section="logs" data-admin-only="true">
+            <li class="nav-item" data-nav-group="administration" data-section="logs" data-admin-only="true" hidden>
                 <svg class="nav-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="14" height="14" rx="2"/><path d="M6 9l2 2 4-4"/></svg>
                 Runtime
             </li>
-            <li class="nav-item" data-section="settings" data-admin-only="true">
+            <li class="nav-item" data-nav-group="administration" data-section="settings" data-admin-only="true" hidden>
                 <svg class="nav-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="10" cy="10" r="2.5"/><path d="M10 2v2m0 12v2M2 10h2m12 0h2m-3.17-4.83l-1.42 1.42M4.59 15.41l1.42-1.42M15.41 15.41l-1.42-1.42M5.17 5.17L6.59 6.59"/></svg>
                 Config
             </li>
-            <li class="nav-group-label" aria-hidden="true" data-owner-only="true" hidden>Owner</li>
-            <li class="nav-item" data-section="owner" data-owner-only="true" hidden>
+            <li class="nav-group-label" data-group-toggle="owner" data-owner-only="true" role="button" tabindex="0" aria-expanded="false" hidden><span>Owner</span><span class="nav-group-chevron" aria-hidden="true"></span></li>
+            <li class="nav-item" data-nav-group="owner" data-section="owner" data-owner-only="true" hidden>
                 <svg class="nav-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M10 2l6 3v5c0 3.5-2.5 6.3-6 8-3.5-1.7-6-4.5-6-8V5l6-3z"/><path d="M7.5 10l1.7 1.7 3.5-3.5"/></svg>
                 Owner Panel
             </li>
         </ul>
 
         <div class="sidebar-footer">
-            <div class="sidebar-footer-copy">session</div>
-            <button class="refresh-btn" id="refreshBtn">Sync</button>
-            <a href="/logout"><button class="logout-btn">Exit</button></a>
+            <button class="sidebar-account-chip" id="sidebarAccountChip" type="button" onclick="navigateTo('account')" aria-label="Open account settings">
+                <img class="sidebar-account-avatar" id="sidebarAvatar" src="/static/images/aria-favicon.png" alt="">
+                <span class="sidebar-account-copy"><strong id="sidebarUsername">Loading account</strong><small id="sidebarRoleLabel">Aria workspace</small></span>
+                <span class="sidebar-account-arrow" aria-hidden="true">&#8599;</span>
+            </button>
+            <div class="sidebar-footer-controls">
+                <button class="refresh-btn" id="refreshBtn" type="button" title="Refresh dashboard data">Sync</button>
+                <a class="logout-link" href="/logout" aria-label="Sign out">Sign out</a>
+            </div>
         </div>
     </nav>
 
@@ -146,26 +155,28 @@
                 </div>
             </div>
             <div class="topbar-right">
-                <div class="topbar-bell" id="topbarBell" title="Notifications">
+                <button class="topbar-bell" id="topbarBell" type="button" title="Notifications" aria-label="Notifications" aria-expanded="false">
                     <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" style="width:15px;height:15px"><path d="M10 2a6 6 0 016 6v3l1.5 2.5H2.5L4 11V8a6 6 0 016-6zm-1.5 13.5a1.5 1.5 0 003 0"/></svg>
                     <span class="topbar-bell-badge bell-badge-hidden" id="bellBadge">0</span>
-                </div>
-                <button class="topbar-menu-btn" id="topbarMenuBtn" title="More options">
+                </button>
+                <button class="topbar-menu-btn" id="topbarMenuBtn" type="button" title="More options" aria-label="More options" aria-haspopup="menu" aria-expanded="false">
                     <svg viewBox="0 0 20 20" fill="currentColor" style="width:16px;height:16px"><path d="M10 5.5a1.5 1.5 0 110-3 1.5 1.5 0 010 3zm0 5a1.5 1.5 0 110-3 1.5 1.5 0 010 3zm0 5a1.5 1.5 0 110-3 1.5 1.5 0 010 3z"/></svg>
                 </button>
                 <div class="topbar-menu-dropdown" id="topbarMenuDropdown" hidden>
+                    <button class="topbar-menu-item" id="openWorkspaceCustomizer" type="button">Customize workspace</button>
                     <button class="topbar-menu-item" onclick="window.location.href='/get-token'">Get Token Page</button>
                     <hr class="topbar-menu-divider">
-                    <button class="topbar-menu-item" onclick="navigateTo('settings')">Settings</button>
+                    <button class="topbar-menu-item" data-admin-only="true" hidden onclick="navigateTo('settings')">Settings</button>
                 </div>
+                <button class="owner-quick-btn" type="button" data-owner-only="true" aria-label="Open owner console" onclick="navigateTo('owner')" hidden>Owner console</button>
                 <div class="status-pill">
                     <div class="status-dot" id="globalStatus"></div>
                     <span class="status-label" id="globalStatusLabel">Loading&hellip;</span>
                 </div>
-                <div class="topbar-user-chip" id="topbarUserChip" onclick="navigateTo('account')">
+                <button class="topbar-user-chip" id="topbarUserChip" type="button" aria-label="Open account" onclick="navigateTo('account')">
                     <img class="topbar-user-avatar" id="topbarAvatar" src="/static/images/aria-favicon.png" alt="">
                     <span class="topbar-user-name" id="topbarUsername">&mdash;</span>
-                </div>
+                </button>
             </div>
             <div class="notification-center" id="notificationCenter" hidden>
                 <div class="notification-center-head">
@@ -191,6 +202,7 @@
                         <span class="hero-status-dot" id="heroStatusDot"></span>
                     </div>
                     <div class="hero-info">
+                        <span class="overview-kicker">ARIA / INSTANCE CONTROL</span>
                         <div class="hero-name-row">
                             <div class="hero-title" id="heroDashboardTitle">—</div>
                             <span class="hero-badge-pill prefix mono" id="heroBadgePrefix">$</span>
@@ -320,7 +332,7 @@
             </div>
 
             <!-- Fleet / admin snapshot (admin only) -->
-            <div class="table-card table-card-mt-md admin-only" data-admin-only="true">
+            <div class="table-card table-card-mt-md admin-only" data-admin-only="true" hidden>
                 <div class="table-header">
                     <span class="table-title">Fleet Snapshot</span>
                     <span class="table-badge-row">
@@ -404,6 +416,14 @@
                     <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="10" cy="10" r="2.5"/><path d="M10 2.5v2m0 11v2M2.5 10h2m11 0h2M4.7 4.7l1.4 1.4m7.8 7.8 1.4 1.4m0-10.6-1.4 1.4m-7.8 7.8-1.4 1.4"/></svg>
                     <span>Runtime config</span>
                 </button>
+                <button class="owner-action" type="button" onclick="navigateTo('analytics')">
+                    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 17V10m4 7V7m4 7V5m4 7V3"/></svg>
+                    <span>Telemetry</span>
+                </button>
+                <button class="owner-action" type="button" onclick="navigateTo('chat')">
+                    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3h16v10H4l-2 3v-3z"/><circle cx="5" cy="9" r="1" fill="currentColor" stroke="none"/><circle cx="10" cy="9" r="1" fill="currentColor" stroke="none"/><circle cx="15" cy="9" r="1" fill="currentColor" stroke="none"/></svg>
+                    <span>Support inbox</span>
+                </button>
             </div>
 
             <div class="table-card owner-management-card">
@@ -453,7 +473,7 @@
             </div>
         </section>
 
-        <section class="section" id="section-administration" data-admin-only="true">
+        <section class="section" id="section-administration" data-admin-only="true" hidden>
             <div class="section-header">
                 <div>
                     <div class="section-title">Administration</div>
@@ -516,7 +536,7 @@
         <!-- ══════════════════════════════════════════════
              ANALYTICS
         ══════════════════════════════════════════════ -->
-        <section class="section" id="section-analytics" data-admin-only="true">
+        <section class="section" id="section-analytics" data-admin-only="true" hidden>
             <div class="section-header">
                 <div>
                     <div class="section-title">Telemetry</div>
@@ -536,6 +556,27 @@
                     <div class="card-label">Avg Response</div>
                     <div class="card-value" id="avgResponseMs">—</div>
                 </div>
+                <div class="card">
+                    <div class="card-label">Failed Events</div>
+                    <div class="card-value" id="advFailures">—</div>
+                </div>
+                <div class="card">
+                    <div class="card-label">Longest Command</div>
+                    <div class="card-value" id="advLongestCmd">—</div>
+                </div>
+            </div>
+            <div class="telemetry-chart-panel">
+                <div class="telemetry-chart-header">
+                    <div><span class="telemetry-chart-kicker">LIVE RUNTIME HISTORY</span><h2>Execution profile</h2></div>
+                    <label class="telemetry-chart-select-label" for="telemetryMetricSelect">Metric
+                        <select id="telemetryMetricSelect" class="setting-input small">
+                            <option value="latency">Response time</option>
+                            <option value="outcomes">Command outcomes</option>
+                        </select>
+                    </label>
+                </div>
+                <div class="telemetry-chart-wrap"><canvas id="telemetryChart" role="img" aria-label="Recent command response time chart"></canvas></div>
+                <div class="telemetry-chart-summary" id="telemetryChartSummary" role="status" aria-live="polite">Waiting for runtime history</div>
             </div>
             <div class="table-card">
                 <div class="table-header">
@@ -638,56 +679,6 @@
             </div>
         </section>
 
-        <section class="section" id="section-selfHosted">
-            <div class="section-header">
-                <div>
-                    <div class="section-title">Self-hosted Accounts</div>
-                    <div class="section-sub">Manage registration, account status, and command prefixes</div>
-                </div>
-                <span class="table-badge" id="selfHostedBadge">—</span>
-            </div>
-            <div class="settings-panel settings-panel-mb-md">
-                <div class="settings-panel-header"><span class="settings-title">Register Account</span></div>
-                <div class="setting-row">
-                    <div><div class="setting-label">Discord Token</div><div class="setting-sub">Validated before registration; never shown in account lists</div></div>
-                    <div class="setting-controls setting-controls-wide">
-                        <div class="password-input-wrap">
-                            <input type="password" id="selfHostTokenInput" class="setting-input" placeholder="Token" autocomplete="off">
-                            <button class="password-toggle-icon" type="button" onclick="togglePasswordField('selfHostTokenInput', this)" aria-label="Show password" title="Show password">
-                                <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1.5 10s3-5.5 8.5-5.5S18.5 10 18.5 10s-3 5.5-8.5 5.5S1.5 10 1.5 10z"></path><circle cx="10" cy="10" r="2.5"></circle></svg>
-                            </button>
-                        </div>
-                    </div>
-                </div>
-                <div class="setting-row">
-                    <div><div class="setting-label">Prefix</div><div class="setting-sub">Prefix assigned to this account</div></div>
-                    <div class="setting-controls"><input type="text" id="selfHostPrefixInput" class="setting-input small" value=";" maxlength="5"><button class="btn btn-primary" id="selfHostRegisterBtn" type="button" onclick="registerSelfHosted()">Register</button></div>
-                </div>
-                <div class="setting-row" id="selfHostRegistrationRow" hidden>
-                    <div><div class="setting-label">Open Registration</div><div class="setting-sub">Allow dashboard users to register self-hosted accounts</div></div>
-                    <div class="setting-controls"><label class="logger-toggle"><input id="selfHostRegistrationToggle" type="checkbox" onchange="setSelfHostRegistration(this.checked)"><span>Enabled</span></label></div>
-                </div>
-                <div class="setting-row" id="selfHostAuthorizationRow" hidden>
-                    <div><div class="setting-label">Authorized Users</div><div class="setting-sub">Allow selected users to register while open registration is off</div></div>
-                    <div class="setting-controls setting-controls-wide"><input type="text" id="selfHostAuthorizedUserInput" class="setting-input" inputmode="numeric" placeholder="User ID"><button class="btn btn-primary" type="button" onclick="updateSelfHostAuthorization('authorize')">Allow</button></div>
-                </div>
-                <div class="setting-row" id="selfHostAuthorizedUsersRow" hidden>
-                    <div><div class="setting-label">Allowed User IDs</div></div>
-                    <div class="setting-controls"><div id="selfHostAuthorizedUsers" class="self-host-authorized-list"></div></div>
-                </div>
-                <div class="settings-msg-wrap"><div id="selfHostedActionMsg" class="settings-msg" role="status" aria-live="polite"></div></div>
-            </div>
-            <div class="table-card">
-                <div class="table-header"><span class="table-title">Registered Accounts</span><span class="table-badge" id="selfHostedTotal">0</span></div>
-                <div class="table-scroll">
-                    <table class="data-table">
-                        <thead><tr><th>User ID</th><th>Owner</th><th>Prefix</th><th>Status</th><th>Registered</th><th>Actions</th></tr></thead>
-                        <tbody id="selfHostedBody"><tr><td colspan="6" class="empty-row">Loading…</td></tr></tbody>
-                    </table>
-                </div>
-            </div>
-        </section>
-
         <!-- ══════════════════════════════════════════════
              BOOST / NITRO
         ══════════════════════════════════════════════ -->
@@ -704,7 +695,9 @@
                 </div>
             </div>
 
+            <div class="logger-workspace">
             <div class="logger-control-strip">
+                <div class="logger-group-heading"><strong>Event capture</strong><span>Choose which message activity stays in the local feed.</span></div>
                 <div class="logger-switches">
                     <label class="logger-toggle"><input id="loggerEnabled" type="checkbox"><span>Enable logger</span></label>
                     <label class="logger-toggle"><input id="loggerMentions" type="checkbox"><span>Mentions</span></label>
@@ -745,6 +738,7 @@
                         <tbody id="loggerFeedBody"><tr><td class="empty-row" colspan="5">Logger is disabled.</td></tr></tbody>
                     </table>
                 </div>
+            </div>
             </div>
         </section>
 
@@ -821,13 +815,19 @@
         <section class="section" id="section-rpc">
             <div class="section-header">
                 <div>
-                    <div class="section-title">Presence Studio</div>
-                    <div class="section-sub">Craft the activity payload your account broadcasts — with a real-time Discord preview</div>
+                    <div class="section-title">Rich Presence</div>
+                    <div class="section-sub">Build an activity, preview it as it will appear, then apply it to your connected account.</div>
                 </div>
                 <div style="display:flex;gap:8px;align-items:center">
                     <span class="badge badge-off" id="rpcActiveBadge">Inactive</span>
                     <button class="btn btn-danger-soft" onclick="clearRpc()">Stop RPC</button>
                 </div>
+            </div>
+
+            <div class="rpc-live-client-strip rpc-apply-target">
+                <div class="rpc-live-client-mark" aria-hidden="true">A</div>
+                <div class="rpc-live-client-copy"><span>APPLY TO</span><strong id="rpcClientName">—</strong><code id="rpcClientId">—</code></div>
+                <div class="rpc-live-client-state"><i id="rpcClientStateDot"></i><span id="rpcClientState">Waiting for client</span></div>
             </div>
 
             <div class="rpc-profile-toolbar" aria-label="RPC presets and rotation">
@@ -880,16 +880,10 @@
                 <div class="rpc-profile-feedback" id="spotifyLyricsMsg" role="status" aria-live="polite"></div>
             </div>
 
-            <div class="rpc-live-client-strip">
-                <div class="rpc-live-client-mark" aria-hidden="true">A</div>
-                <div class="rpc-live-client-copy"><span>ACTIVE CLIENT</span><strong id="rpcClientName">—</strong><code id="rpcClientId">—</code></div>
-                <div class="rpc-live-client-state"><i id="rpcClientStateDot"></i><span id="rpcClientState">Waiting for client</span></div>
-            </div>
-
-            <!-- ── Two-column layout: Preview left, Builder right ── -->
+            <!-- Builder and Discord preview stay connected to the live RPC draft. -->
             <div class="rpc-studio-layout">
 
-                <!-- LEFT: Discord-style live preview card -->
+                <!-- Live Discord preview -->
                 <div class="rpc-discord-preview-wrap">
                     <div class="rpc-discord-header">
                         <span class="rpc-discord-header-label">Live Preview</span>
@@ -960,7 +954,7 @@
                     </div>
                 </div>
 
-                <!-- RIGHT: Builder -->
+                <!-- Activity builder -->
                 <div class="rpc-builder-col">
                     <!-- Builder fields -->
                     <div class="settings-panel rpc-builder-panel">
@@ -1075,6 +1069,10 @@
                     </div>
                 </div>
             </div><!-- /rpc-studio-layout -->
+            <div class="rpc-status-callout">
+                <div><strong>Account status and AFK</strong><span>Manage your online state and automatic away replies.</span></div>
+                <button class="btn btn-ghost" type="button" onclick="navigateTo('presence')">Open status controls</button>
+            </div>
         </section>
 
         <!-- ══════════════════════════════════════════════
@@ -1195,7 +1193,7 @@
         <!-- ══════════════════════════════════════════════
              RUNTIME / LOGS
         ══════════════════════════════════════════════ -->
-        <section class="section" id="section-logs">
+        <section class="section" id="section-logs" data-admin-only="true" hidden>
             <div class="section-header">
                 <div>
                     <div class="section-title">Runtime Feed</div>
@@ -1241,17 +1239,17 @@
                 <div class="history-feed" id="commandExecFeed"><div class="log-loading">No logs yet.</div></div>
             </div>
 
-            <div class="table-card table-card-mb-sm admin-only">
+            <div class="table-card table-card-mb-sm admin-only" data-admin-only="true" hidden>
                 <div class="table-header"><span class="table-title">Sniper Feed</span><span class="table-badge">latest 50</span></div>
                 <div class="history-feed" id="sniperFeed"><div class="log-loading">No sniper logs yet.</div></div>
             </div>
 
-            <div class="table-card table-card-mb-sm admin-only">
+            <div class="table-card table-card-mb-sm admin-only" data-admin-only="true" hidden>
                 <div class="table-header"><span class="table-title">Gateway &amp; Error Feed</span><span class="table-badge">latest 50</span></div>
                 <div class="history-feed" id="gatewayFeed"><div class="log-loading">No gateway logs yet.</div></div>
             </div>
 
-            <div class="table-card admin-only">
+            <div class="table-card admin-only" data-admin-only="true" hidden>
                 <div class="table-header"><span class="table-title">Raw Runtime Tail</span><span class="table-badge">debug</span></div>
                 <div class="log-container" id="logContainer"><div class="log-loading">Fetching…</div></div>
             </div>
@@ -1346,7 +1344,7 @@
             </div>
 
             <!-- Admin: all accounts -->
-            <div class="table-card admin-only table-card-mb-lg">
+            <div class="table-card admin-only table-card-mb-lg" data-admin-only="true" hidden>
                 <div class="table-header">
                     <span class="table-title">Authorized Accounts</span>
                 </div>
@@ -1359,7 +1357,7 @@
             </div>
 
             <!-- Admin: add account -->
-            <div class="settings-panel admin-only">
+            <div class="settings-panel admin-only" data-admin-only="true" hidden>
                 <div class="settings-panel-header"><span class="settings-title">Add / Update Account</span></div>
                 <div class="setting-row">
                     <div><div class="setting-label">Discord User ID</div></div>
@@ -1414,7 +1412,7 @@
         <!-- ══════════════════════════════════════════════
              LIVE CHAT SUPPORT
         ══════════════════════════════════════════════ -->
-        <section class="section" id="section-chat" data-admin-only="true">
+        <section class="section" id="section-chat" data-admin-only="true" hidden>
             <div class="section-header">
                 <div>
                     <div class="section-title">Live Support Chat</div>
@@ -1469,7 +1467,7 @@
             </div>
         </section>
 
-        <section class="section" id="section-settings" data-admin-only="true">
+        <section class="section" id="section-settings" data-admin-only="true" hidden>
             <div class="section-header">
                 <div>
                     <div class="section-title">Runtime Config</div>
@@ -1527,6 +1525,46 @@
         </section>
 
     </div><!-- /main-content -->
+
+    <div class="appearance-overlay" id="workspaceCustomizer" hidden>
+        <div class="appearance-backdrop" data-close-workspace-customizer></div>
+        <section class="appearance-dialog" role="dialog" aria-modal="true" aria-labelledby="workspaceCustomizerTitle">
+            <header class="appearance-header">
+                <div><span class="appearance-eyebrow">YOUR WORKSPACE</span><h2 id="workspaceCustomizerTitle">Make it yours</h2></div>
+                <button class="appearance-close" id="closeWorkspaceCustomizer" type="button" aria-label="Close workspace customization" title="Close">×</button>
+            </header>
+            <div class="appearance-body">
+                <section class="appearance-group" aria-labelledby="accentChoiceTitle">
+                    <div class="appearance-group-heading"><h3 id="accentChoiceTitle">Accent color</h3><span>Saved on this device</span></div>
+                    <div class="appearance-accent-row">
+                        <div class="appearance-swatches" role="group" aria-label="Accent presets">
+                            <button class="appearance-swatch" type="button" data-accent="#69b7ff" aria-label="Ice blue" title="Ice blue"></button>
+                            <button class="appearance-swatch" type="button" data-accent="#55d6c2" aria-label="Mint" title="Mint"></button>
+                            <button class="appearance-swatch" type="button" data-accent="#f3ad66" aria-label="Amber" title="Amber"></button>
+                            <button class="appearance-swatch" type="button" data-accent="#f18ca8" aria-label="Rose" title="Rose"></button>
+                            <button class="appearance-swatch" type="button" data-accent="#aa9bff" aria-label="Iris" title="Iris"></button>
+                        </div>
+                        <label class="appearance-custom-color" for="workspaceAccentPicker"><span>Custom</span><input id="workspaceAccentPicker" type="color" value="#69b7ff" aria-label="Choose custom accent color"></label>
+                    </div>
+                </section>
+                <section class="appearance-group" aria-labelledby="densityChoiceTitle">
+                    <div class="appearance-group-heading"><h3 id="densityChoiceTitle">Interface density</h3></div>
+                    <div class="appearance-segment" role="group" aria-label="Interface density">
+                        <button type="button" data-density-choice="comfortable">Comfortable</button>
+                        <button type="button" data-density-choice="compact">Compact</button>
+                    </div>
+                </section>
+                <section class="appearance-group" aria-labelledby="tabsChoiceTitle">
+                    <div class="appearance-group-heading"><h3 id="tabsChoiceTitle">Navigation tabs</h3><span>Choose what appears in your sidebar</span></div>
+                    <div class="appearance-tabs-grid" id="workspaceTabsGrid"></div>
+                </section>
+            </div>
+            <footer class="appearance-footer">
+                <button class="btn btn-ghost" id="resetWorkspaceAppearance" type="button">Reset to default</button>
+                <button class="btn btn-primary" id="doneWorkspaceCustomizer" type="button">Done</button>
+            </footer>
+        </section>
+    </div>
 
     <!-- Welcome Modal (Version + Updates) -->
     <div class="welcome-modal" id="welcomeModal" hidden>

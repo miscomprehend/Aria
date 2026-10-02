@@ -8,7 +8,7 @@
   <link rel="canonical" href="/" />
   <link rel="icon" type="image/png" href="/static/images/aria-favicon.png" />
   <link rel="apple-touch-icon" href="/static/images/aria-favicon.png" />
-  <link rel="stylesheet" href="/static/css/panel_pages.css" />
+  <link rel="stylesheet" href="/static/css/aria_public_2026.css" />
 </head>
 <body class="panel-page">
   <div class="page-wrap">
@@ -119,15 +119,19 @@
         <div class="home-demo-activity">
           <div class="home-demo-art"><span class="home-equalizer"><i></i><i></i><i></i><i></i><i></i></span></div>
           <div class="home-demo-activity-copy">
-            <span class="home-demo-kicker">LISTENING TO</span>
-            <strong>Afterglow</strong>
-            <span>Aria Radio · Night drive</span>
+            <span class="home-demo-kicker" id="homeDemoActivityType">LISTENING TO</span>
+            <strong id="homeDemoTitle">Afterglow</strong>
+            <span id="homeDemoDetails">Aria Radio · Night drive</span>
             <div class="home-demo-progress"><i></i></div>
             <small>1:42 <span>3:58</span></small>
           </div>
         </div>
-        <div class="home-demo-actions"><button type="button">Open player</button><button type="button">View profile</button></div>
-        <div class="home-demo-code"><code>$rpc set "Afterglow" "Aria Radio"</code><span>EXAMPLE</span></div>
+        <div class="home-demo-actions" role="group" aria-label="Preview presence mode">
+          <button type="button" data-home-preview-mode="listening" aria-pressed="true">Listening</button>
+          <button type="button" data-home-preview-mode="playing" aria-pressed="false">Playing</button>
+          <button type="button" data-home-preview-mode="watching" aria-pressed="false">Watching</button>
+        </div>
+        <div class="home-demo-code"><code id="homeDemoCommand">$rpc listening name="Afterglow" details="Aria Radio"</code><span>LIVE EXAMPLE</span></div>
       </div>
     </section>
 
@@ -366,6 +370,26 @@
         }
       } catch (_) {}
     }
+
+    const homePresenceExamples = {
+      listening: { type: 'LISTENING TO', title: 'Afterglow', details: 'Aria Radio · Night drive', command: '$rpc listening name="Afterglow" details="Aria Radio"' },
+      playing: { type: 'PLAYING', title: 'Night Drive', details: 'Coastal Highway · Session 01', command: '$rpc playing name="Night Drive" state="Coastal Highway"' },
+      watching: { type: 'WATCHING', title: 'The Long Way Home', details: 'Aria Originals · Episode 04', command: '$rpc watching name="The Long Way Home" details="Episode 04"' },
+    };
+    document.querySelectorAll('[data-home-preview-mode]').forEach(button => {
+      button.addEventListener('click', () => {
+        const preview = homePresenceExamples[button.dataset.homePreviewMode];
+        if (!preview) return;
+        document.getElementById('homeDemoActivityType').textContent = preview.type;
+        document.getElementById('homeDemoTitle').textContent = preview.title;
+        document.getElementById('homeDemoDetails').textContent = preview.details;
+        document.getElementById('homeDemoCommand').textContent = preview.command;
+        document.querySelectorAll('[data-home-preview-mode]').forEach(option => {
+          option.setAttribute('aria-pressed', String(option === button));
+        });
+      });
+    });
+
     updateHomeActivity();
     setInterval(updateHomeActivity, 7000);
     updateStats();

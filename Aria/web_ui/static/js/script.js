@@ -199,9 +199,13 @@ async function loadUserProfile() {
     // Sync topbar chip
     const tbUser = document.getElementById('topbarUsername');
     if (tbUser) tbUser.textContent = data.username || '—';
+
+    const sidebarUser = document.getElementById('sidebarUsername');
+    if (sidebarUser) sidebarUser.textContent = data.username || 'Aria account';
     
     const tbAvatar = document.getElementById('topbarAvatar');
     setAvatarImage(tbAvatar, data.avatar_url, data.user_id, { allowFallback: true });
+    setAvatarImage(document.getElementById('sidebarAvatar'), data.avatar_url, data.user_id, { allowFallback: true });
     
     // Sync hero avatar
     const heroAvatar = document.getElementById('heroAvatar');
@@ -218,12 +222,13 @@ const sidebar = document.querySelector('.sidebar');
 const mainContent = document.querySelector('.main-content');
 if (sidebarToggle && sidebar && mainContent) {
     sidebarToggle.addEventListener('change', () => {
-        if (sidebarToggle.checked) {
-            sidebar.style.left = '-240px';
-            mainContent.style.marginLeft = '0';
-        } else {
-            sidebar.style.left = '';
-            mainContent.style.marginLeft = '';
+        sidebar.classList.toggle('is-open', sidebarToggle.checked);
+    });
+    document.querySelector('.sidebar-toggle-btn')?.addEventListener('keydown', event => {
+        if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            sidebarToggle.checked = !sidebarToggle.checked;
+            sidebarToggle.dispatchEvent(new Event('change', { bubbles: true }));
         }
     });
 }
@@ -258,14 +263,31 @@ const _notificationState = {
 };
 
 navItems.forEach(item => {
+    const navLabel = item.textContent.trim();
+    item.setAttribute('role', 'button');
+    item.setAttribute('aria-label', navLabel);
+    item.setAttribute('title', navLabel);
+    item.tabIndex = 0;
+    if (item.classList.contains('active')) item.setAttribute('aria-current', 'page');
+    item.addEventListener('keydown', event => {
+        if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            item.click();
+        }
+    });
     item.addEventListener('click', () => {
-        if (item.dataset.hiddenByRole === 'true') return;
         const target = item.dataset.section;
-        navItems.forEach(n => n.classList.remove('active'));
+        const targetSection = document.getElementById('section-' + target);
+        if (item.hidden || item.dataset.hiddenByRole === 'true' || !targetSection || targetSection.hidden) return;
+        const navGroup = item.dataset.navGroup;
+        if (navGroup) setSidebarGroupExpanded(navGroup, true);
+        navItems.forEach(navItem => {
+            navItem.classList.remove('active');
+            navItem.removeAttribute('aria-current');
+        });
         sections.forEach(s => s.classList.remove('active'));
         item.classList.add('active');
-        const targetSection = document.getElementById('section-' + target);
-        if (!targetSection) return;
+        item.setAttribute('aria-current', 'page');
         targetSection.classList.add('active');
         document.title = 'Aria';
         // strip emoji from title — take last text node
@@ -275,6 +297,10 @@ navItems.forEach(item => {
         const bc = document.getElementById('topbarBreadcrumb');
         if (bc) bc.textContent = target;
         loadSection(target);
+        if (sidebarToggle && window.matchMedia('(max-width: 900px)').matches) {
+            sidebarToggle.checked = false;
+            sidebar.classList.remove('is-open');
+        }
         trackDashboardAction('navigate', `Opened ${target}`);
     });
 });
@@ -860,10 +886,6 @@ function renderCommands(list) {
     ).join('');
 }
 
-function encodeSelfHostedId(userId) {
-    return encodeURIComponent(String(userId)).replace(/'/g, '%27');
-}
-
 async function loadFriends() {
     const res = await fetchJSON('/api/friends');
     const tbody = document.getElementById('friendsBody');
@@ -884,131 +906,6 @@ async function loadFriends() {
     </tr>`).join('') : '<tr><td colspan="3" class="empty-row">No friends found</td></tr>';
 }
 
-function showSelfHostedMsg(message, ok) {
-    const element = document.getElementById('selfHostedActionMsg');
-    if (!element) return;
-    element.textContent = message;
-    element.className = 'settings-msg ' + (ok ? 'ok' : 'err');
-    setTimeout(() => { element.textContent = ''; element.className = 'settings-msg'; }, 5000);
-}
-
-async function loadSelfHosted() {
-    const res = await fetchJSON('/api/self-hosted');
-    const tbody = document.getElementById('selfHostedBody');
-    if (!tbody || !res) return;
-    if (!res.ok) {
-        tbody.innerHTML = `<tr><td colspan="6" class="empty-row">${esc(res.error || 'Self-hosting unavailable')}</td></tr>`;
-        return;
-    }
-    const accounts = Array.isArray(res.accounts) ? res.accounts : [];
-    setText('selfHostedTotal', accounts.length);
-    setText('selfHostedBadge', accounts.length + (accounts.length === 1 ? ' account' : ' accounts'));
-    const registrationRow = document.getElementById('selfHostRegistrationRow');
-    const registrationToggle = document.getElementById('selfHostRegistrationToggle');
-    const registerButton = document.getElementById('selfHostRegisterBtn');
-    const authorizationRow = document.getElementById('selfHostAuthorizationRow');
-    const authorizedUsersRow = document.getElementById('selfHostAuthorizedUsersRow');
-    const authorizedUsers = document.getElementById('selfHostAuthorizedUsers');
-    if (registrationRow) registrationRow.hidden = !res.is_owner;
-    if (registrationToggle) registrationToggle.checked = !!res.registration_enabled;
-    if (registerButton) registerButton.disabled = !res.is_owner && !res.registration_enabled;
-    if (authorizationRow) authorizationRow.hidden = !res.is_owner;
-    if (authorizedUsersRow) authorizedUsersRow.hidden = !res.is_owner;
-    if (authorizedUsers) {
-        const allowedUsers = Array.isArray(res.authorized_users) ? res.authorized_users : [];
-        authorizedUsers.innerHTML = allowedUsers.length ? allowedUsers.map(userId =>
-            `<span>${esc(userId)} <button class="btn btn-danger-soft" type="button" onclick="updateSelfHostAuthorization('unauthorize','${encodeSelfHostedId(userId)}')" aria-label="Remove authorization for ${esc(userId)}">Remove</button></span>`
-        ).join('') : '<span class="cmd-aliases">None</span>';
-    }
-    tbody.innerHTML = accounts.length ? accounts.map(account => {
-        const userId = String(account.user_id || '');
-        const enabled = !!account.enabled;
-        const action = enabled ? 'disable' : 'enable';
-        const ownerLabel = res.is_owner ? (account.owner || '—') : 'You';
-        const encodedUserId = encodeSelfHostedId(userId);
-        return `<tr>
-            <td class="cmd-aliases">${esc(userId || '—')}</td>
-            <td class="cmd-aliases">${esc(ownerLabel)}</td>
-            <td><input id="selfHostPrefix-${encodedUserId}" class="setting-input small" type="text" maxlength="5" value="${esc(account.prefix || ';')}" aria-label="Prefix for ${esc(userId)}"> <button class="btn btn-ghost" type="button" onclick="saveSelfHostedPrefix('${encodedUserId}')">Save</button></td>
-            <td><span class="badge ${enabled ? 'badge-ok' : 'badge-off'}">${enabled ? 'Enabled' : 'Disabled'}</span></td>
-            <td class="cmd-aliases">${esc(fmtTs(account.registered_at) || '—')}</td>
-            <td><button class="btn btn-ghost" type="button" onclick="updateSelfHosted('${encodedUserId}','${action}')">${enabled ? 'Disable' : 'Enable'}</button> <button class="btn btn-danger-soft" type="button" onclick="updateSelfHosted('${encodedUserId}','remove')">Remove</button></td>
-        </tr>`;
-    }).join('') : '<tr><td colspan="6" class="empty-row">No self-hosted accounts registered</td></tr>';
-}
-
-async function registerSelfHosted() {
-    const tokenInput = document.getElementById('selfHostTokenInput');
-    const prefixInput = document.getElementById('selfHostPrefixInput');
-    const token = tokenInput ? tokenInput.value.trim() : '';
-    const prefix = prefixInput ? prefixInput.value.trim() : ';';
-    if (!token) {
-        showSelfHostedMsg('Token is required.', false);
-        return;
-    }
-    const res = await postJSON('/api/self-hosted', { action: 'register', token, prefix });
-    if (!res || !res.ok) {
-        showSelfHostedMsg((res && res.error) || 'Registration failed.', false);
-        return;
-    }
-    if (tokenInput) tokenInput.value = '';
-    showSelfHostedMsg(res.message || 'Account registered.', true);
-    await loadSelfHosted();
-}
-
-async function updateSelfHosted(encodedUserId, action) {
-    const user_id = decodeURIComponent(encodedUserId || '');
-    if (!user_id) return;
-    if (action === 'remove' && !confirm(`Remove self-hosted account ${user_id}?`)) return;
-    const res = await postJSON('/api/self-hosted', { action, user_id });
-    if (!res || !res.ok) {
-        showSelfHostedMsg((res && res.error) || 'Account update failed.', false);
-        return;
-    }
-    showSelfHostedMsg(res.message || 'Account updated.', true);
-    await loadSelfHosted();
-}
-
-async function saveSelfHostedPrefix(encodedUserId) {
-    const user_id = decodeURIComponent(encodedUserId || '');
-    const prefixInput = document.getElementById('selfHostPrefix-' + encodeSelfHostedId(user_id));
-    const prefix = prefixInput ? prefixInput.value.trim() : '';
-    const res = await postJSON('/api/self-hosted', { action: 'prefix', user_id, prefix });
-    if (!res || !res.ok) {
-        showSelfHostedMsg((res && res.error) || 'Prefix update failed.', false);
-        return;
-    }
-    showSelfHostedMsg(res.message || 'Prefix updated.', true);
-    await loadSelfHosted();
-}
-
-async function updateSelfHostAuthorization(action, encodedUserId) {
-    const input = document.getElementById('selfHostAuthorizedUserInput');
-    const user_id = encodedUserId ? decodeURIComponent(encodedUserId) : (input ? input.value.trim() : '');
-    if (!user_id) {
-        showSelfHostedMsg('User ID is required.', false);
-        return;
-    }
-    const res = await postJSON('/api/self-hosted', { action, user_id });
-    if (!res || !res.ok) {
-        showSelfHostedMsg((res && res.error) || 'Authorization update failed.', false);
-        return;
-    }
-    if (input) input.value = '';
-    showSelfHostedMsg(res.message || 'Authorization updated.', true);
-    await loadSelfHosted();
-}
-
-async function setSelfHostRegistration(enabled) {
-    const res = await postJSON('/api/self-hosted', { action: 'registration', enabled });
-    if (!res || !res.ok) {
-        showSelfHostedMsg((res && res.error) || 'Could not update registration.', false);
-        await loadSelfHosted();
-        return;
-    }
-    showSelfHostedMsg(res.message || 'Registration setting updated.', true);
-}
-
 // live search
 document.addEventListener('DOMContentLoaded', () => {
     const searchEl = document.getElementById('cmdSearch');
@@ -1026,14 +923,159 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 // ── Analytics ─────────────────────────────────────────────────────────────────
+let _telemetryEntries = [];
+let _telemetryChartBound = false;
+let _telemetryResizeTimer = null;
+
+function renderTelemetryChart() {
+    const canvas = document.getElementById('telemetryChart');
+    const metric = document.getElementById('telemetryMetricSelect')?.value || 'latency';
+    const summary = document.getElementById('telemetryChartSummary');
+    if (!canvas || !summary) return;
+
+    const bounds = canvas.getBoundingClientRect();
+    if (!bounds.width) return;
+    const width = bounds.width;
+    const height = 220;
+    const ratio = window.devicePixelRatio || 1;
+    canvas.width = Math.round(width * ratio);
+    canvas.height = Math.round(height * ratio);
+    canvas.style.height = `${height}px`;
+    const chartContext = canvas.getContext('2d');
+    if (!chartContext) return;
+    chartContext.scale(ratio, ratio);
+    chartContext.clearRect(0, 0, width, height);
+
+    const entries = _telemetryEntries.slice(-40);
+    const plotLeft = 38;
+    const plotRight = width - 10;
+    const plotTop = 14;
+    const plotBottom = height - 21;
+    const plotHeight = plotBottom - plotTop;
+    const accent = getComputedStyle(document.documentElement).getPropertyValue('--a2').trim() || '#69b7ff';
+    chartContext.font = '9px "DM Mono", monospace';
+    chartContext.lineWidth = 1;
+    chartContext.strokeStyle = 'rgba(177,197,219,0.1)';
+    chartContext.fillStyle = '#748394';
+
+    for (let lineIndex = 0; lineIndex <= 3; lineIndex += 1) {
+        const y = plotTop + plotHeight * lineIndex / 3;
+        chartContext.beginPath();
+        chartContext.moveTo(plotLeft, y);
+        chartContext.lineTo(plotRight, y);
+        chartContext.stroke();
+    }
+
+    if (!entries.length) {
+        chartContext.fillStyle = '#748394';
+        chartContext.textAlign = 'center';
+        chartContext.fillText('No runtime history yet', width / 2, height / 2);
+        summary.textContent = 'No runtime command history is available yet.';
+        return;
+    }
+
+    if (metric === 'outcomes') {
+        const bucketCount = Math.min(8, entries.length);
+        const bucketWidth = (plotRight - plotLeft) / bucketCount;
+        const maxBucketSize = Math.max(1, ...Array.from({ length: bucketCount }, (_, bucketIndex) =>
+            Math.floor((bucketIndex + 1) * entries.length / bucketCount) - Math.floor(bucketIndex * entries.length / bucketCount)
+        ));
+        let successes = 0;
+        let failures = 0;
+        for (let bucketIndex = 0; bucketIndex < bucketCount; bucketIndex += 1) {
+            const start = Math.floor(bucketIndex * entries.length / bucketCount);
+            const end = Math.floor((bucketIndex + 1) * entries.length / bucketCount);
+            const bucket = entries.slice(start, end);
+            const failed = bucket.filter(entry => String(entry.status || 'success').toLowerCase() !== 'success').length;
+            const succeeded = bucket.length - failed;
+            successes += succeeded;
+            failures += failed;
+            const barHeight = Math.max(4, plotHeight * bucket.length / maxBucketSize);
+            const groupWidth = Math.min(24, bucketWidth * 0.62);
+            const barWidth = Math.max(3, (groupWidth - 3) / 2);
+            const groupX = plotLeft + bucketIndex * bucketWidth + (bucketWidth - groupWidth) / 2;
+            chartContext.fillStyle = accent;
+            chartContext.fillRect(groupX, plotBottom - barHeight * (succeeded / Math.max(bucket.length, 1)), barWidth, barHeight * (succeeded / Math.max(bucket.length, 1)));
+            chartContext.fillStyle = '#e87980';
+            chartContext.fillRect(groupX + barWidth + 3, plotBottom - barHeight * (failed / Math.max(bucket.length, 1)), barWidth, barHeight * (failed / Math.max(bucket.length, 1)));
+        }
+        chartContext.textAlign = 'left';
+        chartContext.fillStyle = accent;
+        chartContext.fillText('OK', plotLeft, height - 4);
+        chartContext.fillStyle = '#e87980';
+        chartContext.fillText('FAILED', plotLeft + 27, height - 4);
+        canvas.setAttribute('aria-label', `Recent command outcomes: ${successes} successful, ${failures} failed`);
+        summary.textContent = `${entries.length} recent executions · ${successes} successful · ${failures} failed`;
+        return;
+    }
+
+    const samples = entries.map(entry => Number(entry.duration_ms)).filter(value => Number.isFinite(value) && value >= 0);
+    if (!samples.length) {
+        chartContext.fillStyle = '#748394';
+        chartContext.textAlign = 'center';
+        chartContext.fillText('No response-time samples available', width / 2, height / 2);
+        canvas.setAttribute('aria-label', 'No recent command response-time data available');
+        summary.textContent = `${entries.length} recent executions · response-time data unavailable`;
+        return;
+    }
+
+    const maximum = Math.max(1, ...samples);
+    const points = samples.map((value, pointIndex) => ({
+        x: plotLeft + (samples.length === 1 ? 0 : pointIndex * (plotRight - plotLeft) / (samples.length - 1)),
+        y: plotBottom - value / maximum * plotHeight,
+        value,
+    }));
+    chartContext.beginPath();
+    chartContext.moveTo(points[0].x, plotBottom);
+    points.forEach(point => chartContext.lineTo(point.x, point.y));
+    chartContext.lineTo(points[points.length - 1].x, plotBottom);
+    chartContext.closePath();
+    chartContext.fillStyle = 'rgba(105,183,255,0.08)';
+    chartContext.fill();
+    chartContext.beginPath();
+    points.forEach((point, pointIndex) => {
+        if (pointIndex === 0) chartContext.moveTo(point.x, point.y);
+        else chartContext.lineTo(point.x, point.y);
+    });
+    chartContext.strokeStyle = accent;
+    chartContext.lineWidth = 2;
+    chartContext.stroke();
+    chartContext.fillStyle = '#90a0b0';
+    chartContext.textAlign = 'left';
+    chartContext.fillText(`${Math.round(maximum)} ms`, 2, plotTop + 3);
+    chartContext.textAlign = 'right';
+    chartContext.fillText(`${Math.round(Math.min(...samples))} ms`, plotRight, height - 4);
+    const average = Math.round(samples.reduce((total, value) => total + value, 0) / samples.length);
+    const failures = entries.filter(entry => String(entry.status || 'success').toLowerCase() !== 'success').length;
+    canvas.setAttribute('aria-label', `Recent command response times, average ${average} milliseconds`);
+    summary.textContent = `${samples.length} response samples · ${average} ms average · ${failures} failed events`;
+}
+
+function bindTelemetryChart() {
+    if (_telemetryChartBound) return;
+    _telemetryChartBound = true;
+    document.getElementById('telemetryMetricSelect')?.addEventListener('change', renderTelemetryChart);
+    window.addEventListener('resize', () => {
+        clearTimeout(_telemetryResizeTimer);
+        _telemetryResizeTimer = setTimeout(renderTelemetryChart, 100);
+    });
+}
+
 async function loadAnalytics() {
-    const res = await fetchJSON('/api/analytics');
+    bindTelemetryChart();
+    const [res, historyResponse] = await Promise.all([
+        fetchJSON('/api/analytics'),
+        fetchJSON('/api/history'),
+    ]);
+    _telemetryEntries = Array.isArray(historyResponse?.data?.entries) ? historyResponse.data.entries : [];
+    renderTelemetryChart();
     if (!res || !res.data) return;
     const d = res.data;
+    loadAdvancedAnalytics();
     setText('totalCommands', d.total_commands ?? 0);
     countUp('totalCommands', d.total_commands ?? 0, 800);
     setText('successRate', (d.success_rate ?? 100) + '%');
-    setText('avgResponseMs', (d.avg_response_ms ?? 0) + 's');
+    setText('avgResponseMs', (d.avg_response_ms ?? 0) + ' ms');
 
     const wrap = document.getElementById('topCommandsBody');
     if (!wrap) return;
@@ -1327,9 +1369,14 @@ document.addEventListener('DOMContentLoaded', () => {
     if (menuBtn && menuDropdown) {
         menuBtn.addEventListener('click', (e) => {
             e.stopPropagation();
-            menuDropdown.hasAttribute('hidden') ? menuDropdown.removeAttribute('hidden') : menuDropdown.setAttribute('hidden', '');
+            const open = menuDropdown.hasAttribute('hidden');
+            menuDropdown.toggleAttribute('hidden', !open);
+            menuBtn.setAttribute('aria-expanded', String(open));
         });
-        document.addEventListener('click', () => menuDropdown.setAttribute('hidden', ''));
+        document.addEventListener('click', () => {
+            menuDropdown.setAttribute('hidden', '');
+            menuBtn.setAttribute('aria-expanded', 'false');
+        });
     }
 });
 
@@ -1338,7 +1385,6 @@ function loadSection(name) {
     if (name === 'overview')  loadOverview();
     if (name === 'account')   loadAccount();
     if (name === 'friends')   loadFriends();
-    if (name === 'selfHosted') loadSelfHosted();
     if (name === 'administration') loadAdministration();
     if (name === 'owner')     loadOwnerPanel();
     if (name === 'commands')  loadCommands();
@@ -1680,6 +1726,7 @@ function toggleNotificationCenter(forceState = null) {
     const next = forceState == null ? !_notificationState.open : !!forceState;
     _notificationState.open = next;
     panel.hidden = !next;
+    document.getElementById('topbarBell')?.setAttribute('aria-expanded', String(next));
     if (next) {
         markNotificationsSeen();
     }
@@ -2556,22 +2603,151 @@ function showAccessReqBulkMsg(msg, ok) {
     setTimeout(() => { el.textContent = ''; el.className = 'settings-msg'; }, 5000);
 }
 
+const WORKSPACE_PREFS_VERSION = 'aria-workspace-v1';
+const DEFAULT_WORKSPACE_PREFS = { accent: '#69b7ff', density: 'comfortable', visibleTabs: null };
+let _workspacePrefs = { ...DEFAULT_WORKSPACE_PREFS };
+let _workspaceCustomizerBound = false;
+let _sidebarGroupsBound = false;
+
+function workspacePrefsKey(profile = _meProfile) {
+    const identity = String(profile?.user_id || profile?.username || 'default');
+    return `${WORKSPACE_PREFS_VERSION}:${encodeURIComponent(identity)}`;
+}
+
+function saveWorkspacePrefs() {
+    try { localStorage.setItem(workspacePrefsKey(), JSON.stringify(_workspacePrefs)); } catch (_) {}
+}
+
+function applyWorkspaceAppearance() {
+    const root = document.documentElement;
+    const hex = /^#[0-9a-f]{6}$/i.test(_workspacePrefs.accent) ? _workspacePrefs.accent : DEFAULT_WORKSPACE_PREFS.accent;
+    const channels = [1, 3, 5].map(index => parseInt(hex.slice(index, index + 2), 16));
+    const lighter = channels.map(channel => Math.round(channel + (255 - channel) * 0.24));
+    root.style.setProperty('--workspace-accent-rgb', channels.join(', '));
+    root.style.setProperty('--a2', hex);
+    root.style.setProperty('--a3', `#${lighter.map(channel => channel.toString(16).padStart(2, '0')).join('')}`);
+    document.body.classList.toggle('density-compact', _workspacePrefs.density === 'compact');
+    document.querySelectorAll('[data-accent]').forEach(button => {
+        button.classList.toggle('is-selected', button.dataset.accent.toLowerCase() === hex.toLowerCase());
+    });
+    const picker = document.getElementById('workspaceAccentPicker');
+    if (picker) picker.value = hex;
+    document.querySelectorAll('[data-density-choice]').forEach(button => {
+        button.classList.toggle('is-selected', button.dataset.densityChoice === _workspacePrefs.density);
+    });
+}
+
+function userCanSeeNavItem(item, profile = _meProfile) {
+    if (item.dataset.ownerOnly === 'true') return !!profile?.is_owner;
+    if (item.dataset.adminOnly === 'true') return !!profile?.is_admin || !!profile?.is_owner;
+    return true;
+}
+
+function applyWorkspaceTabs() {
+    const configured = Array.isArray(_workspacePrefs.visibleTabs) ? new Set(_workspacePrefs.visibleTabs) : null;
+    navItems.forEach(item => {
+        const permitted = userCanSeeNavItem(item);
+        const visible = item.dataset.pinned === 'true' || !configured || configured.has(item.dataset.section);
+        item.hidden = !permitted || !visible;
+        item.dataset.hiddenByRole = String(!permitted);
+    });
+    document.querySelectorAll('.nav-group-label').forEach(label => {
+        const rolePermitted = label.dataset.ownerOnly === 'true' ? !!_meProfile?.is_owner :
+            label.dataset.adminOnly === 'true' ? !!_meProfile?.is_admin || !!_meProfile?.is_owner : true;
+        let next = label.nextElementSibling;
+        let hasVisibleItem = false;
+        while (next && !next.classList.contains('nav-group-label')) {
+            if (next.classList.contains('nav-item') && !next.hidden) hasVisibleItem = true;
+            next = next.nextElementSibling;
+        }
+        label.hidden = !rolePermitted || !hasVisibleItem;
+    });
+    const active = document.querySelector('.nav-item.active');
+    if (active && active.hidden) document.querySelector('.nav-item[data-section="overview"]')?.click();
+}
+
+function renderWorkspaceTabChoices(profile) {
+    const grid = document.getElementById('workspaceTabsGrid');
+    if (!grid) return;
+    const configured = Array.isArray(_workspacePrefs.visibleTabs) ? new Set(_workspacePrefs.visibleTabs) : null;
+    grid.innerHTML = Array.from(navItems).filter(item => userCanSeeNavItem(item, profile)).map(item => {
+        const section = item.dataset.section;
+        const label = item.textContent.trim();
+        const checked = item.dataset.pinned === 'true' || !configured || configured.has(section);
+        const disabled = item.dataset.pinned === 'true' ? ' disabled' : '';
+        return `<label class="appearance-tab-option"><input type="checkbox" data-workspace-tab="${esc(section)}"${checked ? ' checked' : ''}${disabled}><span>${esc(label)}</span></label>`;
+    }).join('');
+    grid.querySelectorAll('[data-workspace-tab]').forEach(input => {
+        input.addEventListener('change', () => {
+            const selected = Array.from(grid.querySelectorAll('[data-workspace-tab]:checked')).map(control => control.dataset.workspaceTab);
+            _workspacePrefs.visibleTabs = selected;
+            saveWorkspacePrefs();
+            applyWorkspaceTabs();
+        });
+    });
+}
+
+function initializeWorkspaceCustomizer(profile) {
+    try {
+        const stored = JSON.parse(localStorage.getItem(workspacePrefsKey(profile)) || 'null');
+        _workspacePrefs = {
+            ...DEFAULT_WORKSPACE_PREFS,
+            ...(stored && typeof stored === 'object' ? stored : {}),
+        };
+    } catch (_) {
+        _workspacePrefs = { ...DEFAULT_WORKSPACE_PREFS };
+    }
+    applyWorkspaceAppearance();
+    applyWorkspaceTabs();
+    renderWorkspaceTabChoices(profile);
+    if (_workspaceCustomizerBound) return;
+    const overlay = document.getElementById('workspaceCustomizer');
+    if (!overlay) return;
+    _workspaceCustomizerBound = true;
+    const close = () => { overlay.hidden = true; };
+    document.getElementById('openWorkspaceCustomizer')?.addEventListener('click', () => {
+        overlay.hidden = false;
+        document.getElementById('closeWorkspaceCustomizer')?.focus();
+    });
+    ['closeWorkspaceCustomizer', 'doneWorkspaceCustomizer'].forEach(id => document.getElementById(id)?.addEventListener('click', close));
+    overlay.querySelector('[data-close-workspace-customizer]')?.addEventListener('click', close);
+    overlay.addEventListener('keydown', event => { if (event.key === 'Escape') close(); });
+    document.querySelectorAll('[data-accent]').forEach(button => button.addEventListener('click', () => {
+        _workspacePrefs.accent = button.dataset.accent;
+        applyWorkspaceAppearance();
+        saveWorkspacePrefs();
+    }));
+    document.getElementById('workspaceAccentPicker')?.addEventListener('input', event => {
+        _workspacePrefs.accent = event.currentTarget.value;
+        applyWorkspaceAppearance();
+        saveWorkspacePrefs();
+    });
+    document.querySelectorAll('[data-density-choice]').forEach(button => button.addEventListener('click', () => {
+        _workspacePrefs.density = button.dataset.densityChoice;
+        applyWorkspaceAppearance();
+        saveWorkspacePrefs();
+    }));
+    document.getElementById('resetWorkspaceAppearance')?.addEventListener('click', () => {
+        _workspacePrefs = { ...DEFAULT_WORKSPACE_PREFS };
+        try { localStorage.removeItem(workspacePrefsKey(profile)); } catch (_) {}
+        applyWorkspaceAppearance();
+        applyWorkspaceTabs();
+        renderWorkspaceTabChoices(profile);
+    });
+}
+
 function applyRoleVisibility(profile) {
-    const isAdmin = !!(profile && profile.is_admin);
     const isOwner = !!(profile && profile.is_owner);
+    const isAdmin = !!(profile && profile.is_admin) || isOwner;
     document.querySelectorAll('[data-owner-only="true"]').forEach(el => {
         el.hidden = !isOwner;
         if (el.classList.contains('nav-item')) el.dataset.hiddenByRole = String(!isOwner);
     });
     const adminOnly = document.querySelectorAll('[data-admin-only="true"], .admin-only');
     adminOnly.forEach(el => {
-        if (isAdmin) {
-            el.style.display = '';
-            if (el.classList.contains('nav-item')) el.dataset.hiddenByRole = 'false';
-        } else {
-            el.style.display = 'none';
-            if (el.classList.contains('nav-item')) el.dataset.hiddenByRole = 'true';
-        }
+        el.hidden = !isAdmin;
+        el.style.removeProperty('display');
+        if (el.classList.contains('nav-item')) el.dataset.hiddenByRole = String(!isAdmin);
     });
 
     const usersTitle = document.getElementById('dashUsersTotal');
@@ -2582,6 +2758,54 @@ function applyRoleVisibility(profile) {
         const fallback = document.querySelector('.nav-item[data-section="overview"]');
         if (fallback) fallback.click();
     }
+    initializeWorkspaceCustomizer(profile);
+    initializeSidebarGroups(profile);
+}
+
+function sidebarGroupStorageKey(profile = _meProfile) {
+    return `${workspacePrefsKey(profile)}:sidebar-groups`;
+}
+
+function setSidebarGroupExpanded(groupName, expanded, persist = true) {
+    const toggle = document.querySelector(`[data-group-toggle="${groupName}"]`);
+    if (!toggle) return;
+    toggle.setAttribute('aria-expanded', String(expanded));
+    document.querySelectorAll(`.nav-item[data-nav-group="${groupName}"]`).forEach(item => {
+        item.classList.toggle('is-collapsed', !expanded);
+    });
+    if (!persist) return;
+    try {
+        const key = sidebarGroupStorageKey();
+        const stored = JSON.parse(localStorage.getItem(key) || '{}');
+        stored[groupName] = expanded;
+        localStorage.setItem(key, JSON.stringify(stored));
+    } catch (_) {}
+}
+
+function initializeSidebarGroups(profile) {
+    let stored = {};
+    try { stored = JSON.parse(localStorage.getItem(sidebarGroupStorageKey(profile)) || '{}'); } catch (_) {}
+    const defaults = { workspace: true, presence: true, account: false, tools: false, administration: false, owner: false };
+    document.querySelectorAll('[data-group-toggle]').forEach(toggle => {
+        const groupName = toggle.dataset.groupToggle;
+        const expanded = typeof stored[groupName] === 'boolean' ? stored[groupName] : !!defaults[groupName];
+        setSidebarGroupExpanded(groupName, expanded, false);
+    });
+    if (_sidebarGroupsBound) return;
+    _sidebarGroupsBound = true;
+    document.querySelectorAll('[data-group-toggle]').forEach(toggle => {
+        const activate = () => {
+            const groupName = toggle.dataset.groupToggle;
+            setSidebarGroupExpanded(groupName, toggle.getAttribute('aria-expanded') !== 'true');
+        };
+        toggle.addEventListener('click', activate);
+        toggle.addEventListener('keydown', event => {
+            if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault();
+                activate();
+            }
+        });
+    });
 }
 
 async function loadOwnerPanel() {
@@ -2695,6 +2919,7 @@ async function loadDashProfile() {
     setText('meUsername', p.username || '—');
     setText('meUserId', p.user_id || '—');
     setText('meRole', p.role || 'user');
+    setText('sidebarRoleLabel', p.is_owner ? 'Owner workspace' : p.is_admin ? 'Admin workspace' : 'Aria workspace');
     setText('meInstance', p.instance_id || '—');
     setText('pendingRequests', s.pending_requests ?? 0);
     setText('meLastLogin', fmtTs(p.last_login_at));

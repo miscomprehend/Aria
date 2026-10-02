@@ -2256,6 +2256,8 @@ class WebPanel:
         @self.app.get("/api/max/advanced-analytics")
         def api_max_advanced_analytics():
             """Return advanced analytics: success/failure rates, latency, etc."""
+            if not self._require_admin():
+                return jsonify({"ok": False, "error": "Forbidden"}), 403
             analytics = self._analytics_data()
             hist = self._history_data().get("entries", [])
             failures = [h for h in hist if h.get("status", "success") != "success"]
