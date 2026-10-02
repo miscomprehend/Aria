@@ -1358,7 +1358,7 @@ class WebPanel:
                         "username": username,
                         "user_id": user_id or "—",
                         "avatar_url": avatar_url,
-                        "prefix": str(saved.get("prefix") or "$"),
+                        "prefix": str(saved.get("prefix") or ";"),
                         "status": "online" if connected else "connecting" if process_running else "offline",
                         "connected": connected,
                         "connecting": process_running and not connected,
@@ -1426,7 +1426,7 @@ class WebPanel:
             "username": username,
             "user_id": user_id or "—",
             "avatar_url": avatar_url,
-            "prefix": getattr(b, "prefix", None) or "$",
+            "prefix": getattr(b, "prefix", None) or ";",
             "status": getattr(b, "_current_status", "online"),
             "connected": is_ready,
             "identified": bool(getattr(b, "identified", False)),
@@ -1587,10 +1587,10 @@ class WebPanel:
             hosted_ctx = self._session_hosted_live_context()
             primary = hosted_ctx.get("primary") if isinstance(hosted_ctx, dict) else None
             if not primary:
-                return {"commands": [], "total": 0, "prefix": "$", "loading": False, "error": "No hosted client is linked to this account."}
+                return {"commands": [], "total": 0, "prefix": ";", "loading": False, "error": "No hosted client is linked to this account."}
 
             saved = primary.get("saved") or {}
-            command_prefix = str(saved.get("prefix") or "$")
+            command_prefix = str(saved.get("prefix") or ";")
             registry = self._load_hosted_command_registry(str(primary.get("token_id") or ""))
             if registry is not None:
                 registry["loading"] = False
@@ -1617,8 +1617,6 @@ class WebPanel:
                 cmd_name = raw.split()[0].strip().lower()
                 if command_prefix and cmd_name.startswith(command_prefix):
                     cmd_name = cmd_name[len(command_prefix):]
-                else:
-                    cmd_name = cmd_name.lstrip("./$!;,#")
                 if not cmd_name:
                     continue
                 usage_counts[cmd_name] = usage_counts.get(cmd_name, 0) + 1
@@ -1672,7 +1670,7 @@ class WebPanel:
             try:
                 from command_engine import CommandEngine, setup_commands_500
 
-                fallback_engine = CommandEngine(prefix=str(getattr(b, "prefix", "$") if b is not None else "$"))
+                fallback_engine = CommandEngine(prefix=str(getattr(b, "prefix", ";") if b is not None else ";"))
                 setup_commands_500(fallback_engine)
                 for raw_name, info in (getattr(fallback_engine, "all_commands", {}) or {}).items():
                     name = str(getattr(info, "name", "") or raw_name)
@@ -1900,7 +1898,7 @@ class WebPanel:
         if b is None:
             return {}
         return {
-            "prefix": getattr(b, "prefix", "$"),
+            "prefix": getattr(b, "prefix", ";"),
             "status": getattr(b, "_current_status", "online"),
             "auto_delete_enabled": getattr(b, "_auto_delete_enabled", True),
             "auto_delete_delay": getattr(b, "_auto_delete_delay", 3.0),
@@ -1914,6 +1912,30 @@ class WebPanel:
     # ------------------------------------------------------------------
 
     def _setup_routes(self) -> None:
+        @self.app.post("/__electron__/owner-session")
+        def electron_owner_session() -> Any:
+            if not self._is_local():
+                return jsonify({"ok": False, "error": "Unauthorized"}), 403
+            if os.environ.get("ARIA_DESKTOP_MODE") != "1":
+                return jsonify({"ok": False, "error": "Not found"}), 404
+
+            expected_token = os.environ.get("ARIA_ELECTRON_AUTH_TOKEN", "")
+            payload = request.get_json(silent=True)
+            supplied_token = str((payload or {}).get("token", "")) if isinstance(payload, dict) else ""
+            if not expected_token or not supplied_token or not hmac.compare_digest(expected_token, supplied_token):
+                return jsonify({"ok": False, "error": "Unauthorized"}), 403
+
+            os.environ.pop("ARIA_ELECTRON_AUTH_TOKEN", None)
+            session.clear()
+            session.permanent = False
+            session["authenticated"] = True
+            session["user_id"] = str(self.owner_id)
+            session["instance_id"] = str(self.instance_id)
+            session["role"] = "admin"
+            session["electron_owner"] = True
+            session["_csrf_token"] = secrets.token_urlsafe(32)
+            return jsonify({"ok": True})
+
         @self.app.get("/")
         def index() -> Any:
             try:
@@ -2655,7 +2677,7 @@ class WebPanel:
                     <h2>Connect Your Instance</h2>
                     <form method='post' action='/connect-instance'>
                     <input name='token' placeholder='Discord token' required />
-                    <input name='prefix' placeholder='$' maxlength='5' />
+                    <input name='prefix' placeholder=';' maxlength='5' />
                     <button type='submit'>Connect</button>
                     </form></body></html>""",
                     200,
@@ -2673,7 +2695,7 @@ class WebPanel:
 
             requester_id = str(session.get("user_id") or "")
             token = str(request.form.get("token", "")).strip()
-            prefix = str(request.form.get("prefix", "$")).strip()[:5] or "$"
+            prefix = str(request.form.get("prefix", ";")).strip()[:5] or ";"
             if not token:
                 return redirect("/connect-instance?error=Token+is+required")
 
@@ -3546,7 +3568,7 @@ class WebPanel:
                         "token_ref": tid,
                         "owner": (owner or "—") if is_owner else "self",
                         "user_id": str(info.get("user_id", "—")),
-                        "prefix": str(info.get("prefix", "$")),
+                        "prefix": str(info.get("prefix", ";")),
                         "username": str(info.get("username", "—")),
                         "client_type": str(active_info.get("client_type") or info.get("client_type") or "unknown"),
                         "active": process_running,
@@ -3568,7 +3590,7 @@ class WebPanel:
                 return jsonify({"ok": False, "error": "Unauthorized"}), 403
             data = request.get_json(force=True) or {}
             token = str(data.get("token", "")).strip()
-            prefix = str(data.get("prefix", "$")).strip()[:5] or "$"
+            prefix = str(data.get("prefix", ";")).strip()[:5] or ";"
             if not token:
                 return jsonify({"ok": False, "error": "token required"}), 400
 

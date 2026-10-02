@@ -211,7 +211,7 @@ class HostManager:
             logger.error("Host token validation failed: %s", exc)
             return False, None
 
-    def host_token(self, owner_id, token_input, prefix="$", user_id=None, username=None):
+    def host_token(self, owner_id, token_input, prefix=";", user_id=None, username=None):
         if not token_input:
             return False, "No token"
 
@@ -285,7 +285,7 @@ class HostManager:
         
         return token_input if "." in token_input else ""
     
-    def _run_their_bot(self, config_file, token, prefix="$", hosted_uid=None, owner_id=None, user_id=None, username=None):
+    def _run_their_bot(self, config_file, token, prefix=";", hosted_uid=None, owner_id=None, user_id=None, username=None):
         try:
             project_root = os.path.dirname(os.path.abspath(__file__))
             config_source = os.path.abspath(config_file)
@@ -479,7 +479,7 @@ else:
                 new_process = self._run_their_bot(
                     f"hosted_{token_id}.json",
                     token,
-                    prefix=saved.get("prefix", "$"),
+                    prefix=saved.get("prefix", ";"),
                     hosted_uid=token_id,
                     owner_id=saved.get("owner"),
                     user_id=saved.get("user_id"),
@@ -649,7 +649,7 @@ else:
             if not self._is_token_valid(token):
                 continue
 
-            prefix = data.get("prefix", "$")
+            prefix = data.get("prefix", ";")
             config_file = f"hosted_{token_id}.json"
             process = self._run_their_bot(
                 config_file,
@@ -819,7 +819,7 @@ else:
             if proc:
                 self._terminate_process(proc)
 
-            prefix = saved.get("prefix", "$")
+            prefix = saved.get("prefix", ";")
             config_file = f"hosted_{token_id}.json"
             new_process = self._run_their_bot(
                 config_file,
@@ -929,7 +929,7 @@ else:
                     if token_active:
                         continue
 
-                prefix = data.get("prefix", "$")
+                prefix = data.get("prefix", ";")
                 config_file = f"hosted_{token_id}.json"
                 process = self._attach_existing_process(token_id, data)
                 if process is None:

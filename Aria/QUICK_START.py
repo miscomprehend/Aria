@@ -68,7 +68,7 @@ CREATING YOUR OWN COMMANDS:
 
 Option A: Quick add to engine
     from command_engine import CommandEngine
-    engine = CommandEngine(prefix="+")
+    engine = CommandEngine(prefix=";")
     engine.register_command("category", "cmdname", "description")
 
 Option B: Add full command in command_integration.py
@@ -91,7 +91,7 @@ Run this in terminal to test:
     cd /workspaces/Aria/Aria
     python -c "
 from command_engine import CommandEngine, setup_commands_500
-engine = CommandEngine(prefix='+')
+engine = CommandEngine(prefix=';')
 setup_commands_500(engine)
 print(engine.help_category('system'))
 "
@@ -139,7 +139,7 @@ if __name__ == "__main__":
     from command_engine import CommandEngine, setup_commands_500
     import formatter as fmt
     
-    engine = CommandEngine(prefix="+")
+    engine = CommandEngine(prefix=";")
     setup_commands_500(engine)
     
     # Test 1: Categories

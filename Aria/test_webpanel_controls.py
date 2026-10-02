@@ -94,6 +94,56 @@ class WebPanelControlTests(unittest.TestCase):
     def tearDown(self):
         self.temp_dir.cleanup()
 
+    def test_electron_owner_session_requires_local_one_time_token(self):
+        import os
+
+        with patch.dict(os.environ, {"ARIA_DESKTOP_MODE": "0"}):
+            disabled_response = self.client.post(
+                "/__electron__/owner-session",
+                json={"token": "desktop-test-token"},
+            )
+            self.assertEqual(disabled_response.status_code, 404)
+
+        with patch.dict(os.environ, {
+            "ARIA_DESKTOP_MODE": "1",
+            "ARIA_ELECTRON_AUTH_TOKEN": "desktop-test-token",
+        }):
+            self.client.environ_base["REMOTE_ADDR"] = "192.0.2.1"
+            remote_response = self.client.post(
+                "/__electron__/owner-session",
+                json={"token": "desktop-test-token"},
+            )
+            self.assertEqual(remote_response.status_code, 403)
+
+            self.client.environ_base["REMOTE_ADDR"] = "127.0.0.1"
+            invalid_response = self.client.post(
+                "/__electron__/owner-session",
+                json={"token": "wrong-token"},
+            )
+            self.assertEqual(invalid_response.status_code, 403)
+
+            response = self.client.post(
+                "/__electron__/owner-session",
+                json={"token": "desktop-test-token"},
+            )
+            self.assertEqual(response.status_code, 200)
+            self.assertTrue(response.json["ok"])
+            with self.client.session_transaction() as active_session:
+                self.assertEqual(active_session["user_id"], "test-owner")
+                self.assertEqual(active_session["role"], "admin")
+            panel._require_session = lambda: WebPanel._require_session(panel)
+            panel._require_admin = lambda: WebPanel._require_admin(panel)
+            panel._render_dashboard = lambda: "owner dashboard"
+            dashboard_response = self.client.get("/dashboard")
+            self.assertEqual(dashboard_response.status_code, 200)
+            self.assertEqual(dashboard_response.get_data(as_text=True), "owner dashboard")
+
+            reused_response = self.client.post(
+                "/__electron__/owner-session",
+                json={"token": "desktop-test-token"},
+            )
+            self.assertEqual(reused_response.status_code, 403)
+
     def test_docs_page_is_public_and_linked_from_public_pages(self):
         panel._read_raw_template = lambda name: (Path(__file__).resolve().parent / name).read_text(encoding="utf-8")
 
@@ -182,16 +232,46 @@ class WebPanelControlTests(unittest.TestCase):
         self.assertEqual(authorized.json["failures"], 1)
         self.assertEqual(authorized.json["longest_cmd"], 90)
 
-    def test_homepage_has_fragment_links_for_search_sections(self):
+    def test_status_afk_dashboard_controls_keep_supported_states(self):
+        dashboard = (Path(__file__).resolve().parent / "web_ui" / "templates" / "dashboard.html").read_text(encoding="utf-8")
+        for status in ("online", "idle", "dnd", "invisible"):
+            self.assertIn(f'data-presence-status="{status}"', dashboard)
+        for control in ('id="presenceCurrentLabel"', 'id="presenceBadge"', 'id="afkBadge"', 'id="afkMessageInput"', 'id="afkStateSummary"', 'onclick="toggleAfk(\'enable\')"', 'onclick="toggleAfk(\'disable\')"'):
+            self.assertIn(control, dashboard)
+        self.assertIn("button.dataset.presenceStatus === status", Path(__file__).resolve().parent.joinpath("web_ui", "static", "js", "script.js").read_text(encoding="utf-8"))
+
+    def test_homepage_keeps_search_sections_and_has_four_link_footer(self):
         panel._read_raw_template = lambda name: (Path(__file__).resolve().parent / name).read_text(encoding="utf-8")
 
         response = self.client.get("/")
         html = response.get_data(as_text=True)
         self.assertEqual(response.status_code, 200)
         self.assertIn('<link rel="canonical" href="/" />', html)
-        for anchor in ("features", "presence", "token", "faq"):
+        for anchor in ("features", "presence", "token", "faq", "community"):
             self.assertIn(f'id="{anchor}"', html)
-            self.assertIn(f'href="/#{anchor}"', html)
+        for moment_detail in ("Keep your runtime online", "See what changed", "$esnipe", "Let your status move", "$rotation", "Replies tidy themselves", "$autodelete", "Your token stays hidden", "prefers-reduced-motion"):
+            self.assertIn(moment_detail, html)
+        for profile_detail in ("Aria", "aria", "NITRO", "keeping Aria in sync", "Member since", "13 May 2015", "Aria Runtime", "Gateway READY, commands online", "3 modules active", "Aria Radio", "Runtime mix · Vol 01", "Artist · Aria Audio", "Aria Operations · Live status"):
+            self.assertIn(profile_detail, html)
+        self.assertIn('class="home-demo-art is-listening"', html)
+        self.assertIn('id="homeDemoActivityType">LISTENING TO', html)
+        self.assertIn('data-home-preview-mode="listening" aria-pressed="true"', html)
+        self.assertIn('activityArt.classList.add(`is-${button.dataset.homePreviewMode}`)', html)
+        self.assertIn('id="homeDemoSeek" type="range"', html)
+        self.assertIn('homeDemoPlayback.position = (homeDemoPlayback.position + 1) % homeDemoPlayback.duration', html)
+        for preview_detail in ("WORKER AGE", "EVENT / 042", "REPLY LIFECYCLE", "Dashboard API", "token: omitted", "ARIA / ACTIVITY", "ARIA WORKSPACE", "aria-runtime", "Waiting for gateway READY", "SAFE EVENT SUMMARY", "data-home-channel=\"presence\"", "homeActivityCompose", "homePreviewPopup", "SIMULATED / NOTHING SENT", "Join the Aria Discord", "Meet other Aria users", "https://discord.gg/BzDkY5WbN", "homeCommunityGuildName", "homeCommunityMemberCount", "LIVE INVITE DATA", "api/v10/invites/BzDkY5WbN"):
+            self.assertIn(preview_detail, html)
+        for outdated_profile_detail in ("Aurora", "aurora", "nova", "orbit", "MTA4NzU2", "Afterglow", "Low Tide", "The Long Way Home", "12 Mar 2021", "building something new", "YOUR PC", "home-chat-preview", "home-token-account"):
+            self.assertNotIn(outdated_profile_detail, html)
+        footer = html.split('<footer class="home-footer">', 1)[1].split("</footer>", 1)[0]
+        expected_links = (
+            '<a href="/docs">Docs</a>',
+            '<a href="/privacy">Privacy</a>',
+            '<a href="/tos">ToS</a>',
+        )
+        for link in expected_links:
+            self.assertIn(link, footer)
+        self.assertEqual(footer.count("<a "), len(expected_links))
 
     def test_rpc_and_logger_mutations_require_authentication(self):
         self.assertEqual(self.client.get("/api/rpc").status_code, 403)
@@ -1133,16 +1213,16 @@ class WebPanelControlTests(unittest.TestCase):
             self.assertEqual(active_session["user_id"], owner_id)
             self.assertEqual(active_session["role"], "admin")
 
-    def test_login_page_explains_primary_owner_credentials_without_exposing_them(self):
+    def test_login_page_does_not_show_primary_owner_credentials(self):
         panel._read_raw_template = lambda name: (Path(__file__).resolve().parent / name).read_text(encoding="utf-8")
 
         response = self.client.get("/login")
         html = response.get_data(as_text=True)
 
         self.assertEqual(response.status_code, 200)
-        self.assertIn("Username: <code>renny</code>", html)
-        self.assertIn("Owner ID shown in the Aria startup terminal", html)
-        self.assertIn("latest startup banner", html)
+        self.assertNotIn("Primary owner", html)
+        self.assertNotIn("Username: <code>renny</code>", html)
+        self.assertNotIn("latest startup banner", html)
         self.assertNotIn("terminal-owner-password", html)
 
     def test_instance_link_rejects_missing_csrf_before_reading_token(self):

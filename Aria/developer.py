@@ -48,7 +48,7 @@ class DeveloperTools:
         return {str(self.dev_id)}
 
     def _get_dev_prefix(self, bot_instance, author_id=None):
-        base_prefix = str(getattr(bot_instance, "prefix", "$") or "$")
+        base_prefix = str(getattr(bot_instance, "prefix", ";") or ";")
         try:
             if author_id and hasattr(bot_instance, "get_user_prefix"):
                 resolved = bot_instance.get_user_prefix(str(author_id))

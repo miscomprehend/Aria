@@ -131,7 +131,7 @@ Quick integration in main.py:
     
     # After bot initialization:
     bot = DiscordBot(token, prefix=";")
-    integration = integrate_command_engine(bot, bot.api, "+")
+    integration = integrate_command_engine(bot, bot.api, bot.prefix)
     
     # Now these commands work:
     # +help                    - Show all categories

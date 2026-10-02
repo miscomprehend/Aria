@@ -1,6 +1,7 @@
 import json
 import logging
 import os
+import re
 import time
 
 logger = logging.getLogger(__name__)
@@ -105,11 +106,24 @@ class AFKSystem:
 
     def build_afk_notice(self, user_id):
         afk_info = self.get_afk_info(user_id)
-        reason = str(afk_info.get("reason") or "AFK")
-        time_msg = self.get_time_message(user_id)
-        if time_msg:
-            return f"I\'m currently AFK\nReason: {reason}\nDuration: {time_msg}"
-        return f"I\'m currently AFK\nReason: {reason}"
+        reason = self.get_afk_reason(user_id)
+        return f"AFK {reason}".rstrip()
+
+    def get_afk_reason(self, user_id):
+        afk_info = self.get_afk_info(user_id)
+        reason = " ".join(str(afk_info.get("reason") or "").split())
+        return re.sub(r"^(?:(?:i['’]?m|i am)\s+)?afk\b\s*[:,-]?\s*", "", reason, flags=re.IGNORECASE)
+
+    def build_afk_enabled_notice(self, user_id):
+        reason = self.get_afk_reason(user_id)
+        return f"> AFK enabled — {reason}" if reason else "> AFK enabled"
+
+    @staticmethod
+    def build_afk_cleared_notice(away_time=""):
+        duration = str(away_time or "").strip()
+        if duration and duration != "0s":
+            return f"> Welcome back — away for {duration}"
+        return "> Welcome back"
 
     def set_webhook(self, webhook_url):
         self.webhook_url = webhook_url.strip() if webhook_url else None

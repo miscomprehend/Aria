@@ -41,7 +41,7 @@ class SelfUserHostingManager:
                     self.hosted_accounts = {
                         uid: {
                             "token": acc.get("token", ""),
-                            "prefix": acc.get("prefix", "+"),
+                            "prefix": acc.get("prefix", ";"),
                             "owner": acc.get("owner", ""),
                             "settings": acc.get("settings", {}),
                             "enabled": acc.get("enabled", True)
@@ -252,7 +252,7 @@ class SelfUserHostingManager:
                 
                 status = "✓" if account.get("enabled") else "✗"
                 owner = account.get("owner", "unknown")
-                prefix = account.get("prefix", "+")
+                prefix = account.get("prefix", ";")
                 print(f"  {status} user_id={uid} | owner={owner} | prefix={prefix}")
 
 

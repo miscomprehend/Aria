@@ -1208,39 +1208,35 @@
                 </div>
                 <span class="badge badge-ok badge-push-right" id="presenceBadge">—</span>
             </div>
-            <div class="settings-panel">
-                <div class="settings-panel-header"><span class="settings-title">Online Status</span></div>
-                <div class="presence-bar">
-                    <button class="btn btn-online" onclick="setPresence('online')">Online</button>
-                    <button class="btn btn-idle" onclick="setPresence('idle')">Idle</button>
-                    <button class="btn btn-dnd" onclick="setPresence('dnd')">Do Not Disturb</button>
-                    <button class="btn btn-invisible" onclick="setPresence('invisible')">Invisible</button>
+            <div class="presence-page">
+                <div class="presence-page-intro">
+                    <div><span class="presence-kicker">ACCOUNT / VISIBILITY</span><h2>Choose how you appear</h2><p>Set your visible status and decide what happens when someone pings you while away.</p></div>
+                    <div class="presence-current"><span>CURRENT STATUS</span><strong id="presenceCurrentLabel">Loading</strong></div>
                 </div>
-                <div class="settings-msg-wrap"><div id="presenceMsg" class="settings-msg"></div></div>
-            </div>
+                <div class="presence-controls-grid">
+                    <section class="presence-control-panel" aria-labelledby="presenceStatusHeading">
+                        <header class="presence-panel-heading"><span class="presence-panel-index">01 / ACCOUNT STATE</span><h3 id="presenceStatusHeading">Online Status</h3><p>Choose the status other people see.</p></header>
+                        <div class="presence-option-grid" role="group" aria-label="Choose account status">
+                            <button class="presence-option" type="button" data-presence-status="online" aria-pressed="false"><i class="presence-option-dot online"></i><span><strong>Online</strong><small>Available</small></span><b aria-hidden="true">&#10003;</b></button>
+                            <button class="presence-option" type="button" data-presence-status="idle" aria-pressed="false"><i class="presence-option-dot idle"></i><span><strong>Idle</strong><small>Away for now</small></span><b aria-hidden="true">&#10003;</b></button>
+                            <button class="presence-option" type="button" data-presence-status="dnd" aria-pressed="false"><i class="presence-option-dot dnd"></i><span><strong>Do Not Disturb</strong><small>Quiet status</small></span><b aria-hidden="true">&#10003;</b></button>
+                            <button class="presence-option" type="button" data-presence-status="invisible" aria-pressed="false"><i class="presence-option-dot invisible"></i><span><strong>Invisible</strong><small>Appear offline</small></span><b aria-hidden="true">&#10003;</b></button>
+                        </div>
+                        <div class="settings-msg-wrap"><div id="presenceMsg" class="settings-msg" role="status" aria-live="polite"></div></div>
+                    </section>
 
-            <div class="settings-panel settings-panel-mt-md">
-                <div class="settings-panel-header">
-                    <span class="settings-title">AFK Mode</span>
-                    <span class="badge badge-off badge-push-right" id="afkBadge">Off</span>
+                    <section class="presence-control-panel afk-control-panel" id="afkPanel" aria-labelledby="afkHeading">
+                        <header class="presence-panel-heading afk-panel-heading"><div><span class="presence-panel-index">02 / AUTO-REPLY</span><h3 id="afkHeading">AFK Mode</h3><p>Send a reply when someone mentions you while you are away.</p></div><span class="badge badge-off" id="afkBadge">Off</span></header>
+                        <div class="afk-panel-body">
+                            <div class="afk-state-line"><i></i><span id="afkStateSummary">Automatic reply is off</span></div>
+                            <label class="afk-message-label" for="afkMessageInput"><strong>AFK Message</strong><span>Shown to people who ping you</span></label>
+                            <textarea id="afkMessageInput" class="setting-input afk-message-input" rows="3" maxlength="180" placeholder="I'm AFK right now" aria-label="Automatic away reply"></textarea>
+                            <div class="afk-message-foot"><span>Up to 180 characters</span><span id="afkMessageCount">0 / 180</span></div>
+                            <div class="afk-action-row"><button class="btn btn-primary" id="afkEnableButton" type="button" aria-pressed="false" onclick="toggleAfk('enable')">Enable AFK</button><button class="btn btn-ghost" id="afkDisableButton" type="button" aria-pressed="true" onclick="toggleAfk('disable')">Turn off</button></div>
+                        </div>
+                        <div class="settings-msg-wrap"><div id="afkMsg" class="settings-msg" role="status" aria-live="polite"></div></div>
+                    </section>
                 </div>
-                <div class="setting-row">
-                    <div>
-                        <div class="setting-label">AFK Message</div>
-                        <div class="setting-sub">Auto-reply when pinged while AFK</div>
-                    </div>
-                    <div class="setting-controls">
-                        <input type="text" id="afkMessageInput" class="setting-input" placeholder="I'm AFK right now">
-                    </div>
-                </div>
-                <div class="setting-row">
-                    <div></div>
-                    <div class="setting-controls">
-                        <button class="btn btn-primary" onclick="toggleAfk('enable')">Enable</button>
-                        <button class="btn btn-danger-soft" onclick="toggleAfk('disable')">Disable</button>
-                    </div>
-                </div>
-                <div class="settings-msg-wrap"><div id="afkMsg" class="settings-msg"></div></div>
             </div>
         </section>
 

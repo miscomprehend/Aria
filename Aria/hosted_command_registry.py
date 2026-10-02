@@ -42,7 +42,7 @@ def build_command_registry(bot: Any) -> dict[str, Any]:
     for row in rows:
         row["aliases"].sort()
 
-    prefix = str(getattr(bot, "prefix", "$") or "$")
+    prefix = str(getattr(bot, "prefix", ";") or ";")
     return {"version": 1, "prefix": prefix, "commands": rows, "total": len(rows)}
 
 
@@ -83,4 +83,4 @@ def load_command_registry(path: str) -> dict[str, Any] | None:
         })
 
     commands.sort(key=lambda command: command["name"])
-    return {"prefix": str(payload.get("prefix") or "$"), "commands": commands, "total": len(commands)}
+    return {"prefix": str(payload.get("prefix") or ";"), "commands": commands, "total": len(commands)}

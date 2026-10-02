@@ -2,6 +2,7 @@ import discord
 from discord.ext import commands, tasks
 import time
 from utils.general import is_valid_emoji, format_message, quote_block
+from reply_helpers import ASCIIMixin
 import traceback
 import logging
 import asyncio
@@ -9,7 +10,7 @@ import re
 
 logger = logging.getLogger(__name__)
 
-class Presence(commands.Cog):
+class Presence(commands.Cog, ASCIIMixin):
     def __init__(self, bot):
         self.bot = bot
         self.application_assets = {}  # Change to store per application ID

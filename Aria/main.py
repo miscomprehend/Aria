@@ -47,6 +47,7 @@ import base64
 import importlib
 import formatter as fmt
 from profile_avatar import download_avatar_data_uri
+from profile_details import format_public_profile_details
 
 try:
     from utils.general import is_valid_emoji
@@ -1304,7 +1305,7 @@ def main():
         print("Web panel is running at http://127.0.0.1:8080 for configuration")
         os.makedirs(os.path.dirname(config.config_file), exist_ok=True)
         with open(config.config_file, 'w') as f:
-            json.dump({"token": "token here", "prefix": "$"}, f, indent=4)
+            json.dump({"token": "token here", "prefix": ";"}, f, indent=4)
             print(f"Created {config.config_file} - edit it with your token")
         return
     
@@ -1332,7 +1333,7 @@ def main():
                 sys.exit(0)
 
 
-    bot = DiscordBot(token, config.get("prefix") or "$", config)
+    bot = DiscordBot(token, config.get("prefix") or ";", config)
     bot._rpc_stop_rotation = stop_rpc_rotation
     bot._rpc_start_rotation = start_rpc_rotation
     bot._rpc_apply_preset = apply_rpc_preset
@@ -2331,7 +2332,7 @@ def main():
         success = afk_system.set_afk(ctx["author_id"], reason)
         
         if success:
-            msg = ctx["api"].send_message(ctx["channel_id"], f"> **✓ AFK** :: AFK enabled — {reason}")
+            msg = ctx["api"].send_message(ctx["channel_id"], afk_system.build_afk_enabled_notice(ctx["author_id"]))
             afk_system.save_state()
         else:
             msg = ctx["api"].send_message(ctx["channel_id"], "> **✗ AFK** :: Failed to set AFK.")
@@ -2342,15 +2343,17 @@ def main():
         
         if afk_system.is_afk(target_id):
             afk_data = afk_system.get_afk_info(target_id)
-            afk_since = int(time.time() - afk_data["since"])
+            afk_since = max(0, int(time.time() - afk_data["since"]))
+            reason = afk_system.get_afk_reason(target_id)
             hours = afk_since // 3600
             minutes = (afk_since % 3600) // 60
-            time_str = ""
+            time_str = "under 1m" if afk_since < 60 else ""
             if hours > 0:
                 time_str += f"{hours}h "
-            if minutes > 0 or hours == 0:
+            if minutes > 0:
                 time_str += f"{minutes}m"
-            msg = ctx["api"].send_message(ctx["channel_id"], f"> **AFK Status** :: <@{target_id}> is AFK — *{afk_data['reason']}* · {time_str}")
+            reason_text = f" — *{reason}*" if reason else ""
+            msg = ctx["api"].send_message(ctx["channel_id"], f"> **AFK Status** :: <@{target_id}> is AFK{reason_text} · {time_str.strip()}")
         else:
             msg = ctx["api"].send_message(ctx["channel_id"], f"> **AFK Status** :: <@{target_id}> is **online**.")
         
@@ -3421,16 +3424,16 @@ Customization Commands:
     auto_save      - Toggle auto-save
     
   Color Palette:
-    $customize color background #1e1e1e
-    $customize color accent #00ff00
-    $customize color warning #ff9900
+    ;customize color background #1e1e1e
+    ;customize color accent #00ff00
+    ;customize color warning #ff9900
 
 Usage:
-  $customize set theme dark
-  $customize toggle ui_animation
-  $customize list
-  $customize reset all```"""
-            msg = ctx["api"].send_message(ctx["channel_id"], help_text)
+    ;customize set theme dark
+    ;customize toggle ui_animation
+    ;customize list
+    ;customize reset all```"""
+            msg = ctx["api"].send_message(ctx["channel_id"], fmt.quote_block(help_text))
             return
         
         if args[0].lower() == "palette":
@@ -3445,9 +3448,9 @@ Color Palette Elements:
   info        - Information color
 
 Example:
-  $customize color accent #ff00ff
-  $customize color background #000000```"""
-            msg = ctx["api"].send_message(ctx["channel_id"], palette_info)
+    ;customize color accent #ff00ff
+    ;customize color background #000000```"""
+            msg = ctx["api"].send_message(ctx["channel_id"], fmt.quote_block(palette_info))
             return
         
         if args[0].lower() == "terminal":
@@ -3466,9 +3469,9 @@ Example:
   • custom   - Custom text
 
 Example:
-  $customize set terminal_mode retro
-  $customize set prompt_style dollar```"""
-            msg = ctx["api"].send_message(ctx["channel_id"], terminal_info)
+    ;customize set terminal_mode retro
+    ;customize set prompt_style dollar```"""
+            msg = ctx["api"].send_message(ctx["channel_id"], fmt.quote_block(terminal_info))
             return
 
     @bot.command(name="terminal", aliases=["term", "shell"])
@@ -3490,7 +3493,7 @@ Example:
   +terminal toggle  - Toggle terminal mode
   +terminal style   - Show current style
   +terminal time    - Show formatted time```"""
-            msg = ctx["api"].send_message(ctx["channel_id"], term_info)
+            msg = ctx["api"].send_message(ctx["channel_id"], fmt.quote_block(term_info))
             return
         
         if args[0].lower() == "toggle":
@@ -3516,7 +3519,7 @@ Terminal Style Demo
 {now.strftime('%A, %B %d, %Y')} {time_str}
 
 \u001b[32m{bot.customizer.get_setting('prompt_style')}\u001b[0m \u001b[36muser@bot\u001b[0m:\u001b[34m~\u001b[0m$ ```"""
-            msg = ctx["api"].send_message(ctx["channel_id"], style_demo)
+            msg = ctx["api"].send_message(ctx["channel_id"], fmt.quote_block(style_demo))
             return
         
         if args[0].lower() == "time":
@@ -3531,7 +3534,7 @@ Terminal Style Demo
             date_fmt = bot.customizer.get_setting('date_format') or 'dd/mm/yyyy'
             date_display = now.strftime(date_fmt.replace('dd', '%d').replace('mm', '%m').replace('yyyy', '%Y'))
             
-            msg = ctx["api"].send_message(ctx["channel_id"], f"```ansi\n\u001b[35m{date_display} \u001b[33m{time_display}\u001b[0m\nTerminal Mode: {bot.customizer.get_setting('terminal_mode')}```")
+            msg = ctx["api"].send_message(ctx["channel_id"], fmt.quote_block(f"```ansi\n\u001b[35m{date_display} \u001b[33m{time_display}\u001b[0m\nTerminal Mode: {bot.customizer.get_setting('terminal_mode')}```"))
             return
 
     @bot.command(name="ui", aliases=["interface", "settings"])
@@ -3575,7 +3578,7 @@ Commands:
                 active_list='\n  '.join([f"• {item}" for item in active]) if active else "None"
             )
             
-            msg = ctx["api"].send_message(ctx["channel_id"], ui_info)
+            msg = ctx["api"].send_message(ctx["channel_id"], fmt.quote_block(ui_info))
             return
         
         if args[0].lower() == "colors":
@@ -3591,18 +3594,18 @@ Color Palette:
   Info:        {info}
 
 Example Usage:
-  $customize color accent #ff00ff
-  $customize color background #000000```""".format(**palette)
+    ;customize color accent #ff00ff
+    ;customize color background #000000```""".format(**palette)
             
-            msg = ctx["api"].send_message(ctx["channel_id"], colors_display)
+            msg = ctx["api"].send_message(ctx["channel_id"], fmt.quote_block(colors_display))
             return
         
         if args[0].lower() == "reset" and len(args) > 1:
             setting = args[1]
             if bot.customizer.reset_customization(setting):
-                msg = ctx["api"].send_message(ctx["channel_id"], f"```yaml\nReset Complete:\n  Setting: {setting}\n  Status: ✓ Restored to default```")
+                msg = ctx["api"].send_message(ctx["channel_id"], fmt.quote_block(f"```yaml\nReset Complete:\n  Setting: {setting}\n  Status: ✓ Restored to default```"))
             else:
-                msg = ctx["api"].send_message(ctx["channel_id"], f"```yaml\nReset Failed:\n  Setting: {setting}\n  Status: ✗ Setting not found```")
+                msg = ctx["api"].send_message(ctx["channel_id"], fmt.quote_block(f"```yaml\nReset Failed:\n  Setting: {setting}\n  Status: ✗ Setting not found```"))
             
             return
         
@@ -3611,9 +3614,9 @@ Example Usage:
                 import json
                 with open("ui_config.json", "w") as f:
                     json.dump(bot.customizer.config, f, indent=2)
-                msg = ctx["api"].send_message(ctx["channel_id"], "```yaml\nConfiguration Saved:\n  File: ui_config.json\n  Status: ✓ Success```")
+                msg = ctx["api"].send_message(ctx["channel_id"], fmt.quote_block("```yaml\nConfiguration Saved:\n  File: ui_config.json\n  Status: ✓ Success```"))
             except:
-                msg = ctx["api"].send_message(ctx["channel_id"], "```yaml\nSave Failed:\n  Status: ✗ Error writing file```")
+                msg = ctx["api"].send_message(ctx["channel_id"], fmt.quote_block("```yaml\nSave Failed:\n  Status: ✗ Error writing file```"))
             
             return
     
@@ -3660,7 +3663,7 @@ Example Usage:
         else:
             msg_text = f"**User:** {username}#{discriminator}\nNo mutual servers found."
         
-        msg = ctx["api"].send_message(ctx["channel_id"], msg_text)
+        msg = ctx["api"].send_message(ctx["channel_id"], fmt.quote_block(msg_text))
     @bot.command(name="closedms")
     def closedms(ctx, args):
         status_msg = ctx["api"].send_message(ctx["channel_id"], "> **Close DMs** :: Fetching DM channels...")
@@ -4844,6 +4847,26 @@ Example Usage:
         except Exception as e:
             msg = ctx["api"].send_message(ctx["channel_id"], f"> **✗ Pronouns** :: Error: {str(e)[:80]}")
 
+    @bot.command(name="bio")
+    def bio(ctx, args):
+        target_id = args[0] if args else ctx["author_id"]
+        clean_target_id = _clean_target_id(target_id) or str(target_id)
+        try:
+            profile_data, _, _ = _lookup_target_profile(
+                ctx["api"], clean_target_id, guild_id=_resolve_ctx_guild_id(ctx)
+            )
+            if not profile_data:
+                ctx["api"].send_message(ctx["channel_id"], "> **✗ Bio** :: Could not fetch user profile.")
+                return
+            user_profile = profile_data.get("user_profile") or {}
+            bio_text = " ".join(str(user_profile.get("bio") or "").split())
+            if bio_text:
+                ctx["api"].send_message(ctx["channel_id"], f"> **Bio** :: <@{clean_target_id}> — {bio_text[:190]}")
+            else:
+                ctx["api"].send_message(ctx["channel_id"], f"> **Bio** :: <@{clean_target_id}> has no bio set.")
+        except Exception as exc:
+            ctx["api"].send_message(ctx["channel_id"], f"> **✗ Bio** :: Error: {str(exc)[:80]}")
+
     @bot.command(name="displayname", aliases=["globalname", "whoisname", "dn"])
     def displayname(ctx, args):
         if not args:
@@ -4952,7 +4975,7 @@ Example Usage:
 
     @bot.command(name="stop", aliases=["exit", "quit"])
     def stop_bot(ctx, args):
-        msg = ctx["api"].send_message(ctx["channel_id"], "`Stopping bot...```")
+        msg = ctx["api"].send_message(ctx["channel_id"], "> Stopping bot...")
         bot.stop()
 
     @bot.command(name="hardstop", aliases=["forcestop", "killbot", "halt"])
@@ -5410,7 +5433,7 @@ Example Usage:
             return
         text = " ".join(args)
         result = "".join(c.upper() if i % 2 == 0 else c.lower() for i, c in enumerate(text))
-        msg = ctx["api"].send_message(ctx["channel_id"], result)
+        msg = ctx["api"].send_message(ctx["channel_id"], fmt.quote_block(result))
 
     @bot.command(name="clap")
     def clap_cmd(ctx, args):
@@ -5418,7 +5441,7 @@ Example Usage:
             msg = ctx["api"].send_message(ctx["channel_id"], f"> **Clap** :: Usage: `{bot.prefix}clap <text>`")
             return
         result = " 👏 ".join(args) + " 👏"
-        msg = ctx["api"].send_message(ctx["channel_id"], result)
+        msg = ctx["api"].send_message(ctx["channel_id"], fmt.quote_block(result))
 
     @bot.command(name="aesthetic", aliases=["vaporwave", "wide"])
     def aesthetic_cmd(ctx, args):
@@ -5427,7 +5450,7 @@ Example Usage:
             return
         text = " ".join(args)
         result = "".join(chr(ord(c) + 0xFEE0) if 0x21 <= ord(c) <= 0x7E else c for c in text)
-        msg = ctx["api"].send_message(ctx["channel_id"], result)
+        msg = ctx["api"].send_message(ctx["channel_id"], fmt.quote_block(result))
 
     @bot.command(name="reverse", aliases=["rev"])
     def reverse_cmd(ctx, args):
@@ -5435,7 +5458,7 @@ Example Usage:
             msg = ctx["api"].send_message(ctx["channel_id"], f"> **Reverse** :: Usage: `{bot.prefix}reverse <text>`")
             return
         text = " ".join(args)
-        msg = ctx["api"].send_message(ctx["channel_id"], text[::-1])
+        msg = ctx["api"].send_message(ctx["channel_id"], fmt.quote_block(text[::-1]))
 
     @bot.command(name="big", aliases=["regional"])
     def big_cmd(ctx, args):
@@ -5446,7 +5469,7 @@ Example Usage:
         mapping = {**{chr(ord('a') + i): f":regional_indicator_{chr(ord('a') + i)}: " for i in range(26)},
                    **{str(d): f"{d}\u20e3 " for d in range(10)}, " ": "   "}
         result = "".join(mapping.get(c, c) for c in text)
-        msg = ctx["api"].send_message(ctx["channel_id"], result)
+        msg = ctx["api"].send_message(ctx["channel_id"], fmt.quote_block(result))
 
     @bot.command(name="spoiler", aliases=["hide"])
     def spoiler_cmd(ctx, args):
@@ -5454,7 +5477,7 @@ Example Usage:
             msg = ctx["api"].send_message(ctx["channel_id"], f"> **Spoiler** :: Usage: `{bot.prefix}spoiler <text>`")
             return
         text = " ".join(args)
-        msg = ctx["api"].send_message(ctx["channel_id"], f"||{text}||")
+        msg = ctx["api"].send_message(ctx["channel_id"], fmt.quote_block(f"||{text}||"))
 
     @bot.command(name="codeblock", aliases=["code", "cb"])
     def codeblock_cmd(ctx, args):
@@ -5468,7 +5491,7 @@ Example Usage:
             lang = args[0].lower()
             text_parts = args[1:]
         text = " ".join(text_parts)
-        msg = ctx["api"].send_message(ctx["channel_id"], f"```{lang}\n{text}\n```")
+        msg = ctx["api"].send_message(ctx["channel_id"], fmt.quote_block(f"```{lang}\n{text}\n```"))
 
     @bot.command(name="b64encode", aliases=["base64encode", "b64e"])
     def b64encode_cmd(ctx, args):
@@ -5588,21 +5611,21 @@ Example Usage:
             msg = ctx["api"].send_message(ctx["channel_id"], f"> **Leet** :: Usage: `{bot.prefix}leet <text>`")
             return
         tbl = str.maketrans("aAeEiIoOsStTbBgGlL", "4433110055++886699")
-        msg = ctx["api"].send_message(ctx["channel_id"], " ".join(args).translate(tbl))
+        msg = ctx["api"].send_message(ctx["channel_id"], fmt.quote_block(" ".join(args).translate(tbl)))
 
     @bot.command(name="upper")
     def upper_cmd(ctx, args):
         if not args:
             msg = ctx["api"].send_message(ctx["channel_id"], f"> **Upper** :: Usage: `{bot.prefix}upper <text>`")
             return
-        msg = ctx["api"].send_message(ctx["channel_id"], " ".join(args).upper())
+        msg = ctx["api"].send_message(ctx["channel_id"], fmt.quote_block(" ".join(args).upper()))
 
     @bot.command(name="lower")
     def lower_cmd(ctx, args):
         if not args:
             msg = ctx["api"].send_message(ctx["channel_id"], f"> **Lower** :: Usage: `{bot.prefix}lower <text>`")
             return
-        msg = ctx["api"].send_message(ctx["channel_id"], " ".join(args).lower())
+        msg = ctx["api"].send_message(ctx["channel_id"], fmt.quote_block(" ".join(args).lower()))
 
     @bot.command(name="repeat", aliases=["rpt"])
     def repeat_cmd(ctx, args):
@@ -5613,7 +5636,7 @@ Example Usage:
         text = " ".join(args[1:])
         import time as _time
         for _ in range(count):
-            ctx["api"].send_message(ctx["channel_id"], text)
+            ctx["api"].send_message(ctx["channel_id"], fmt.quote_block(text))
             _time.sleep(0.5)
 
     @bot.command(name="wordcount", aliases=["wc"])
@@ -5637,7 +5660,7 @@ Example Usage:
         text = " ".join(args)
         words = text.split()
         result = " ".join("".join(_rand.sample(w, len(w))) for w in words)
-        msg = ctx["api"].send_message(ctx["channel_id"], result)
+        msg = ctx["api"].send_message(ctx["channel_id"], fmt.quote_block(result))
 
     @bot.command(name="zalgo")
     def zalgo_cmd(ctx, args):
@@ -5648,7 +5671,7 @@ Example Usage:
         combining = [chr(c) for c in range(0x0300, 0x036F)]
         text = " ".join(args)
         result = "".join(c + "".join(_rand.choices(combining, k=_rand.randint(1, 4))) if c.isalpha() else c for c in text)
-        msg = ctx["api"].send_message(ctx["channel_id"], result[:1900])
+        msg = ctx["api"].send_message(ctx["channel_id"], fmt.quote_block(result[:1900]))
 
     # ─── INFO / LOOKUP COMMANDS ──────────────────────────────────────────────
 
@@ -6141,9 +6164,9 @@ Example Usage:
         cid = ctx["channel_id"]
         def _run():
             for i in range(count, 0, -1):
-                bot.api.send_message(cid, str(i))
+                bot.api.send_message(cid, fmt.quote_block(str(i)))
                 _time.sleep(1)
-            bot.api.send_message(cid, f"**{label}**")
+            bot.api.send_message(cid, fmt.quote_block(f"**{label}**"))
         threading.Thread(target=_run, daemon=True).start()
 
     # ─── MISCELLANEOUS UTILITY ───────────────────────────────────────────────
@@ -6570,7 +6593,7 @@ Example Usage:
         output = "\n".join(lines)
         if len(output) > 1900:
             output = output[:1900] + "\n…"
-        api.send_message(channel_id, output)
+        api.send_message(channel_id, fmt.quote_block(output))
 
     @bot.command(name="slash", aliases=["sendslash", "useslash"])
     def slash_cmd(ctx, args):
@@ -6737,6 +6760,8 @@ Example Usage:
                 print(f"[READALL] Guild message scan failed: {exc}")
                 output = "> **✗ ReadAll** :: Failed while reading guild messages."
 
+            if not output.lstrip().startswith(">"):
+                output = fmt.quote_block(output)
             if status_id:
                 api.edit_message(channel_id, status_id, output)
             else:
@@ -6795,7 +6820,7 @@ Example Usage:
         output = "\n".join(lines)
         if len(output) > 1900:
             output = output[:1900] + "\n…"
-        api.edit_message(channel_id, status_id, output)
+        api.edit_message(channel_id, status_id, fmt.quote_block(output))
 
     # ─── AUTOBUMP COMMANDS ──────────────────────────────────────────────────
 
@@ -7275,6 +7300,7 @@ Example Usage:
             "profile": {
                 "title": f"{p}help Profile",
                 "lines": [
+                    ("userinfo [user_id]", "View public account and profile details"),
                     ("avatar [user_id]", "Get avatar/banner URLs"),
                     ("setpfp <url>", "Set profile picture"),
                     ("stealpfp <user_id>", "Steal user PFP"),
@@ -7302,6 +7328,17 @@ Example Usage:
                             "",
                             {"type": "section", "text": "Arguments"},
                             ("user_id", "Discord user ID to look up (optional, defaults to you)"),
+                        ),
+
+                        "userinfo": help_page(
+                            f"{p}userinfo [user_id]",
+                            "Looks up public account and profile details, including bio, pronouns, and accent color.",
+                            "",
+                            {"type": "section", "text": "Aliases"},
+                            "whois, lookup, profile",
+                            "",
+                            {"type": "section", "text": "Arguments"},
+                            ("user_id", "Discord user ID or mention (optional, defaults to you)"),
                         ),
 
                         "setpfp": help_page(
@@ -10296,7 +10333,7 @@ Example Usage:
             notice = afk_system.build_afk_notice(bot.user_id)
             sent = bot.api.send_message(
                 channel_id,
-                f"> **AFK Notice** :: {notice}",
+                f"> {notice}",
                 reply_to=msg_id,
             )
             if sent:
@@ -10337,7 +10374,7 @@ Example Usage:
                     pass
 
         is_setting_afk = content_after_prefix.split()[:1] in (["afk"], ["away"])
-        # Match the actual confirmation format: "> **✓ AFK** :: AFK enabled — …"
+        # Keep the AFK command confirmation from clearing the just-set state.
         is_afk_confirmation = "AFK enabled" in content or "Set AFK:" in content or "AFK Notice" in content
 
         if (
@@ -10350,7 +10387,7 @@ Example Usage:
             away_time = afk_system.get_time_message(bot.user_id)
             afk_system.remove_afk(bot.user_id)
             afk_system.save_state()
-            wb_msg = f"> **Welcome Back** :: AFK removed · You were away for **{away_time}**" if away_time else "> **Welcome Back** :: AFK removed"
+            wb_msg = afk_system.build_afk_cleared_notice(away_time)
             try:
                 bot.api.send_message(channel_id, wb_msg)
             except Exception:
@@ -11214,6 +11251,7 @@ Example Usage:
                 f"> Nitro      :: {nitro_str}",
                 f"> Mutual     :: {mutual_count} shared server(s)",
             ]
+            lines.extend(f"> {detail}" for detail in format_public_profile_details(d))
             if public_flags:
                 lines.append(f"> Flags      :: {public_flags}")
             if banner_url:
@@ -12411,7 +12449,7 @@ Example Usage:
                     mode = str(args[1]).lower().strip()
 
         if not uid.isdigit():
-            msg = api.send_message(ctx["channel_id"], "User not found")
+            msg = api.send_message(ctx["channel_id"], "> User not found")
             return
 
         guild_id = _resolve_ctx_guild_id(ctx)
@@ -12419,7 +12457,7 @@ Example Usage:
         try:
             d, user, _ = _lookup_target_profile(api, uid, guild_id=guild_id)
             if not d or not user:
-                msg = api.send_message(ctx["channel_id"], f"User not found: {uid}")
+                msg = api.send_message(ctx["channel_id"], f"> User not found: {uid}")
                 return
             user_id    = user.get("id") or uid
 
@@ -12465,7 +12503,7 @@ Example Usage:
                 if banner_url:
                     msg = api.send_message(ctx["channel_id"], banner_url)
                 else:
-                    msg = api.send_message(ctx["channel_id"], "No banner")
+                    msg = api.send_message(ctx["channel_id"], "> No banner")
             else:
                 urls = [avatar_url]
                 if banner_url:
@@ -12474,7 +12512,7 @@ Example Usage:
                     urls.append(guild_avatar_url)
                 msg = api.send_message(ctx["channel_id"], "\n".join(urls))
         except Exception as e:
-            msg = api.send_message(ctx["channel_id"], f"Error: {str(e)[:80]}")
+            msg = api.send_message(ctx["channel_id"], f"> Error: {str(e)[:80]}")
 
     @bot.command(name="banner", aliases=["getbanner", "bannerurl"])
     def banner_cmd(ctx, args):
@@ -12484,7 +12522,7 @@ Example Usage:
             uid = str(args[0]).strip("<@!>")
 
         if not uid.isdigit():
-            msg = api.send_message(ctx["channel_id"], "User not found")
+            msg = api.send_message(ctx["channel_id"], "> User not found")
             return
 
         guild_id = _resolve_ctx_guild_id(ctx)
@@ -12492,19 +12530,19 @@ Example Usage:
         try:
             d, user, _ = _lookup_target_profile(api, uid, guild_id=guild_id)
             if not d or not user:
-                msg = api.send_message(ctx["channel_id"], f"User not found: {uid}")
+                msg = api.send_message(ctx["channel_id"], f"> User not found: {uid}")
                 return
             user_id = user.get("id") or uid
             banner_hash = user.get("banner") or (d.get("user_profile") or {}).get("banner")
             if not banner_hash:
-                msg = api.send_message(ctx["channel_id"], "No banner")
+                msg = api.send_message(ctx["channel_id"], "> No banner")
                 return
 
             ext = "gif" if str(banner_hash).startswith("a_") else "png"
             banner_url = f"https://cdn.discordapp.com/banners/{user_id}/{banner_hash}.{ext}?size=4096"
             msg = api.send_message(ctx["channel_id"], banner_url)
         except Exception as e:
-            msg = api.send_message(ctx["channel_id"], f"Error: {str(e)[:80]}")
+            msg = api.send_message(ctx["channel_id"], f"> Error: {str(e)[:80]}")
 
     # -----------------------------------------------------------------------
     # roleinfo — details on a role in the current guild

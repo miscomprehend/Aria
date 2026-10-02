@@ -44,6 +44,8 @@ class DiscordAPIClient:
         self.user_id: Optional[str] = None
         self.user_data: Optional[Dict[str, Any]] = None
         self.auth_failed = False
+        self.verification_blocked = False
+        self.verification_endpoint: Optional[str] = None
         self._response_cache: Dict[str, Dict[str, Any]] = {}
         self._rate_limit_log_times: Dict[str, float] = {}
         self.last_request_latency_ms: Optional[float] = None
@@ -107,6 +109,7 @@ class DiscordAPIClient:
         return {
             "circuit_breaker_open": self.circuit_open,
             "circuit_breaker_hits": self.circuit_breaker_hits,
+            "verification_blocked": self.verification_blocked,
             "messages_last_minute": len([t for t in self.message_timestamps if current_time - t <= 60]),
             "reactions_last_minute": len([t for t in self.reaction_timestamps if current_time - t <= 60]),
             "time_since_circuit_reset": current_time - self.last_circuit_reset
@@ -230,7 +233,7 @@ class DiscordAPIClient:
         if _global_retry > 10:
             print(f"[REQUEST-ERROR] {method} {endpoint}: exceeded global retry limit, aborting.")
             return None
-        if self.auth_failed:
+        if self.auth_failed or getattr(self, "verification_blocked", False):
             return None
 
         if self._is_cacheable_get(method, endpoint):
@@ -294,60 +297,63 @@ class DiscordAPIClient:
                     self.auth_failed = True
                 return response
 
-            # Handle 403 - message operations (delete/edit) return 403 for missing perms; skip silently
-            if response.status_code == 403:
-                import re as _re
-                if _re.search(r'/channels/\d+/messages/\d+', endpoint):
-                    return response  # missing perms on message op — not retryable
-                if self._is_auth_sensitive_403(endpoint) and retry_count < 2:
-                    print(f"[AUTH-ERROR] 403 on {endpoint} - refreshing headers and retrying ({retry_count + 1}/2)...")
-                    self.header_spoofer.rotate_profile()
-                    self.header_spoofer._update_session_headers()
-                    time.sleep(0.1)
-                    return self.request(method, endpoint, data, params, headers, max_retries, retry_count + 1, _global_retry=_global_retry+1)
-
-            # Return verification challenges unchanged; never spoof, solve, or retry them.
-            if response.status_code == 400:
+            response_data = {}
+            if response.status_code in {400, 403, 429}:
                 try:
                     response_data = response.json()
                     if not isinstance(response_data, dict):
                         response_data = {}
+                except Exception:
+                    response_data = {}
+
+            # Do not solve, spoof, or continue sending after Discord requests verification.
+            if response.status_code in {400, 403}:
+                try:
                     verification_fields = {
                         "captcha_key",
                         "captcha_sitekey",
                         "captcha_service",
                         "captcha_rqdata",
                         "captcha_rqtoken",
+                        "captcha_required",
                     }
                     if any(response_data.get(field) for field in verification_fields):
+                        self.verification_blocked = True
+                        self.verification_endpoint = endpoint
                         print(f"[AUTH-CHALLENGE] Discord requires verification for {endpoint}; request was not retried.")
+                        return response
                     else:
-                        error_code = response_data.get("code", 0)
-                        error_msg = response_data.get("message", str(response_data))
-                        print(f"[API-ERROR] {endpoint}: [{error_code}] {error_msg}")
-                except Exception as e:
-                    print(f"[API-ERROR] Could not parse 400 response for {endpoint}: {e}")
+                        if response.status_code == 400:
+                            error_code = response_data.get("code", 0)
+                            error_msg = response_data.get("message", str(response_data))
+                            print(f"[API-ERROR] {endpoint}: [{error_code}] {error_msg}")
+                except Exception:
+                    pass
 
-            # Handle rate limiting (429)
+            # Store the complete cooldown and return the failed request without replaying it.
             if response.status_code == 429:
                 self._record_rate_limit_hit()  # Record for circuit breaker
-                retry_after = self.rate_limiter.handle_429(dict(response.headers), endpoint)
+                retry_after = self.rate_limiter.handle_429(
+                    dict(response.headers),
+                    endpoint,
+                    global_rate_limit=bool(response_data.get("global")),
+                    retry_after=response_data.get("retry_after"),
+                )
                 if self._is_cacheable_get(method, endpoint):
                     cached = self._get_cached_response(endpoint, allow_stale=True)
                     if cached is not None:
                         last_logged_at = self._rate_limit_log_times.get(endpoint, 0.0)
                         now = time.time()
                         if now - last_logged_at >= 30.0:
-                            print(f"[RATE-LIMIT] Using cached response for {endpoint} after 429 ({retry_after}s retry_after)")
+                            print(f"[RATE-LIMIT] Using cached response for {endpoint}; cooldown {retry_after}s")
                             self._rate_limit_log_times[endpoint] = now
                         return cached
                 last_logged_at = self._rate_limit_log_times.get(endpoint, 0.0)
                 now = time.time()
                 if now - last_logged_at >= 30.0:
-                    print(f"[RATE-LIMIT] Waiting {retry_after}s before retrying {endpoint}...")
+                    print(f"[RATE-LIMIT] {endpoint} blocked for {retry_after}s; request was not retried.")
                     self._rate_limit_log_times[endpoint] = now
-                time.sleep(min(retry_after, 5))
-                return self.request(method, endpoint, data, params, headers, max_retries, retry_count, _global_retry=_global_retry+1)
+                return response
 
             # Update rate limit buckets
             if "X-RateLimit-Bucket" in response.headers:
@@ -390,20 +396,8 @@ class DiscordAPIClient:
         return None
 
     def _normalize_outbound_text(self, content: str) -> str:
-        """Normalize bot output to plain text style (no quote/bold wrappers)."""
-        text = "" if content is None else str(content)
-        # Remove common wrapper style used across command responses.
-        text = text.replace("> **", "")
-        text = text.replace("**", "")
-        return text
-    
-    def _normalize_outbound_text(self, content: str) -> str:
-        """Normalize bot output to plain text style (no quote/bold wrappers)."""
-        text = "" if content is None else str(content)
-        # Remove common wrapper style used across command responses.
-        text = text.replace("> **", "")
-        text = text.replace("**", "")
-        return text
+        """Preserve intentional Discord formatting while normalizing null content."""
+        return "" if content is None else str(content)
 
     def send_message(self, channel_id: str, content: str, reply_to: Optional[str] = None, 
                     tts: bool = False) -> Optional[Dict[str, Any]]:

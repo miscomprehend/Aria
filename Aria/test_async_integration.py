@@ -75,7 +75,7 @@ def test_async_gateway_integration():
     # Test bot initialization
     print("🏗️  Testing bot initialization...")
     try:
-        bot = DiscordBot(token, config.get("prefix", "$"), config)
+        bot = DiscordBot(token, config.get("prefix", ";"), config)
         print("✅ DiscordBot initialized successfully")
         print(f"   Async Gateway: {bot.use_async_gateway}")
         print(f"   Gateway Bridge: {bot.gateway_bridge}")

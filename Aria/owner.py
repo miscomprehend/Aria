@@ -9,7 +9,7 @@ class BotCustomizer:
     def __init__(self):
         self.config = {
             "debug_color": "cyan",
-            "command_prefix": "+",
+            "command_prefix": ";",
             "auto_react": True,
             "reaction_emoji": "💀",
             "log_level": "info",

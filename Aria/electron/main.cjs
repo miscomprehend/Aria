@@ -1,4 +1,5 @@
-const { app, BrowserWindow, Menu, dialog, ipcMain, shell } = require("electron");
+const { app, BrowserWindow, Menu, dialog, ipcMain, session, shell } = require("electron");
+const crypto = require("node:crypto");
 const fs = require("node:fs");
 const http = require("node:http");
 const path = require("node:path");
@@ -26,6 +27,41 @@ let backendContext = null;
 let dashboardUrl = null;
 let mainWindow = null;
 let tokenWindow = null;
+let desktopAuthToken = null;
+let logFilePath = null;
+
+function logMessage(level, message) {
+  const line = `${new Date().toISOString()} [${level}] ${message}`;
+  if (level === "ERROR") console.error(line);
+  else console.log(line);
+  if (logFilePath) {
+    try {
+      fs.appendFileSync(logFilePath, `${line}\n`, "utf8");
+    } catch (error) {
+      console.error(`Could not write Aria log: ${error.message}`);
+    }
+  }
+}
+
+function initializeLogging() {
+  logFilePath = path.join(app.getPath("userData"), "logs", "aria-desktop.log");
+  fs.mkdirSync(path.dirname(logFilePath), { recursive: true });
+  logMessage("INFO", `Desktop log: ${logFilePath}`);
+}
+
+function attachBackendOutput(stream, level) {
+  let pending = "";
+  stream.on("data", (chunk) => {
+    const lines = `${pending}${chunk.toString()}`.split(/\r?\n/);
+    pending = lines.pop() || "";
+    for (const line of lines) {
+      if (line.trim()) logMessage(level, `[backend] ${line.trim()}`);
+    }
+  });
+  stream.on("end", () => {
+    if (pending.trim()) logMessage(level, `[backend] ${pending.trim()}`);
+  });
+}
 
 function requestDashboard(port) {
   return new Promise((resolve) => {
@@ -121,7 +157,7 @@ function runBackendScript(scriptName, args = [], options = {}) {
     : [path.join(context.cwd, scriptName), ...args];
   return spawn(context.command, scriptArgs, {
     cwd: context.cwd,
-    env: { ...process.env, ARIA_DESKTOP_MODE: "1", ...options.env },
+    env: { ...process.env, ARIA_DESKTOP_MODE: "1", PYTHONUNBUFFERED: "1", ...options.env },
     stdio: options.stdio || ["ignore", "ignore", "pipe"],
     windowsHide: true,
   });
@@ -129,15 +165,79 @@ function runBackendScript(scriptName, args = [], options = {}) {
 
 function startBackend(runtimeToken = null) {
   backendStartError = null;
+  desktopAuthToken = crypto.randomBytes(32).toString("hex");
+  logMessage("INFO", "Starting Aria backend.");
   backendProcess = runBackendScript("aria.py", [], {
-    env: { ARIA_TOKEN_STDIN: runtimeToken ? "1" : "0" },
-    stdio: ["pipe", "ignore", "ignore"],
+    env: {
+      ARIA_TOKEN_STDIN: runtimeToken ? "1" : "0",
+      ARIA_ELECTRON_AUTH_TOKEN: desktopAuthToken,
+    },
+    stdio: ["pipe", "pipe", "pipe"],
   });
+  attachBackendOutput(backendProcess.stdout, "INFO");
+  attachBackendOutput(backendProcess.stderr, "ERROR");
   backendProcess.stdin.on("error", () => {});
   backendProcess.stdin.end(runtimeToken ? `${runtimeToken}\n` : "");
   backendProcess.once("error", (error) => {
     backendStartError = error;
+    logMessage("ERROR", `Could not start the Aria backend: ${error.message}`);
   });
+  backendProcess.once("exit", (code, signal) => {
+    logMessage(code === 0 ? "INFO" : "ERROR", `Aria backend exited (${code ?? signal}).`);
+  });
+}
+
+function requestOwnerSession(port, token) {
+  return new Promise((resolve, reject) => {
+    const payload = JSON.stringify({ token });
+    const request = http.request({
+      hostname: HOST,
+      port,
+      path: "/__electron__/owner-session",
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Content-Length": Buffer.byteLength(payload),
+      },
+    }, (response) => {
+      let body = "";
+      response.setEncoding("utf8");
+      response.on("data", (chunk) => { body += chunk; });
+      response.on("end", () => {
+        if (response.statusCode !== 200) {
+          reject(new Error(`Owner sign-in failed with HTTP ${response.statusCode}.`));
+          return;
+        }
+        const cookie = (response.headers["set-cookie"] || [])
+          .map((value) => value.split(";", 1)[0])
+          .map((value) => value.match(/^([^=]+)=(.*)$/))
+          .find(Boolean);
+        if (!cookie) {
+          reject(new Error("The dashboard did not return an owner session cookie."));
+          return;
+        }
+        resolve({ name: cookie[1], value: cookie[2] });
+      });
+    });
+    request.on("error", reject);
+    request.end(payload);
+  });
+}
+
+async function authenticateElectronOwner() {
+  if (!desktopAuthToken || !dashboardUrl) return;
+  const port = Number(new URL(dashboardUrl).port);
+  const cookie = await requestOwnerSession(port, desktopAuthToken);
+  await session.defaultSession.cookies.set({
+    url: dashboardUrl,
+    name: cookie.name,
+    value: cookie.value,
+    path: "/",
+    httpOnly: true,
+    sameSite: "lax",
+  });
+  desktopAuthToken = null;
+  logMessage("INFO", "Signed in to the locally launched dashboard as owner.");
 }
 
 async function waitForDashboard() {
@@ -148,7 +248,10 @@ async function waitForDashboard() {
       throw new Error(`Aria backend exited with code ${backendProcess.exitCode ?? backendProcess.signalCode}. Check its Python dependencies and config.`);
     }
     const url = await findDashboard();
-    if (url) return url;
+    if (url) {
+      logMessage("INFO", `Dashboard is ready at ${url}.`);
+      return url;
+    }
     await new Promise((resolve) => setTimeout(resolve, 350));
   }
   throw new Error("Aria's dashboard did not start on ports 8080-8084.");
@@ -283,13 +386,16 @@ ipcMain.handle("setup:save-token", async (event, payload) => {
   try {
     await saveTokenConfig(token, remember);
     await stopBackend();
+    logMessage("INFO", "Restarting Aria with the updated token setting.");
     startBackend(remember ? null : token);
     dashboardUrl = await waitForDashboard();
+    await authenticateElectronOwner();
     if (mainWindow) await mainWindow.loadURL(new URL("/dashboard", dashboardUrl).toString());
     else createWindow();
     if (tokenWindow && !tokenWindow.isDestroyed()) tokenWindow.close();
     return { ok: true };
   } catch (error) {
+    logMessage("ERROR", `Token setup failed: ${error.stack || error.message}`);
     return { ok: false, error: error.message || "Could not save the token." };
   }
 });
@@ -367,17 +473,28 @@ function installMenu() {
 }
 
 app.whenReady().then(async () => {
-  installMenu();
   try {
+    initializeLogging();
+    logMessage("INFO", "Starting Aria desktop.");
+    installMenu();
+    logMessage("INFO", "Checking for an existing Aria web panel.");
     dashboardUrl = await findDashboard();
     if (!dashboardUrl) {
+      logMessage("INFO", "No existing panel found; starting a private backend.");
       startBackend();
-      await waitForDashboard();
+      dashboardUrl = await waitForDashboard();
+      await authenticateElectronOwner();
+    } else {
+      logMessage("INFO", `Using existing panel at ${dashboardUrl}; its normal login remains enabled.`);
     }
     createWindow();
-    if (backendContext && !hasSavedToken()) createTokenWindow();
+    if (backendProcess && !hasSavedToken()) {
+      logMessage("INFO", "No saved token found; opening token setup.");
+      createTokenWindow();
+    }
   } catch (error) {
-    dialog.showErrorBox("Aria could not start", error.message);
+    logMessage("ERROR", `Aria could not start: ${error.stack || error.message}`);
+    dialog.showErrorBox("Aria could not start", `${error.message}\n\nLog file: ${logFilePath || "unavailable"}`);
     app.quit();
   }
 });
@@ -387,6 +504,7 @@ app.on("activate", () => {
 });
 
 app.on("before-quit", () => {
+  logMessage("INFO", "Closing Aria desktop.");
   if (backendProcess && backendProcess.exitCode === null) backendProcess.kill();
 });
 

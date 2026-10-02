@@ -23,6 +23,7 @@
       <div class="nav-links">
         <a href="/home">Home</a>
         <a href="/features">Features</a>
+        <a href="/#community">Community</a>
         <a href="/docs">Docs</a>
         <a href="/#faq">FAQ</a>
         <a href="/signup">Sign up</a>
@@ -34,7 +35,7 @@
     <section class="home-hero">
       <div class="home-hero-inner">
         <div class="home-eyebrow">Personal runtime / 01</div>
-        <h1 class="home-headline">Aria<span class="home-headline-accent">, in control.</span></h1>
+        <h1 class="home-headline">Aria</h1>
         <p class="home-lead">One place for your live runtime, commands, presence, history, and account controls.</p>
         <div class="home-cta-row">
           <a class="btn btn-primary" href="/signup">Create account <span aria-hidden="true">↗</span></a>
@@ -48,15 +49,39 @@
         </div>
       </div>
       <aside class="home-hero-art">
-        <div class="home-live-console" aria-label="Live bot activity">
-          <div class="home-live-console-top"><span><i></i> BOT / LIVE LOG</span><span id="homeLiveLogUpdated">CONNECTING</span></div>
-          <div class="home-live-instance">
-            <span class="home-live-mark" aria-hidden="true">A</span>
-            <div><small>INSTANCE</small><strong>$01</strong></div>
-            <span class="home-live-state">PRIMARY</span>
-          </div>
-          <div class="home-live-log-list" id="homeSignalFeed" aria-live="polite" aria-relevant="additions text">
-            <div class="home-live-log-empty">Waiting for runtime activity…</div>
+        <div class="home-live-console" aria-label="Aria live activity preview">
+          <div class="home-live-console-top"><span><i></i> ARIA / ACTIVITY</span><span id="homeLiveLogUpdated">CONNECTING</span></div>
+          <div class="home-chat-layout">
+            <aside class="home-server-rail" aria-label="Aria server">
+              <span class="home-live-mark" aria-hidden="true">A</span>
+              <span class="home-server-divider"></span>
+              <span class="home-server-add" aria-hidden="true">+</span>
+            </aside>
+            <aside class="home-channel-rail" aria-label="Activity channels">
+              <span class="home-channel-group">ARIA WORKSPACE</span>
+              <button class="home-channel-entry is-active" type="button" data-home-channel="runtime" aria-pressed="true"><b>#</b> runtime</button>
+              <button class="home-channel-entry" type="button" data-home-channel="presence" aria-pressed="false"><b>#</b> presence</button>
+              <button class="home-channel-entry" type="button" data-home-channel="command-feed" aria-pressed="false"><b>#</b> command-feed</button>
+              <div class="home-channel-instance"><i class="home-live-indicator"></i><span><strong>Aria / $01</strong><small>PRIMARY INSTANCE</small></span></div>
+            </aside>
+            <section class="home-channel-main" aria-label="Runtime channel">
+              <div class="home-channel-heading">
+                <div><strong><b>#</b> <span id="homeChannelName">aria-runtime</span></strong><small>Gateway events and activity</small></div>
+                <span class="home-channel-live" id="homeChannelMode"><i></i><b id="homeChannelModeLabel">LIVE</b></span>
+              </div>
+              <div class="home-live-log-list" id="homeSignalFeed" aria-live="polite" aria-relevant="additions text">
+                <div class="home-live-log-empty"><span aria-hidden="true">↻</span>Waiting for gateway READY</div>
+              </div>
+              <div class="home-preview-pop" id="homePreviewPopup" role="status" aria-live="polite" hidden>
+                <div><strong id="homePreviewPopupTitle">Aria preview</strong><button type="button" id="homePreviewPopupClose" aria-label="Close preview response">×</button></div>
+                <p id="homePreviewPopupMessage"></p>
+                <small>SIMULATED / NOTHING SENT</small>
+              </div>
+              <form class="home-channel-compose" id="homeActivityCompose">
+                <input id="homeActivityInput" type="text" maxlength="120" autocomplete="off" placeholder="Message #aria-runtime" aria-label="Try a simulated Aria command" />
+                <button type="submit" aria-label="Send simulated command" title="Send preview command">↑</button>
+              </form>
+            </section>
           </div>
           <div class="home-live-console-foot"><span class="home-live-indicator"></span> SAFE EVENT SUMMARY</div>
         </div>
@@ -110,20 +135,30 @@
         </div>
       </div>
       <div class="home-rpc-demo">
-        <div class="home-demo-topline"><span><i></i> RPC / LIVE</span><span>PREVIEW</span></div>
-        <div class="home-demo-profile">
-          <div class="home-demo-avatar">A<span></span></div>
-          <div><strong>aria.user</strong><small>sky over the city</small></div>
+        <div class="home-demo-topline"><span><i></i> DISCORD / PROFILE</span><span>LIVE EXAMPLE</span></div>
+        <div class="home-profile-banner"><span class="home-profile-banner-label">ARIA / RUNTIME</span></div>
+        <div class="home-demo-profile home-profile-identity">
+          <div class="home-demo-avatar" aria-hidden="true">A<span></span></div>
+          <div class="home-profile-name"><strong>Aria</strong><small>aria <b class="home-profile-nitro">NITRO</b></small></div>
           <span class="home-demo-presence">ONLINE</span>
         </div>
+        <div class="home-demo-status">keeping Aria in sync</div>
+        <div class="home-profile-member"><span>Member since</span><strong>13 May 2015</strong></div>
         <div class="home-demo-activity">
-          <div class="home-demo-art"><span class="home-equalizer"><i></i><i></i><i></i><i></i><i></i></span></div>
+          <div class="home-demo-art is-listening" aria-hidden="true"><span class="home-equalizer"><i></i><i></i><i></i><i></i><i></i></span></div>
           <div class="home-demo-activity-copy">
             <span class="home-demo-kicker" id="homeDemoActivityType">LISTENING TO</span>
-            <strong id="homeDemoTitle">Afterglow</strong>
-            <span id="homeDemoDetails">Aria Radio · Night drive</span>
-            <div class="home-demo-progress"><i></i></div>
-            <small>1:42 <span>3:58</span></small>
+            <strong id="homeDemoTitle">Aria Radio</strong>
+            <span id="homeDemoDetails">Runtime mix · Vol 01</span>
+            <span class="home-demo-artist" id="homeDemoArtist">Artist · Aria Audio</span>
+            <span class="home-demo-activity-meta" id="homeDemoActivityMeta" hidden></span>
+          </div>
+        </div>
+        <div class="home-demo-player" id="homeDemoPlayer" role="group" aria-label="Simulated Aria Radio player">
+          <button class="home-demo-play-toggle" id="homeDemoPlayToggle" type="button" aria-label="Pause simulated track" title="Pause preview">Ⅱ</button>
+          <div class="home-demo-player-main">
+            <div class="home-demo-track-times"><time id="homeDemoElapsed">1:24</time><time id="homeDemoDuration">3:42</time></div>
+            <input class="home-demo-seek" id="homeDemoSeek" type="range" min="0" max="222" value="84" step="1" aria-label="Aria Radio preview position" aria-valuetext="1:24 of 3:42" />
           </div>
         </div>
         <div class="home-demo-actions" role="group" aria-label="Preview presence mode">
@@ -131,7 +166,110 @@
           <button type="button" data-home-preview-mode="playing" aria-pressed="false">Playing</button>
           <button type="button" data-home-preview-mode="watching" aria-pressed="false">Watching</button>
         </div>
-        <div class="home-demo-code"><code id="homeDemoCommand">$rpc listening name="Afterglow" details="Aria Radio"</code><span>LIVE EXAMPLE</span></div>
+        <div class="home-demo-code"><code id="homeDemoCommand">$rpc listening name="Aria Radio" details="Runtime mix"</code><span>SIMULATED</span></div>
+      </div>
+    </section>
+
+    <section class="home-moments" id="runtime-moments" aria-label="Runtime features">
+      <div class="home-moments-heading">
+        <span class="home-feature-num">ARIA / IN THE DETAILS</span>
+        <h2>Small signals.<br><span>Always in reach.</span></h2>
+        <p>Presence, message context, and runtime controls in a familiar chat-shaped view.</p>
+      </div>
+      <div class="home-moments-grid">
+        <article class="home-moment home-moment-uptime">
+          <div class="home-moment-heading"><span>01 / RUNTIME</span><b>LIVE</b></div>
+          <h3>Keep your runtime online</h3>
+          <p>Your connected Aria instance keeps working while your browser or PC is away.</p>
+          <div class="home-uptime-preview" aria-label="Aria worker uptime telemetry">
+            <div class="home-uptime-metric"><span>WORKER AGE</span><strong>18:42:16</strong><small>CONNECTED CONTINUOUSLY</small></div>
+            <div class="home-uptime-chart" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+            <div class="home-uptime-readout"><span>GATEWAY <b>STABLE</b></span><span>RECONNECTS <b>00</b></span></div>
+          </div>
+        </article>
+
+        <article class="home-moment home-moment-messages">
+          <div class="home-moment-heading"><span>02 / MESSAGE CONTEXT</span><b>CAPTURE</b></div>
+          <h3>See what changed</h3>
+          <p>Review recent deleted and edited messages from channels you can access.</p>
+          <div class="home-audit-preview">
+            <div class="home-audit-head"><span>EVENT / 042</span><b>EDIT CAPTURED</b></div>
+            <div class="home-audit-change is-removed"><span>-</span><code>status: away</code></div>
+            <div class="home-audit-change is-added"><span>+</span><code>status: online</code></div>
+            <div class="home-audit-meta"><span>CHANNEL</span><strong>#aria-runtime</strong><time>20:43:08</time></div>
+            <div class="home-audit-delete"><i></i><span>DELETE EVENT</span><strong>runtime check</strong><time>20:41:32</time></div>
+          </div>
+          <div class="home-command-chip"><code>$snipe</code><code>$esnipe</code></div>
+        </article>
+
+        <article class="home-moment home-moment-rotation">
+          <div class="home-moment-heading"><span>03 / PRESENCE</span><b>ROTATION</b></div>
+          <h3>Let your status move</h3>
+          <p>Cycle through custom statuses and presences on a timer.</p>
+          <div class="home-rotation-preview">
+            <div class="home-rotation-active"><span>ACTIVE PRESENCE / 01</span><strong>Aria is in sync</strong><b>ONLINE</b></div>
+            <div class="home-rotation-track" aria-hidden="true"><i class="is-past"></i><i class="is-current"></i><i></i><i></i><i></i></div>
+            <div class="home-rotation-route"><span>SYNC</span><span>SCAN</span><span>RADIO</span></div>
+            <div class="home-rotation-next"><span>NEXT SIGNAL</span><strong>Runtime scan</strong><small>04:18</small></div>
+          </div>
+          <div class="home-command-chip"><code>$rotation</code><span>EVERY 5 MIN</span></div>
+        </article>
+
+        <article class="home-moment home-moment-replies">
+          <div class="home-moment-heading"><span>04 / COMMANDS</span><b>AUTO-DELETE</b></div>
+          <h3>Replies tidy themselves</h3>
+          <p>Command replies clear after two minutes, or on the schedule you choose.</p>
+          <div class="home-lifecycle-preview">
+            <div class="home-lifecycle-head"><span>REPLY LIFECYCLE</span><b>DEFAULT / 02:00</b></div>
+            <div class="home-lifecycle-command"><code>$status idle</code><span>RESPONSE SENT</span></div>
+            <div class="home-lifecycle-track"><i></i></div>
+            <div class="home-lifecycle-stages"><span>POSTED</span><span>TTL 00:36</span><span>CLEARED</span></div>
+            <div class="home-lifecycle-foot"><span>DELETE POLICY</span><strong>ACTIVE</strong></div>
+          </div>
+          <div class="home-command-chip"><code>$autodelete</code><span>2 MIN DEFAULT</span></div>
+        </article>
+
+        <article class="home-moment home-moment-token">
+          <div class="home-moment-heading"><span>05 / ACCOUNT</span><b>PRIVATE</b></div>
+          <h3>Your token stays hidden</h3>
+          <p>Aria uses your linked token to run the instance. Dashboard responses omit its value.</p>
+          <div class="home-boundary-preview">
+            <div class="home-boundary-node"><span>01 / INSTANCE</span><strong>Aria runtime</strong><code>credential available to worker</code></div>
+            <div class="home-boundary-connector" aria-hidden="true"><i></i></div>
+            <div class="home-boundary-node is-response"><span>02 / RESPONSE</span><strong>Dashboard API</strong><code>token: omitted</code></div>
+            <div class="home-boundary-foot"><i></i> TOKEN VALUE NOT INCLUDED IN RESPONSE</div>
+          </div>
+          <a class="home-moment-link" href="/docs#tokens">Token safety <span aria-hidden="true">↗</span></a>
+        </article>
+      </div>
+    </section>
+
+    <section class="home-community" id="community" aria-labelledby="homeCommunityTitle">
+      <div class="home-community-copy">
+        <span class="home-feature-num">ARIA / COMMUNITY</span>
+        <h2 id="homeCommunityTitle">The next chapter<br><span>is better together.</span></h2>
+        <p>Join the Aria Discord for project updates, support, and conversations with the community.</p>
+        <ol class="home-community-steps">
+          <li><span>01</span><div><strong>Open the invite</strong><small>Join Aria’s Discord server.</small></div></li>
+          <li><span>02</span><div><strong>Get oriented</strong><small>Catch up on updates and community news.</small></div></li>
+          <li><span>03</span><div><strong>Make yourself at home</strong><small>Ask questions and share what you’re building with Aria.</small></div></li>
+        </ol>
+      </div>
+      <div class="home-community-invite">
+        <div class="home-community-invite-top"><span><i></i> DISCORD / INVITE</span><span id="homeCommunityPreviewStatus">CONNECTING</span></div>
+        <div class="home-community-identity">
+          <span class="home-community-mark"><img id="homeCommunityGuildIcon" src="/static/images/aria-favicon.png" alt="" /></span>
+          <div><small>DISCORD SERVER</small><strong id="homeCommunityGuildName">Aria</strong><span class="home-community-channel"><b aria-hidden="true">#</b><span id="homeCommunityChannel">general</span></span></div>
+          <span class="home-community-badge">INVITE</span>
+        </div>
+        <div class="home-community-presence" aria-live="polite">
+          <span><i></i><strong id="homeCommunityMemberCount">—</strong> <span id="homeCommunityMemberLabel">members</span></span>
+          <span><i></i><strong id="homeCommunityOnlineCount">—</strong> online</span>
+        </div>
+        <div class="home-community-divider"><span>YOUR INVITATION</span></div>
+        <p>Meet other Aria users and stay close to what’s happening.</p>
+        <a class="home-community-join" href="https://discord.gg/BzDkY5WbN" target="_blank" rel="noopener noreferrer">Join Aria on Discord <span aria-hidden="true">↗</span></a>
+        <small class="home-community-note">Opens Discord in a new tab</small>
       </div>
     </section>
 
@@ -213,18 +351,10 @@
 
     <!-- FOOTER STRIP -->
     <footer class="home-footer">
-      <div class="home-footer-brand">ARIA</div>
       <div class="home-footer-links">
-        <a href="/tos">Terms</a>
-        <a href="/privacy">Privacy</a>
-        <a href="/privacy#cookies">Cookies</a>
-        <a href="/features">Features</a>
         <a href="/docs">Docs</a>
-        <a href="/#features">Modules</a>
-        <a href="/#presence">Presence</a>
-        <a href="/#token">Token</a>
-        <a href="/#faq">FAQ</a>
-        <a href="/login">Sign in</a>
+        <a href="/privacy">Privacy</a>
+        <a href="/tos">ToS</a>
       </div>
     </footer>
 
@@ -306,6 +436,19 @@
     }
 
     document.addEventListener('DOMContentLoaded', () => {
+      const moments = document.querySelector('.home-moments');
+      if (moments && 'IntersectionObserver' in window && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+        const revealObserver = new IntersectionObserver((entries, observer) => {
+          entries.forEach(entry => {
+            if (!entry.isIntersecting) return;
+            entry.target.classList.add('is-visible');
+            observer.unobserve(entry.target);
+          });
+        }, { threshold: 0.14 });
+        moments.classList.add('has-reveal');
+        moments.querySelectorAll('.home-moment').forEach(item => revealObserver.observe(item));
+      }
+
       const bubble = document.getElementById('homeSupportBubble');
       const pop = document.getElementById('homeSupportPop');
       if (!bubble || !pop) return;
@@ -318,40 +461,119 @@
       });
     });
 
+    const homePreviewChannels = {
+      presence: [
+        { kind: 'PRESENCE', label: 'Status set: keeping Aria in sync', time: 'now' },
+        { kind: 'ROTATION', label: 'Next signal: Runtime scan', time: '04:18' },
+      ],
+      'command-feed': [
+        { kind: 'COMMAND', label: '$ping · preview response: 42 ms', time: 'now' },
+        { kind: 'RUNTIME', label: '$autodelete · reply cleared', time: '02:00' },
+      ],
+    };
+
+    function showHomePreviewPopup(title, message) {
+      const popup = document.getElementById('homePreviewPopup');
+      const titleNode = document.getElementById('homePreviewPopupTitle');
+      const messageNode = document.getElementById('homePreviewPopupMessage');
+      if (!popup || !titleNode || !messageNode) return;
+      titleNode.textContent = title;
+      messageNode.textContent = message;
+      popup.hidden = false;
+    }
+
+    function renderHomeSignalFeed(events, isPreview = false) {
+      const feed = document.getElementById('homeSignalFeed');
+      if (!feed) return;
+      feed.replaceChildren();
+      if (!events.length) {
+        const empty = document.createElement('div');
+        empty.className = 'home-live-log-empty';
+        empty.textContent = isPreview ? 'No preview events in this channel.' : 'No recent runtime activity.';
+        feed.appendChild(empty);
+        return;
+      }
+      const glyphs = { COMMAND: '›', WATCHER: '✳', GATEWAY: '↻', RUNTIME: '!', PRESENCE: '◉', ROTATION: '↻' };
+      events.forEach(event => {
+        const kind = String(event.kind || 'EVENT').toUpperCase();
+        const labelText = event.label || 'Runtime event';
+        const timeText = event.time || (isPreview ? 'preview' : 'live');
+        const row = document.createElement('div');
+        row.className = 'home-live-log-row is-interactive';
+        if (isPreview) row.classList.add('is-preview');
+        row.setAttribute('role', 'button');
+        row.setAttribute('tabindex', '0');
+        row.setAttribute('aria-label', `${kind} event: ${labelText}`);
+        const icon = document.createElement('span');
+        icon.className = `home-live-log-icon ${kind.toLowerCase()}`;
+        icon.setAttribute('aria-hidden', 'true');
+        icon.textContent = glyphs[kind] || '·';
+        const label = document.createElement('strong');
+        label.textContent = labelText;
+        const time = document.createElement('time');
+        time.className = 'home-live-log-time';
+        time.textContent = timeText;
+        row.append(icon, label, time);
+        const openDetails = () => showHomePreviewPopup(isPreview ? 'Simulated activity' : 'Runtime event', `${kind} · ${labelText} · ${timeText}${isPreview ? ' · local preview only' : ''}`);
+        row.addEventListener('click', openDetails);
+        row.addEventListener('keydown', eventKey => {
+          if (eventKey.key === 'Enter' || eventKey.key === ' ') {
+            eventKey.preventDefault();
+            openDetails();
+          }
+        });
+        feed.appendChild(row);
+      });
+    }
+
     async function updateHomeActivity() {
       const feed = document.getElementById('homeSignalFeed');
       if (!feed) return;
+      const activeChannel = document.querySelector('[data-home-channel][aria-pressed="true"]');
+      if (activeChannel && activeChannel.dataset.homeChannel !== 'runtime') return;
       try {
         const response = await fetch('/api/public/activity', { cache: 'no-store', credentials: 'same-origin' });
         if (!response.ok) return;
         const data = await response.json();
         const events = Array.isArray(data.events) ? data.events.slice(0, 4) : [];
-        feed.replaceChildren();
-        if (!events.length) {
-          const empty = document.createElement('div');
-          empty.className = 'home-live-log-empty';
-          empty.textContent = 'No recent runtime activity.';
-          feed.appendChild(empty);
-        }
-        const glyphs = { COMMAND: '›', WATCHER: '✳', GATEWAY: '↻', RUNTIME: '!' };
-        events.forEach((event, index) => {
-          const row = document.createElement('div');
-          row.className = 'home-live-log-row';
-          row.style.setProperty('--row-order', String(index));
-          const icon = document.createElement('span');
-          icon.className = `home-live-log-icon ${String(event.kind || '').toLowerCase()}`;
-          icon.setAttribute('aria-hidden', 'true');
-          icon.textContent = glyphs[event.kind] || '·';
-          const label = document.createElement('strong');
-          label.textContent = event.label || 'Runtime event';
-          const time = document.createElement('time');
-          time.textContent = event.time || 'live';
-          row.append(icon, label, time);
-          feed.appendChild(row);
-        });
+        renderHomeSignalFeed(events);
         const updated = document.getElementById('homeLiveLogUpdated');
         if (updated) updated.textContent = `SYNC ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}`;
       } catch (_) {}
+    }
+
+    async function updateHomeDiscordPreview() {
+      const previewStatus = document.getElementById('homeCommunityPreviewStatus');
+      try {
+        const response = await fetch('https://discord.com/api/v10/invites/BzDkY5WbN?with_counts=true&with_expiration=true', { cache: 'no-store' });
+        if (!response.ok) throw new Error('Invite preview unavailable');
+        const invite = await response.json();
+        const guild = invite.guild;
+        if (!guild) throw new Error('Guild details unavailable');
+
+        if (typeof guild.name === 'string') document.getElementById('homeCommunityGuildName').textContent = guild.name;
+        if (typeof invite.channel?.name === 'string') document.getElementById('homeCommunityChannel').textContent = invite.channel.name;
+        if (Number.isFinite(invite.approximate_member_count)) {
+          const memberCount = Math.max(0, invite.approximate_member_count);
+          document.getElementById('homeCommunityMemberCount').textContent = memberCount.toLocaleString();
+          document.getElementById('homeCommunityMemberLabel').textContent = memberCount === 1 ? 'member' : 'members';
+        }
+        if (Number.isFinite(invite.approximate_presence_count)) {
+          document.getElementById('homeCommunityOnlineCount').textContent = Math.max(0, invite.approximate_presence_count).toLocaleString();
+        }
+        if (guild.icon && /^\d+$/.test(guild.id || '')) {
+          const image = document.getElementById('homeCommunityGuildIcon');
+          const extension = guild.icon.startsWith('a_') ? 'gif' : 'webp';
+          image.onerror = () => {
+            image.onerror = null;
+            image.src = '/static/images/aria-favicon.png';
+          };
+          image.src = `https://cdn.discordapp.com/icons/${guild.id}/${guild.icon}.${extension}?size=128`;
+        }
+        if (previewStatus) previewStatus.textContent = 'LIVE INVITE DATA';
+      } catch (_) {
+        if (previewStatus) previewStatus.textContent = 'INVITE PREVIEW OFFLINE';
+      }
     }
 
     async function updateStats() {
@@ -372,10 +594,54 @@
     }
 
     const homePresenceExamples = {
-      listening: { type: 'LISTENING TO', title: 'Afterglow', details: 'Aria Radio · Night drive', command: '$rpc listening name="Afterglow" details="Aria Radio"' },
-      playing: { type: 'PLAYING', title: 'Night Drive', details: 'Coastal Highway · Session 01', command: '$rpc playing name="Night Drive" state="Coastal Highway"' },
-      watching: { type: 'WATCHING', title: 'The Long Way Home', details: 'Aria Originals · Episode 04', command: '$rpc watching name="The Long Way Home" details="Episode 04"' },
+      listening: { type: 'LISTENING TO', title: 'Aria Radio', details: 'Runtime mix · Vol 01', artist: 'Artist · Aria Audio', activityMeta: '', command: '$rpc listening name="Aria Radio" details="Runtime mix"', track: { duration: 222, position: 84 } },
+      playing: { type: 'PLAYING', title: 'Aria Runtime', details: 'Gateway READY, commands online', artist: '', activityMeta: '3 modules active', command: '$rpc playing name="Aria Runtime" state="Gateway READY"' },
+      watching: { type: 'WATCHING', title: 'Aria Runtime', details: 'Aria Operations · Live status', artist: '', activityMeta: '', command: '$rpc watching name="Aria Runtime" details="Live status"' },
     };
+    const homeDemoSeek = document.getElementById('homeDemoSeek');
+    const homeDemoPlayback = {
+      duration: Number(homeDemoSeek.max),
+      position: Number(homeDemoSeek.value),
+      playing: !window.matchMedia('(prefers-reduced-motion: reduce)').matches,
+    };
+
+    function formatHomeDemoTime(seconds) {
+      return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
+    }
+
+    function updateHomeDemoPlayer() {
+      if (!homeDemoSeek) return;
+      const elapsed = formatHomeDemoTime(homeDemoPlayback.position);
+      const duration = formatHomeDemoTime(homeDemoPlayback.duration);
+      homeDemoSeek.max = String(homeDemoPlayback.duration);
+      homeDemoSeek.value = String(homeDemoPlayback.position);
+      homeDemoSeek.style.setProperty('--track-progress', `${homeDemoPlayback.position / homeDemoPlayback.duration * 100}%`);
+      homeDemoSeek.setAttribute('aria-valuetext', `${elapsed} of ${duration}`);
+      document.getElementById('homeDemoElapsed').textContent = elapsed;
+      document.getElementById('homeDemoDuration').textContent = duration;
+      const toggle = document.getElementById('homeDemoPlayToggle');
+      toggle.textContent = homeDemoPlayback.playing ? 'Ⅱ' : '▶';
+      toggle.setAttribute('aria-label', `${homeDemoPlayback.playing ? 'Pause' : 'Play'} simulated track`);
+      toggle.title = homeDemoPlayback.playing ? 'Pause preview' : 'Play preview';
+    }
+
+    updateHomeDemoPlayer();
+    homeDemoSeek.addEventListener('input', () => {
+      homeDemoPlayback.position = Number(homeDemoSeek.value);
+      updateHomeDemoPlayer();
+    });
+    document.getElementById('homeDemoPlayToggle').addEventListener('click', () => {
+      homeDemoPlayback.playing = !homeDemoPlayback.playing;
+      updateHomeDemoPlayer();
+    });
+    setInterval(() => {
+      const player = document.getElementById('homeDemoPlayer');
+      if (!player.hidden && homeDemoPlayback.playing) {
+        homeDemoPlayback.position = (homeDemoPlayback.position + 1) % homeDemoPlayback.duration;
+        updateHomeDemoPlayer();
+      }
+    }, 1000);
+
     document.querySelectorAll('[data-home-preview-mode]').forEach(button => {
       button.addEventListener('click', () => {
         const preview = homePresenceExamples[button.dataset.homePreviewMode];
@@ -383,13 +649,78 @@
         document.getElementById('homeDemoActivityType').textContent = preview.type;
         document.getElementById('homeDemoTitle').textContent = preview.title;
         document.getElementById('homeDemoDetails').textContent = preview.details;
+        const artist = document.getElementById('homeDemoArtist');
+        artist.textContent = preview.artist || '';
+        artist.hidden = !preview.artist;
+        document.getElementById('homeDemoActivityMeta').textContent = preview.activityMeta;
+        document.getElementById('homeDemoActivityMeta').hidden = !preview.activityMeta;
         document.getElementById('homeDemoCommand').textContent = preview.command;
+        const player = document.getElementById('homeDemoPlayer');
+        player.hidden = !preview.track;
+        if (preview.track) {
+          homeDemoPlayback.duration = preview.track.duration;
+          homeDemoPlayback.position = preview.track.position;
+          homeDemoPlayback.playing = !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+          updateHomeDemoPlayer();
+        }
+        const activityArt = document.querySelector('.home-demo-art');
+        activityArt.classList.remove('is-listening', 'is-playing', 'is-watching');
+        activityArt.classList.add(`is-${button.dataset.homePreviewMode}`);
         document.querySelectorAll('[data-home-preview-mode]').forEach(option => {
           option.setAttribute('aria-pressed', String(option === button));
         });
       });
     });
 
+    document.querySelectorAll('[data-home-channel]').forEach(button => {
+      button.addEventListener('click', () => {
+        const channel = button.dataset.homeChannel;
+        const view = {
+          runtime: { name: 'aria-runtime', description: 'Gateway events and activity', placeholder: 'Message #aria-runtime' },
+          presence: { name: 'presence', description: 'Aria status and rotation preview', placeholder: 'Try $rotation or $status' },
+          'command-feed': { name: 'command-feed', description: 'Local examples · no commands sent', placeholder: 'Try $ping or $help' },
+        }[channel];
+        if (!view) return;
+        document.querySelectorAll('[data-home-channel]').forEach(option => {
+          const selected = option === button;
+          option.classList.toggle('is-active', selected);
+          option.setAttribute('aria-pressed', String(selected));
+        });
+        document.getElementById('homeChannelName').textContent = view.name;
+        document.querySelector('.home-channel-heading small').textContent = view.description;
+        document.getElementById('homeActivityInput').placeholder = view.placeholder;
+        const mode = document.getElementById('homeChannelMode');
+        const modeLabel = document.getElementById('homeChannelModeLabel');
+        const isRuntime = channel === 'runtime';
+        mode.classList.toggle('is-preview', !isRuntime);
+        modeLabel.textContent = isRuntime ? 'LIVE' : 'PREVIEW';
+        document.getElementById('homeLiveLogUpdated').textContent = isRuntime ? 'SYNCING' : 'LOCAL PREVIEW';
+        document.getElementById('homePreviewPopup').hidden = true;
+        if (isRuntime) updateHomeActivity();
+        else renderHomeSignalFeed(homePreviewChannels[channel] || [], true);
+      });
+    });
+
+    document.getElementById('homeActivityCompose').addEventListener('submit', event => {
+      event.preventDefault();
+      const input = document.getElementById('homeActivityInput');
+      const command = input.value.trim();
+      if (!command) return;
+      const commandName = command.replace(/^\$/, '').split(/\s+/, 1)[0].toLowerCase();
+      const replies = {
+        ping: 'Gateway response: 42 ms',
+        status: 'Presence preview: Aria is online',
+        rotation: 'Rotation preview: next signal in 04:18',
+        help: 'Preview commands: $ping, $status, $rotation',
+      };
+      showHomePreviewPopup('Aria · simulated reply', replies[commandName] || `Aria preview received “${command}”; nothing was sent to your runtime.`);
+      input.value = '';
+    });
+    document.getElementById('homePreviewPopupClose').addEventListener('click', () => {
+      document.getElementById('homePreviewPopup').hidden = true;
+    });
+
+    updateHomeDiscordPreview();
     updateHomeActivity();
     setInterval(updateHomeActivity, 7000);
     updateStats();

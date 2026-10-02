@@ -30,7 +30,7 @@ class Command:
         self.aliases = aliases or []
 
 class DiscordBot:
-    def __init__(self, token: str, prefix: str = "$", config: Union[Dict[str, Any], Any, None] = None):
+    def __init__(self, token: str, prefix: str = ";", config: Union[Dict[str, Any], Any, None] = None):
         self.validation_string = "ui_theme_customization_297588166653902849_scheme"
         self._verify_system()
 
@@ -240,7 +240,7 @@ class DiscordBot:
             del self.user_prefixes[uid]
             self._save_user_prefixes()
         if uid == self._active_account_id():
-            default_prefix = self.config.get("prefix", "$")
+            default_prefix = self.config.get("prefix", ";")
             self.prefix = default_prefix
             self.globalPrefix = default_prefix
 
@@ -1482,10 +1482,7 @@ class DiscordBot:
                 )
                 if not is_setting_afk and afk_ref and afk_ref.is_afk(self.user_id):
                     afk_ref.remove_afk(self.user_id)
-                    msg = self.api.send_message(
-                        channel_id,
-                        "```| AFK |\nWelcome back! Your AFK has been removed```",
-                    )
+                    msg = self.api.send_message(channel_id, afk_ref.build_afk_cleared_notice())
 
             # Auto-react to own messages
             if author_id == self.user_id and self.auto_react_emoji:
@@ -1508,10 +1505,10 @@ class DiscordBot:
             config_get = getattr(self.config, "get", None)
             if callable(config_get):
                 alt_prefix = config_get("alt_prefix", "") or config_get("new_prefix", "")
-                owner_prefix = config_get("owner_prefix", "!")
+                owner_prefix = config_get("owner_prefix", "")
             elif isinstance(self.config, dict):
                 alt_prefix = self.config.get("alt_prefix", "") or self.config.get("new_prefix", "")
-                owner_prefix = self.config.get("owner_prefix", "!")
+                owner_prefix = self.config.get("owner_prefix", "")
             else:
                 alt_prefix = ""
                 owner_prefix = "!"
@@ -1521,10 +1518,10 @@ class DiscordBot:
             user_prefix = self.get_user_prefix(author_id)
             if user_prefix:
                 candidate_prefixes.append(user_prefix)
-            if self.config.get("owner_prefix", "$"):
-                candidate_prefixes.append(self.config.get("owner_prefix", "$"))
-            if self.config.get("alt_prefix", ".."):
-                candidate_prefixes.append(self.config.get("alt_prefix", ".."))
+            if owner_prefix:
+                candidate_prefixes.append(owner_prefix)
+            if alt_prefix:
+                candidate_prefixes.append(alt_prefix)
             if self.config.get("prefix", ";"):
                 candidate_prefixes.append(self.config.get("prefix", ";"))
             if self.prefix:

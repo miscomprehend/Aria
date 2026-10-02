@@ -729,6 +729,55 @@ async function updateToastFeed() {
     });
 }
 
+function startLiveExampleDemo() {
+    const eventList = document.getElementById('demoEventList');
+    const elapsedLabel = document.getElementById('demoTrackElapsed');
+    const progressBar = document.getElementById('demoTrackProgress');
+    if (!eventList || !elapsedLabel || !progressBar) return;
+
+    const events = [
+        'Identify flow simulated',
+        'READY handshake pending',
+        'Safe presence preview refreshed',
+        'Heartbeat response staged',
+        'RPC payload preview synchronized',
+    ];
+    let eventIndex = 0;
+    const durationSeconds = 238;
+    const startedAt = Date.now() - 102000;
+    const formatTime = seconds => `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
+
+    const pushEvent = () => {
+        if (!document.getElementById('section-overview')?.classList.contains('active')) return;
+        const now = new Date();
+        const time = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+        const row = document.createElement('li');
+        const timestamp = document.createElement('time');
+        timestamp.textContent = time;
+        const message = document.createElement('span');
+        message.textContent = events[eventIndex++ % events.length];
+        const safe = document.createElement('b');
+        safe.textContent = 'SAFE';
+        row.append(timestamp, message, safe);
+        eventList.prepend(row);
+        while (eventList.children.length > 3) eventList.lastElementChild.remove();
+    };
+
+    const updateTrack = () => {
+        const elapsed = Math.floor((Date.now() - startedAt) / 1000) % durationSeconds;
+        elapsedLabel.textContent = formatTime(elapsed);
+        progressBar.style.width = `${(elapsed / durationSeconds) * 100}%`;
+    };
+
+    eventList.replaceChildren();
+    pushEvent();
+    updateTrack();
+    window.setInterval(pushEvent, 2600);
+    window.setInterval(updateTrack, 1000);
+}
+
+document.addEventListener('DOMContentLoaded', startLiveExampleDemo, { once: true });
+
 // ── Live Metrics Refresh ─────────────────────────────────────────────────-
 setInterval(() => {
     if (document.getElementById('section-overview')?.classList.contains('active')) {
@@ -3066,19 +3115,34 @@ async function loadPresence() {
     if (presRes) {
         const status = presRes.status || 'unknown';
         const badge = document.getElementById('presenceBadge');
+        const currentLabel = document.getElementById('presenceCurrentLabel');
         if (badge) {
             badge.textContent = status.charAt(0).toUpperCase() + status.slice(1);
             badge.className = 'badge ' + (PRESENCE_BADGES[status] || 'badge-off');
         }
+        if (currentLabel) currentLabel.textContent = status === 'dnd' ? 'Do Not Disturb' : status.charAt(0).toUpperCase() + status.slice(1);
+        document.querySelectorAll('[data-presence-status]').forEach(button => {
+            button.setAttribute('aria-pressed', String(button.dataset.presenceStatus === status));
+        });
     }
     if (afkRes) {
         const afkBadge = document.getElementById('afkBadge');
+        const afkPanel = document.getElementById('afkPanel');
+        const afkSummary = document.getElementById('afkStateSummary');
+        const afkEnableButton = document.getElementById('afkEnableButton');
+        const afkDisableButton = document.getElementById('afkDisableButton');
         if (afkBadge) {
             afkBadge.textContent = afkRes.active ? 'AFK' : 'Off';
             afkBadge.className = 'badge ' + (afkRes.active ? 'badge-warn' : 'badge-off');
         }
+        if (afkPanel) afkPanel.classList.toggle('is-active', Boolean(afkRes.active));
+        if (afkSummary) afkSummary.textContent = afkRes.active ? 'Automatic reply is on' : 'Automatic reply is off';
+        if (afkEnableButton) afkEnableButton.setAttribute('aria-pressed', String(Boolean(afkRes.active)));
+        if (afkDisableButton) afkDisableButton.setAttribute('aria-pressed', String(!afkRes.active));
         const afkInput = document.getElementById('afkMessageInput');
-        if (afkInput && afkRes.message) afkInput.placeholder = afkRes.message;
+        if (afkInput && afkRes.message && !afkInput.value && document.activeElement !== afkInput) afkInput.value = afkRes.message;
+        const count = document.getElementById('afkMessageCount');
+        if (count && afkInput) count.textContent = `${afkInput.value.length} / 180`;
     }
 }
 
@@ -3101,6 +3165,13 @@ async function setPresence(status) {
         showPresenceMsg('presenceMsg', (res && res.error) || 'Failed to set status.', false);
     }
 }
+
+document.addEventListener('input', event => {
+    if (event.target && event.target.id === 'afkMessageInput') {
+        const count = document.getElementById('afkMessageCount');
+        if (count) count.textContent = `${event.target.value.length} / 180`;
+    }
+});
 
 async function toggleAfk(action) {
     const message = document.getElementById('afkMessageInput').value.trim() || 'AFK';
@@ -4170,11 +4241,24 @@ function enhanceDashboardSelect(select) {
 }
 
 function refreshDashboardSelects() {
-    document.querySelectorAll('select:not([data-native-menu])').forEach(enhanceDashboardSelect);
+    document.querySelectorAll('select').forEach(enhanceDashboardSelect);
     for (const select of document.querySelectorAll('select.aria-select-native')) {
         const state = _dashboardSelectStates.get(select);
         if (state) renderDashboardSelect(state);
     }
+}
+
+function watchDashboardSelects() {
+    const observer = new MutationObserver(records => {
+        for (const record of records) {
+            for (const node of record.addedNodes) {
+                if (!(node instanceof Element)) continue;
+                if (node.matches('select')) enhanceDashboardSelect(node);
+                node.querySelectorAll('select').forEach(enhanceDashboardSelect);
+            }
+        }
+    });
+    observer.observe(document.documentElement, { childList: true, subtree: true });
 }
 
 document.addEventListener('pointerdown', event => {
@@ -4199,9 +4283,13 @@ window.addEventListener('scroll', () => {
 }, true);
 
 if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', refreshDashboardSelects, { once: true });
+    document.addEventListener('DOMContentLoaded', () => {
+        refreshDashboardSelects();
+        watchDashboardSelects();
+    }, { once: true });
 } else {
     refreshDashboardSelects();
+    watchDashboardSelects();
 }
 
 // ── Live Chat Support System ─────────────────────────────────────────────────
