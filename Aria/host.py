@@ -10,6 +10,7 @@ import signal
 from datetime import datetime, timedelta
 
 HOSTED_USERS_FILE = "hosted_users.json"
+MAX_KEEPALIVE_RESTARTS = 3
 logger = logging.getLogger(__name__)
 
 
@@ -63,6 +64,8 @@ class HostManager:
         self.rate_limits = {}     # owner_command -> datetime
         self._restore_lock = threading.Lock()
         self._restore_in_progress = False
+        self._instance_operation_locks = {}
+        self._instance_operation_locks_lock = threading.Lock()
         self._load_saved_users()
         # Removed: self._print_startup_summary()  <- This was causing duplicate loading
 
@@ -140,6 +143,10 @@ class HostManager:
         if pid and _hosted_process_is_alive(pid, token_id):
             return _AttachedHostedProcess(pid, token_id)
         return None
+
+    def _instance_operation_lock(self, token_id):
+        with self._instance_operation_locks_lock:
+            return self._instance_operation_locks.setdefault(str(token_id), threading.RLock())
 
     # ------------------------------------------------------------------
 
@@ -372,7 +379,7 @@ def _sync_project_tree():
 
 _sync_project_tree()
 
-for path in (TEMP_DIR, SOURCE_ROOT):
+for path in (SOURCE_ROOT, TEMP_DIR):
     if path not in sys.path:
         sys.path.insert(0, path)
 
@@ -458,6 +465,9 @@ else:
                 if stop_event.is_set():
                     break
 
+                if restart_count >= MAX_KEEPALIVE_RESTARTS:
+                    logger.error("Hosted instance %s exceeded its restart limit; leaving it stopped", token_id)
+                    break
                 restart_count += 1
                 with self.lock:
                     saved = self.saved_users.get(token_id, {})
@@ -485,24 +495,35 @@ else:
                     user_id=saved.get("user_id"),
                     username=saved.get("username"),
                 )
-                if new_process and not stop_event.is_set():
-                    with self.lock:
-                        self.processes[token_id] = new_process
-                        active = self.active_tokens.get(token_id)
-                        if active is not None:
-                            active["pid"] = new_process.pid
-                        saved = self.saved_users.get(token_id)
-                        if saved is not None:
-                            saved["pid"] = new_process.pid
-                            self._save_users()
-                else:
-                    break  # failed to restart — give up silently
+                if not new_process or not self._adopt_keepalive_process(token_id, stop_event, new_process):
+                    break
 
         t = threading.Thread(target=_monitor, name=f"keepalive-{token_id}", daemon=True)
         t.start()
         self._stop_events[token_id] = stop_event
         self._keepalive_threads = getattr(self, '_keepalive_threads', {})
         self._keepalive_threads[token_id] = t
+
+    def _adopt_keepalive_process(self, token_id, stop_event, process):
+        """Adopt a restart only while this watchdog still owns the instance slot."""
+        with self.lock:
+            saved = self.saved_users.get(token_id)
+            should_adopt = (
+                saved is not None
+                and not stop_event.is_set()
+                and self._stop_events.get(token_id) is stop_event
+            )
+            if should_adopt:
+                self.processes[token_id] = process
+                active = self.active_tokens.get(token_id)
+                if active is not None:
+                    active["pid"] = process.pid
+                saved["pid"] = process.pid
+                self._save_users()
+
+        if not should_adopt:
+            self._terminate_process(process)
+        return should_adopt
 
     @staticmethod
     def _terminate_process(process):
@@ -626,66 +647,7 @@ else:
 
     def restart_all(self):
         """Restart all persisted hosted tokens without deleting saved entries."""
-        with self.lock:
-            saved_entries = [(token_id, data.copy()) for token_id, data in self.saved_users.items()]
-            active_ids = list(self.active_tokens.keys())
-
-        # Stop currently running processes first.
-        for token_id in active_ids:
-            stop_event = self._stop_events.pop(token_id, None)
-            if stop_event:
-                stop_event.set()
-            proc = self.processes.get(token_id)
-            if proc:
-                self._terminate_process(proc)
-
-        with self.lock:
-            self.processes = {}
-            self.active_tokens = {}
-
-        restarted = 0
-        for token_id, data in saved_entries:
-            token = data.get("token")
-            if not self._is_token_valid(token):
-                continue
-
-            prefix = data.get("prefix", ";")
-            config_file = f"hosted_{token_id}.json"
-            process = self._run_their_bot(
-                config_file,
-                token,
-                prefix=prefix,
-                hosted_uid=data.get("uid") or token_id,
-                owner_id=data.get("owner"),
-                user_id=data.get("user_id"),
-                username=data.get("username"),
-            )
-            if not process:
-                continue
-
-            entry = {
-                "uid": data.get("uid") or token_id,
-                "user_id": data.get("user_id", ""),
-                "username": data.get("username", ""),
-                "token": token,
-                "prefix": prefix,
-                "owner": data.get("owner", ""),
-                "config": config_file,
-                "pid": process.pid,
-            }
-
-            with self.lock:
-                self.active_tokens[token_id] = entry
-                self.processes[token_id] = process
-                saved = self.saved_users.get(token_id)
-                if saved is not None:
-                    saved["pid"] = process.pid
-                    self._save_users()
-
-            self._start_keepalive(token_id)
-            restarted += 1
-
-        return restarted
+        return self.restart_hosts(all_hosts=True)
 
     def list_hosted(self, requester_id):
         """Return only entries owned by requester_id."""
@@ -803,60 +765,68 @@ else:
 
         restarted = 0
         for token_id in list(dict.fromkeys(selected_ids)):
-            with self.lock:
-                saved = (self.saved_users.get(token_id) or {}).copy()
-                proc = self.processes.get(token_id)
-                stop_event = self._stop_events.pop(token_id, None)
-
-            if not saved:
-                continue
-            token = saved.get("token")
-            if not self._is_token_valid(token):
-                continue
-
-            if stop_event:
-                stop_event.set()
-            if proc:
-                self._terminate_process(proc)
-
-            prefix = saved.get("prefix", ";")
-            config_file = f"hosted_{token_id}.json"
-            new_process = self._run_their_bot(
-                config_file,
-                token,
-                prefix=prefix,
-                hosted_uid=saved.get("uid") or token_id,
-                owner_id=saved.get("owner"),
-                user_id=saved.get("user_id"),
-                username=saved.get("username"),
-            )
-            if not new_process:
-                continue
-
-            entry = {
-                "uid": saved.get("uid") or token_id,
-                "user_id": saved.get("user_id", ""),
-                "username": saved.get("username", ""),
-                "token": token,
-                "prefix": prefix,
-                "owner": saved.get("owner", ""),
-                "config": config_file,
-                "connected_at": int(time.time()),
-                "pid": new_process.pid,
-            }
-
-            with self.lock:
-                self.active_tokens[token_id] = entry
-                self.processes[token_id] = new_process
-                saved_entry = self.saved_users.get(token_id)
-                if saved_entry is not None:
-                    saved_entry["pid"] = new_process.pid
-                    self._save_users()
-
-            self._start_keepalive(token_id)
-            restarted += 1
+            with self._instance_operation_lock(token_id):
+                if self._restart_hosted_instance(token_id):
+                    restarted += 1
 
         return restarted
+
+    def _restart_hosted_instance(self, token_id):
+        with self.lock:
+            saved = (self.saved_users.get(token_id) or {}).copy()
+            proc = self.processes.get(token_id)
+            stop_event = self._stop_events.pop(token_id, None)
+
+        if not saved or not self._is_token_valid(saved.get("token")):
+            return False
+
+        if stop_event:
+            stop_event.set()
+        if proc:
+            self._terminate_process(proc)
+
+        token = saved.get("token")
+        prefix = saved.get("prefix", ";")
+        config_file = f"hosted_{token_id}.json"
+        process = self._run_their_bot(
+            config_file,
+            token,
+            prefix=prefix,
+            hosted_uid=saved.get("uid") or token_id,
+            owner_id=saved.get("owner"),
+            user_id=saved.get("user_id"),
+            username=saved.get("username"),
+        )
+        if not process:
+            return False
+
+        entry = {
+            "uid": saved.get("uid") or token_id,
+            "user_id": saved.get("user_id", ""),
+            "username": saved.get("username", ""),
+            "token": token,
+            "prefix": prefix,
+            "owner": saved.get("owner", ""),
+            "config": config_file,
+            "connected_at": int(time.time()),
+            "pid": process.pid,
+        }
+        accepted = False
+        with self.lock:
+            saved_entry = self.saved_users.get(token_id)
+            if saved_entry is not None and str(saved_entry.get("token") or "") == str(token or ""):
+                self.active_tokens[token_id] = entry
+                self.processes[token_id] = process
+                saved_entry["pid"] = process.pid
+                self._save_users()
+
+                accepted = True
+        if not accepted:
+            self._terminate_process(process)
+            return False
+
+        self._start_keepalive(token_id)
+        return True
 
     def validate_hosted_tokens(self, requester_id=None, session=None):
         scoped_entries = self.list_hosted_entries(requester_id)
@@ -897,6 +867,66 @@ else:
         with self.lock:
             return list(self.saved_users.values())
 
+    def _restore_hosted_instance(self, token_id, data):
+        with self._instance_operation_lock(token_id):
+            token = data.get("token")
+            if not self._is_token_valid(token):
+                return False
+
+            with self.lock:
+                if token_id in self.active_tokens:
+                    return False
+                token_active = any(
+                    str(existing.get("token") or "").strip() == str(token or "").strip()
+                    for existing in self.active_tokens.values()
+                )
+                if token_active:
+                    return False
+
+            prefix = data.get("prefix", ";")
+            config_file = f"hosted_{token_id}.json"
+            process = self._attach_existing_process(token_id, data)
+            if process is None:
+                process = self._run_their_bot(
+                    config_file,
+                    token,
+                    prefix=prefix,
+                    hosted_uid=data.get("uid") or token_id,
+                    owner_id=data.get("owner"),
+                    user_id=data.get("user_id"),
+                    username=data.get("username"),
+                )
+            if not process:
+                return False
+
+            entry = {
+                "uid": data.get("uid") or token_id,
+                "user_id": data.get("user_id", ""),
+                "username": data.get("username", ""),
+                "token": token,
+                "prefix": prefix,
+                "owner": data.get("owner", ""),
+                "config": config_file,
+                "connected_at": data.get("connected_at") or int(time.time()),
+                "pid": process.pid,
+            }
+            accepted = False
+            with self.lock:
+                saved = self.saved_users.get(token_id)
+                if saved is not None and str(saved.get("token") or "") == str(token or ""):
+                    self.active_tokens[token_id] = entry
+                    self.processes[token_id] = process
+                    saved["pid"] = process.pid
+                    self._save_users()
+
+                    accepted = True
+            if not accepted:
+                self._terminate_process(process)
+                return False
+
+            self._start_keepalive(token_id)
+            return True
+
     def restore_hosted_users(self):
         """Restart persisted hosted users on startup in the main controller process."""
         with self._restore_lock:
@@ -914,59 +944,8 @@ else:
             restored = 0
 
             for token_id, data in saved_entries:
-                token = data.get("token")
-                if not self._is_token_valid(token):
-                    continue
-
-                with self.lock:
-                    if token_id in self.active_tokens:
-                        continue
-                    # Do not spawn if same token is already active under another ID.
-                    token_active = any(
-                        str(existing.get("token") or "").strip() == str(token or "").strip()
-                        for existing in self.active_tokens.values()
-                    )
-                    if token_active:
-                        continue
-
-                prefix = data.get("prefix", ";")
-                config_file = f"hosted_{token_id}.json"
-                process = self._attach_existing_process(token_id, data)
-                if process is None:
-                    process = self._run_their_bot(
-                        config_file,
-                        token,
-                        prefix=prefix,
-                        hosted_uid=data.get("uid") or token_id,
-                        owner_id=data.get("owner"),
-                        user_id=data.get("user_id"),
-                        username=data.get("username"),
-                    )
-                if not process:
-                    continue
-
-                entry = {
-                    "uid": data.get("uid") or token_id,
-                    "user_id": data.get("user_id", ""),
-                    "username": data.get("username", ""),
-                    "token": token,
-                    "prefix": prefix,
-                    "owner": data.get("owner", ""),
-                    "config": config_file,
-                    "connected_at": data.get("connected_at") or int(time.time()),
-                    "pid": process.pid,
-                }
-
-                with self.lock:
-                    self.active_tokens[token_id] = entry
-                    self.processes[token_id] = process
-                    saved = self.saved_users.get(token_id)
-                    if saved is not None:
-                        saved["pid"] = process.pid
-                        self._save_users()
-
-                self._start_keepalive(token_id)
-                restored += 1
+                if self._restore_hosted_instance(token_id, data):
+                    restored += 1
 
             if restored:
                 pass  # restore count suppressed

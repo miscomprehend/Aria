@@ -35,15 +35,12 @@ body {
 }
 
 .brand-mark {
-  width: 42px;
-  height: 42px;
-  display: grid;
-  place-items: center;
+  display: block;
+  width: 46px;
+  height: 46px;
+  object-fit: cover;
   border-radius: 8px;
-  color: #fff;
-  background: #087f70;
-  font-size: 20px;
-  font-weight: 700;
+  background: #eaf3ee;
 }
 
 .eyebrow {

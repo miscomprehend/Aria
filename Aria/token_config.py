@@ -1,18 +1,69 @@
+import io
 import json
+import re
 import sys
+from contextlib import redirect_stdout
 
 import config
 
 
-def configure_token(token: str, remember: bool, config_path: str = "config.json") -> None:
+def identify_token_owner(token: str) -> dict[str, str]:
+    """Resolve the account ID attached to a token without exposing the token."""
+    from api_client import DiscordAPIClient
+
+    try:
+        with redirect_stdout(io.StringIO()):
+            profile = DiscordAPIClient(token).get_user_info(force=True)
+    except Exception as error:
+        raise ValueError("Could not verify this account token. Check it and try again.") from error
+
+    owner_id = str((profile or {}).get("id") or "").strip()
+    if not re.fullmatch(r"[0-9]{15,22}", owner_id):
+        raise ValueError("Could not verify this account token. Check it and try again.")
+    username = str((profile or {}).get("username") or (profile or {}).get("global_name") or owner_id).strip()
+    return {"id": owner_id, "username": username}
+
+
+def _save_owner_identity(settings, owner_identity: dict[str, str]) -> None:
+    owner_id = str(owner_identity.get("id") or "").strip()
+    if not re.fullmatch(r"[0-9]{15,22}", owner_id):
+        raise ValueError("A verified owner account ID is required.")
+    settings.config["owner_id"] = owner_id
+    settings.config["owner_username"] = str(owner_identity.get("username") or owner_id).strip()
+
+
+def identify_saved_token_owner(config_path: str = "config.json") -> dict[str, str]:
+    """Refresh configured owner identity from the already-saved account token."""
+    with redirect_stdout(io.StringIO()):
+        settings = config.Config(config_path)
+    token = str(settings.get("token") or "").strip()
+    if not token or token == "token here":
+        raise ValueError("No saved account token is available to verify.")
+    owner_identity = identify_token_owner(token)
+    _save_owner_identity(settings, owner_identity)
+    with redirect_stdout(io.StringIO()):
+        settings.save_config()
+    return owner_identity
+
+
+def configure_token(
+    token: str,
+    remember: bool,
+    config_path: str = "config.json",
+    owner_identity: dict[str, str] | None = None,
+) -> None:
     if remember and not token:
         raise ValueError("Token is required when remembering it.")
     if remember and config._encrypter is None:
         raise RuntimeError("Token encryption is unavailable; install the cryptography dependency.")
 
     stored_token = token if remember else ""
-    settings = config.Config(config_path)
-    settings.set("token", stored_token)
+    with redirect_stdout(io.StringIO()):
+        settings = config.Config(config_path)
+    settings.config["token"] = stored_token
+    if owner_identity:
+        _save_owner_identity(settings, owner_identity)
+    settings.save_config()
 
     if remember:
         with open(settings.config_file, "r", encoding="utf-8") as handle:
@@ -23,10 +74,18 @@ def configure_token(token: str, remember: bool, config_path: str = "config.json"
 
 def main() -> None:
     action = sys.argv[1] if len(sys.argv) > 1 else ""
+    if action == "identify":
+        owner_identity = identify_saved_token_owner()
+        print(json.dumps({"owner": owner_identity}))
+        return
     if action not in {"save", "clear"}:
         raise ValueError("Expected a save or clear action.")
     token = sys.stdin.readline().rstrip("\r\n")
-    configure_token(token, remember=action == "save")
+    if action == "save" and not token:
+        raise ValueError("Token is required when remembering it.")
+    owner_identity = identify_token_owner(token) if token else None
+    configure_token(token, remember=action == "save", owner_identity=owner_identity)
+    print(json.dumps({"owner": owner_identity}))
 
 
 if __name__ == "__main__":

@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self'; script-src 'self'; img-src 'self'; object-src 'none'; base-uri 'none'" />
+  <title>Aria Desktop</title>
+  <link rel="stylesheet" href="startup.css" />
+  <script src="startup.js" defer></script>
+</head>
+<body>
+  <main class="startup-shell">
+    <header class="startup-header">
+      <div class="brand-lockup">
+        <img src="aria.png" alt="" width="38" height="38" />
+        <div>
+          <strong>ARIA</strong>
+          <span>DESKTOP</span>
+        </div>
+      </div>
+      <span class="build-label">LOCAL WORKSPACE</span>
+    </header>
+
+    <section class="startup-content" aria-live="polite">
+      <div class="status-mark" aria-hidden="true"><span></span></div>
+      <p class="eyebrow">STARTUP</p>
+      <h1>Preparing your workspace</h1>
+      <p id="startup-status" class="startup-status">Checking for an Aria dashboard...</p>
+      <div class="progress-track" role="progressbar" aria-label="Starting Aria">
+        <span></span>
+      </div>
+    </section>
+
+    <footer class="startup-footer">
+      <span>ARIA DESKTOP</span>
+      <span id="runtime-state">INITIALIZING</span>
+    </footer>
+  </main>
+</body>
+</html>

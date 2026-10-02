@@ -144,6 +144,16 @@ class WebPanelControlTests(unittest.TestCase):
             )
             self.assertEqual(reused_response.status_code, 403)
 
+    def test_electron_admin_session_is_treated_as_panel_owner(self):
+        from flask import session
+
+        panel.owner_id = "detected-token-owner"
+        with panel.app.test_request_context("/"):
+            session["user_id"] = "detected-token-owner"
+            session["electron_owner"] = True
+            self.assertTrue(panel._is_admin_session())
+            self.assertTrue(panel._is_owner_session())
+
     def test_docs_page_is_public_and_linked_from_public_pages(self):
         panel._read_raw_template = lambda name: (Path(__file__).resolve().parent / name).read_text(encoding="utf-8")
 
@@ -674,6 +684,7 @@ class WebPanelControlTests(unittest.TestCase):
             runner = runner_path.read_text(encoding="utf-8")
             project_root_text = str(project_root)
             self.assertIn(f"SOURCE_ROOT = {project_root_text!r}", runner)
+            self.assertIn("for path in (SOURCE_ROOT, TEMP_DIR):", runner)
             self.assertIn(str(Path(self.temp_dir.name, "hosted_test.json")), runner)
             self.assertNotIn(token, runner)
             self.assertTrue(Path(project_root, "main.py").is_file())
@@ -693,9 +704,56 @@ class WebPanelControlTests(unittest.TestCase):
             self.assertFalse(should_copy("hosted_123456.json"))
             self.assertFalse(should_copy("runner_123456.py"))
             self.assertFalse(should_copy("account_stats.json"))
+            self.assertFalse(should_copy("rpc_profiles.json"))
+            self.assertIn('pythonpath_parts = [TEMP_DIR, SOURCE_ROOT]', runner)
         finally:
             runner_path.unlink(missing_ok=True)
             os.chdir(original_cwd)
+
+    def test_stale_hosted_watchdog_terminates_untracked_restart_child(self):
+        from host import HostManager
+
+        manager = HostManager.__new__(HostManager)
+        manager.lock = threading.RLock()
+        manager.saved_users = {"host-id": {"token": "fake.token-value"}}
+        manager.active_tokens = {}
+        manager.processes = {}
+        current_stop_event = threading.Event()
+        stale_stop_event = threading.Event()
+        manager._stop_events = {"host-id": current_stop_event}
+        new_process = Mock(pid=8765)
+
+        with patch.object(HostManager, "_terminate_process") as terminate:
+            accepted = manager._adopt_keepalive_process("host-id", stale_stop_event, new_process)
+
+        self.assertFalse(accepted)
+        terminate.assert_called_once_with(new_process)
+        self.assertNotIn("host-id", manager.processes)
+
+    def test_manual_restart_terminates_child_if_instance_is_removed_during_spawn(self):
+        from host import HostManager
+
+        manager = HostManager.__new__(HostManager)
+        manager.lock = threading.RLock()
+        manager.saved_users = {"host-id": {"token": "fake.token-value", "prefix": ";"}}
+        manager.active_tokens = {}
+        manager.processes = {}
+        manager._stop_events = {}
+        manager._is_token_valid = lambda token: True
+        new_process = Mock(pid=9876)
+
+        def remove_instance_during_spawn(*args, **kwargs):
+            manager.saved_users.pop("host-id", None)
+            return new_process
+
+        manager._run_their_bot = Mock(side_effect=remove_instance_during_spawn)
+        manager._save_users = Mock()
+        with patch.object(HostManager, "_terminate_process") as terminate:
+            restarted = manager._restart_hosted_instance("host-id")
+
+        self.assertFalse(restarted)
+        terminate.assert_called_once_with(new_process)
+        self.assertNotIn("host-id", manager.processes)
 
     def test_frozen_entrypoint_dispatches_hosted_script(self):
         import os
@@ -720,6 +778,8 @@ class WebPanelControlTests(unittest.TestCase):
         manager._restore_lock = threading.Lock()
         manager._restore_in_progress = False
         manager.lock = threading.RLock()
+        manager._instance_operation_locks = {}
+        manager._instance_operation_locks_lock = threading.Lock()
         manager.saved_users = {
             "host-id": {"uid": "host-id", "token": "fake.token-value", "owner": "owner", "pid": 4321}
         }

@@ -1,0 +1,165 @@
+:root {
+  color-scheme: light;
+  font-family: "Segoe UI", "Noto Sans", sans-serif;
+  color: #172c2a;
+  background: #edf2ed;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  min-width: 500px;
+  min-height: 360px;
+  margin: 0;
+  background-color: #edf2ed;
+  background-image: linear-gradient(90deg, rgb(32 76 67 / 3%) 1px, transparent 1px),
+    linear-gradient(rgb(32 76 67 / 3%) 1px, transparent 1px);
+  background-size: 28px 28px;
+}
+
+.startup-shell {
+  min-height: 100vh;
+  display: grid;
+  grid-template-rows: 74px 1fr 46px;
+  padding: 0 38px;
+}
+
+.startup-header,
+.startup-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.startup-header {
+  border-bottom: 1px solid #d5dfd8;
+}
+
+.brand-lockup {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+}
+
+.brand-lockup img {
+  display: block;
+  border-radius: 9px;
+}
+
+.brand-lockup div {
+  display: grid;
+  gap: 2px;
+}
+
+.brand-lockup strong {
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.brand-lockup div span,
+.build-label,
+.eyebrow,
+.startup-footer {
+  font-size: 9px;
+  font-weight: 700;
+}
+
+.brand-lockup div span,
+.build-label,
+.eyebrow {
+  color: #5d7770;
+}
+
+.build-label,
+.startup-footer {
+  letter-spacing: 0.08em;
+}
+
+.startup-content {
+  width: min(100%, 480px);
+  align-self: center;
+  padding: 10px 0 22px;
+}
+
+.status-mark {
+  width: 48px;
+  height: 48px;
+  display: grid;
+  place-items: center;
+  margin-bottom: 25px;
+  border: 1px solid #bfd2c8;
+  border-radius: 50%;
+  background: #f7faf6;
+}
+
+.status-mark span {
+  width: 17px;
+  height: 17px;
+  border: 2px solid #167966;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: spin 900ms linear infinite;
+}
+
+.eyebrow {
+  margin: 0 0 9px;
+}
+
+h1 {
+  margin: 0;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 30px;
+  font-weight: 500;
+  line-height: 1.16;
+}
+
+.startup-status {
+  min-height: 22px;
+  margin: 12px 0 25px;
+  color: #536b65;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.progress-track {
+  height: 3px;
+  overflow: hidden;
+  background: #d4e0d9;
+}
+
+.progress-track span {
+  display: block;
+  width: 34%;
+  height: 100%;
+  background: #167966;
+  animation: progress 1.5s ease-in-out infinite;
+}
+
+.startup-footer {
+  border-top: 1px solid #d5dfd8;
+  color: #647d75;
+}
+
+#runtime-state {
+  color: #167966;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes progress {
+  0% { transform: translateX(-110%); }
+  100% { transform: translateX(400%); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}

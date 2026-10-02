@@ -7,6 +7,7 @@ const { spawn } = require("node:child_process");
 
 const HOST = "127.0.0.1";
 const PORTS = [8080, 8081, 8082, 8083, 8084];
+const APP_ID = "com.aria.desktop";
 const DATA_EXTENSIONS = new Set([".db", ".json", ".sqlite", ".sqlite3", ".txt"]);
 const PUBLIC_SITE_PATHS = new Set([
   "/",
@@ -29,6 +30,8 @@ let mainWindow = null;
 let tokenWindow = null;
 let desktopAuthToken = null;
 let logFilePath = null;
+
+if (process.platform === "win32") app.setAppUserModelId(APP_ID);
 
 function logMessage(level, message) {
   const line = `${new Date().toISOString()} [${level}] ${message}`;
@@ -283,24 +286,44 @@ function stopBackend() {
   });
 }
 
-function saveTokenConfig(token, remember) {
+function runTokenConfig(action, token = "") {
   return new Promise((resolve, reject) => {
-    const action = remember ? "save" : "clear";
     const child = runBackendScript("token_config.py", [action], {
-      stdio: ["pipe", "ignore", "pipe"],
+      stdio: ["pipe", "pipe", "pipe"],
     });
+    let stdout = "";
     let stderr = "";
+    child.stdout.on("data", (chunk) => {
+      stdout = (stdout + chunk.toString()).slice(-4000);
+    });
     child.stderr.on("data", (chunk) => {
       stderr = (stderr + chunk.toString()).slice(-4000);
     });
     child.once("error", reject);
     child.once("exit", (code, signal) => {
-      if (code === 0) resolve();
-      else reject(new Error(stderr.trim() || `Token configuration helper exited (${code ?? signal}).`));
+      if (code !== 0) {
+        reject(new Error(stderr.trim() || `Token configuration helper exited (${code ?? signal}).`));
+        return;
+      }
+      try {
+        const result = JSON.parse(stdout.trim());
+        if (!result.owner?.id) throw new Error("No verified account identity was returned.");
+        resolve(result.owner);
+      } catch (error) {
+        reject(new Error(`Could not read the verified account identity: ${error.message}`));
+      }
     });
-    child.once("spawn", () => child.stdin.end(remember ? `${token}\n` : "\n"));
+    child.once("spawn", () => child.stdin.end(action === "identify" ? "" : `${token}\n`));
     child.stdin.on("error", () => {});
   });
+}
+
+function saveTokenConfig(token, remember) {
+  return runTokenConfig(remember ? "save" : "clear", token);
+}
+
+function identifySavedTokenOwner() {
+  return runTokenConfig("identify");
 }
 
 function isDashboardUrl(value) {
@@ -350,7 +373,8 @@ function createTokenWindow() {
     height: 470,
     resizable: false,
     show: false,
-    title: "Connect Aria",
+    title: "Aria Desktop Setup",
+    icon: path.join(__dirname, "aria.ico"),
     webPreferences: {
       preload: path.join(__dirname, "preload.cjs"),
       contextIsolation: true,
@@ -371,6 +395,39 @@ function createTokenWindow() {
   });
 }
 
+function updateStartupStatus(message) {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  const pageUrl = mainWindow.webContents.getURL();
+  if (!pageUrl.startsWith("file:")) return;
+  mainWindow.webContents.executeJavaScript(
+    `window.setAriaStartupStatus(${JSON.stringify(message)})`,
+  ).catch(() => {});
+}
+
+function createLoadingWindow() {
+  if (mainWindow && !mainWindow.isDestroyed()) return Promise.resolve();
+  mainWindow = new BrowserWindow({
+    width: 620,
+    height: 440,
+    minWidth: 540,
+    minHeight: 390,
+    resizable: false,
+    show: false,
+    title: "Aria Desktop",
+    icon: path.join(__dirname, "aria.ico"),
+    webPreferences: {
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+    },
+  });
+  mainWindow.once("ready-to-show", () => mainWindow?.show());
+  mainWindow.on("closed", () => {
+    mainWindow = null;
+  });
+  return mainWindow.loadFile(path.join(__dirname, "startup.html"));
+}
+
 ipcMain.handle("setup:save-token", async (event, payload) => {
   if (!tokenWindow || event.sender !== tokenWindow.webContents) {
     return { ok: false, error: "Token setup window is not available." };
@@ -384,7 +441,8 @@ ipcMain.handle("setup:save-token", async (event, payload) => {
   }
 
   try {
-    await saveTokenConfig(token, remember);
+    const ownerIdentity = await saveTokenConfig(token, remember);
+    logMessage("INFO", `Verified ${ownerIdentity.username} (${ownerIdentity.id}) as the desktop owner.`);
     await stopBackend();
     logMessage("INFO", "Restarting Aria with the updated token setting.");
     startBackend(remember ? null : token);
@@ -405,18 +463,29 @@ ipcMain.on("setup:cancel", (event) => {
 });
 
 function createWindow() {
-  mainWindow = new BrowserWindow({
-    width: 1280,
-    height: 820,
-    minWidth: 760,
-    minHeight: 560,
-    title: "Aria",
-    webPreferences: {
-      contextIsolation: true,
-      nodeIntegration: false,
-      sandbox: true,
-    },
-  });
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    mainWindow = new BrowserWindow({
+      width: 1280,
+      height: 820,
+      minWidth: 760,
+      minHeight: 560,
+      title: "Aria Desktop",
+      icon: path.join(__dirname, "aria.ico"),
+      webPreferences: {
+        contextIsolation: true,
+        nodeIntegration: false,
+        sandbox: true,
+      },
+    });
+    mainWindow.on("closed", () => {
+      mainWindow = null;
+    });
+  } else {
+    mainWindow.setResizable(true);
+    mainWindow.setMinimumSize(760, 560);
+    mainWindow.setSize(1280, 820);
+    mainWindow.center();
+  }
 
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     if (isPublicWebsiteUrl(url)) shell.openExternal(url);
@@ -429,16 +498,17 @@ function createWindow() {
     if (isPublicWebsiteUrl(url)) shell.openExternal(url);
     else openExternalHttps(url);
   });
-  mainWindow.loadURL(new URL("/dashboard", dashboardUrl).toString());
-  mainWindow.on("closed", () => {
-    mainWindow = null;
+  mainWindow.webContents.on("page-title-updated", (event) => {
+    event.preventDefault();
+    mainWindow.setTitle("Aria Desktop");
   });
+  mainWindow.loadURL(new URL("/dashboard", dashboardUrl).toString());
 }
 
 function installMenu() {
   Menu.setApplicationMenu(Menu.buildFromTemplate([
     {
-      label: "Aria",
+      label: "Aria Desktop",
       submenu: [
         {
           label: "Set / Change Token...",
@@ -477,16 +547,30 @@ app.whenReady().then(async () => {
     initializeLogging();
     logMessage("INFO", "Starting Aria desktop.");
     installMenu();
+    await createLoadingWindow();
     logMessage("INFO", "Checking for an existing Aria web panel.");
+    updateStartupStatus("Looking for a local Aria dashboard...");
     dashboardUrl = await findDashboard();
     if (!dashboardUrl) {
       logMessage("INFO", "No existing panel found; starting a private backend.");
+      updateStartupStatus("Starting your private Aria runtime...");
+      getBackendContext();
+      if (hasSavedToken()) {
+        try {
+          const ownerIdentity = await identifySavedTokenOwner();
+          logMessage("INFO", `Verified saved account ${ownerIdentity.username} (${ownerIdentity.id}) as the desktop owner.`);
+        } catch (error) {
+          logMessage("ERROR", `Could not refresh the saved token owner identity: ${error.message}`);
+        }
+      }
       startBackend();
       dashboardUrl = await waitForDashboard();
+      updateStartupStatus("Signing into your owner dashboard...");
       await authenticateElectronOwner();
     } else {
       logMessage("INFO", `Using existing panel at ${dashboardUrl}; its normal login remains enabled.`);
     }
+    updateStartupStatus("Opening your dashboard...");
     createWindow();
     if (backendProcess && !hasSavedToken()) {
       logMessage("INFO", "No saved token found; opening token setup.");

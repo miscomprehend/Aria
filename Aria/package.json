@@ -40,9 +40,15 @@
       ]
     },
     "win": {
+      "icon": "electron/aria.ico",
       "target": [
         "nsis"
       ]
+    },
+    "nsis": {
+      "installerIcon": "electron/aria.ico",
+      "uninstallerIcon": "electron/aria.ico",
+      "installerHeaderIcon": "electron/aria.ico"
     }
   },
   "allowScripts": {

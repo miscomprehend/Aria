@@ -29,7 +29,7 @@ form.addEventListener("submit", async (event) => {
 
   submitButton.disabled = true;
   status.dataset.state = "pending";
-  status.textContent = "Starting Aria...";
+  status.textContent = "Verifying your account and detecting the owner...";
   try {
     const result = await window.ariaSetup.saveToken(token, rememberInput.checked);
     if (!result.ok) throw new Error(result.error || "Could not save the token.");

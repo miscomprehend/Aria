@@ -412,9 +412,15 @@ class WebPanel:
         return bool(expected and provided and hmac.compare_digest(expected, provided))
 
     def _is_owner_session(self) -> bool:
-        """True only for configured master owners, not delegated admins."""
+        """True for configured master owners and verified Electron owners."""
         uid = str(session.get("user_id", "") or "").strip()
-        return bool(uid and uid in _PANEL_MASTER_IDS)
+        return bool(
+            uid
+            and (
+                uid in _PANEL_MASTER_IDS
+                or (session.get("electron_owner") is True and self._is_admin_session())
+            )
+        )
 
     def _verify_auth(self, auth_token: str, remote_addr: str = "127.0.0.1") -> bool:
         """Verify API requests (session or bearer token)."""
