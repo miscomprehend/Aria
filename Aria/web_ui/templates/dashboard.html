@@ -815,12 +815,18 @@
         <section class="section" id="section-rpc">
             <div class="section-header">
                 <div>
-                    <div class="section-title">Rich Presence</div>
-                    <div class="section-sub">Build an activity, preview it as it will appear, then apply it to your connected account.</div>
+                    <div class="section-title" id="rpcPageTitle">Rich Presence</div>
+                    <div class="section-sub" id="rpcPageSubtitle">Build an activity, preview it as it will appear, then apply it to your connected account.</div>
                 </div>
-                <div style="display:flex;gap:8px;align-items:center">
+                <div class="rpc-page-actions">
                     <span class="badge badge-off" id="rpcActiveBadge">Inactive</span>
-                    <button class="btn btn-danger-soft" onclick="clearRpc()">Stop RPC</button>
+                    <button class="btn btn-ghost" type="button" data-rpc-page-action="editor" onclick="clearRpc()">Stop</button>
+                    <button class="btn btn-primary" type="button" data-rpc-page-action="presets" onclick="document.getElementById('rpcPresetName').focus()" hidden>+ New preset</button>
+                    <button class="btn btn-ghost" type="button" data-rpc-page-action="stack" onclick="addCurrentRpcToStack()" hidden>+ Add entry</button>
+                    <button class="btn btn-primary" type="button" data-rpc-page-action="stack" onclick="applyRpcStack()" hidden>Run stack</button>
+                    <button class="btn btn-ghost" type="button" data-rpc-page-action="rotation" onclick="addRpcRotationPreset()" hidden>+ Add</button>
+                    <button class="btn btn-primary" type="button" data-rpc-page-action="rotation" onclick="controlRpcRotation('start')" hidden>Start rotation</button>
+                    <button class="btn btn-primary" type="button" data-rpc-page-action="lyrics" onclick="setSpotifyLyrics('start')" hidden>Start sync</button>
                 </div>
             </div>
 
@@ -830,55 +836,136 @@
                 <div class="rpc-live-client-state"><i id="rpcClientStateDot"></i><span id="rpcClientState">Waiting for client</span></div>
             </div>
 
-            <div class="rpc-profile-toolbar" aria-label="RPC presets and rotation">
-                <div class="rpc-profile-group rpc-profile-save">
-                    <label for="rpcPresetName">Save current</label>
-                    <div class="rpc-profile-inline">
-                        <input id="rpcPresetName" class="setting-input" type="text" maxlength="48" placeholder="Preset name">
-                        <button class="btn btn-primary" type="button" onclick="saveRpcPreset()">Save preset</button>
-                    </div>
-                </div>
-                <div class="rpc-profile-group rpc-profile-load">
-                    <label for="rpcPresetSelect">Saved preset</label>
-                    <div class="rpc-profile-inline">
-                        <select id="rpcPresetSelect" class="setting-input" aria-label="Choose saved RPC preset">
-                            <option value="">No presets saved</option>
-                        </select>
-                        <button class="btn btn-ghost" type="button" onclick="loadRpcPreset()">Load</button>
-                        <button class="btn btn-ghost" type="button" onclick="deleteRpcPreset()" aria-label="Delete selected RPC preset">Delete</button>
-                    </div>
-                </div>
-                <div class="rpc-profile-group rpc-profile-rotation">
-                    <label for="rpcRotationPresets">Add presets in rotation order</label>
-                    <div class="rpc-profile-inline rpc-rotation-controls">
-                        <select id="rpcRotationPresets" class="setting-input" multiple size="2" aria-label="Choose two or more presets in rotation order"></select>
-                        <label class="rpc-interval-label" for="rpcRotationInterval">Seconds</label>
-                        <input id="rpcRotationInterval" class="setting-input small" type="number" min="15" max="3600" value="60" aria-label="Seconds between presets">
-                        <button class="btn btn-ghost" type="button" onclick="setRpcRotation()">Set</button>
-                        <button class="btn btn-primary" type="button" onclick="controlRpcRotation('start')">Start</button>
-                        <button class="btn btn-ghost" type="button" onclick="controlRpcRotation('stop')">Stop</button>
-                        <button class="btn btn-ghost" type="button" onclick="controlRpcRotation('clear')">Clear</button>
-                    </div>
-                </div>
-                <div class="rpc-profile-feedback" id="rpcProfileMsg" role="status" aria-live="polite"></div>
+            <div class="rpc-tabs" role="tablist" aria-label="Rich Presence tools">
+                <button class="rpc-tab-button is-active" id="rpcTabEditor" type="button" role="tab" aria-selected="true" aria-controls="rpcPanelEditor" tabindex="0" onclick="setRpcTab('editor')">Editor</button>
+                <button class="rpc-tab-button" id="rpcTabStatus" type="button" role="tab" aria-selected="false" aria-controls="rpcPanelStatus" tabindex="-1" onclick="setRpcTab('status')">Custom Status</button>
+                <button class="rpc-tab-button" id="rpcTabPresets" type="button" role="tab" aria-selected="false" aria-controls="rpcPanelPresets" tabindex="-1" onclick="setRpcTab('presets')">Presets</button>
+                <button class="rpc-tab-button" id="rpcTabStack" type="button" role="tab" aria-selected="false" aria-controls="rpcPanelStack" tabindex="-1" onclick="setRpcTab('stack')">Stack</button>
+                <button class="rpc-tab-button" id="rpcTabRotation" type="button" role="tab" aria-selected="false" aria-controls="rpcPanelRotation" tabindex="-1" onclick="setRpcTab('rotation')">Rotation</button>
+                <button class="rpc-tab-button" id="rpcTabLyrics" type="button" role="tab" aria-selected="false" aria-controls="rpcPanelLyrics" tabindex="-1" onclick="setRpcTab('lyrics')">Lyrics</button>
             </div>
 
-            <div class="rpc-profile-toolbar" aria-label="Spotify lyrics controls">
-                <div class="rpc-profile-group">
-                    <label>Spotify Lyrics</label>
-                    <div class="rpc-profile-inline">
-                        <span class="badge badge-off" id="spotifyLyricsBadge">Off</span>
-                        <button class="btn btn-primary" type="button" onclick="setSpotifyLyrics('start')">Start sync</button>
-                        <button class="btn btn-ghost" type="button" onclick="setSpotifyLyrics('stop')">Stop sync</button>
+            <div class="rpc-tab-panel" id="rpcPanelStatus" role="tabpanel" aria-labelledby="rpcTabStatus" data-rpc-panel="status" hidden>
+                <div class="rpc-custom-status-panel">
+                    <div class="rpc-custom-status-heading">
+                        <div><strong>Custom status</strong><span>Raw Discord status text, independent from your activity</span></div>
+                        <span class="badge badge-off" id="rpcCustomStatusBadge">Off</span>
                     </div>
+                    <div class="rpc-custom-status-fields">
+                        <label class="rpc-custom-status-emoji" for="rpcCustomStatusEmojiInput">
+                            <span>Emoji</span>
+                            <input id="rpcCustomStatusEmojiInput" class="setting-input" type="text" maxlength="32" placeholder="Optional" oninput="updateRpcPreview()">
+                        </label>
+                        <label class="rpc-custom-status-text" for="rpcCustomStatusTextInput">
+                            <span>Status text</span>
+                            <input id="rpcCustomStatusTextInput" class="setting-input" type="text" maxlength="128" placeholder="Aria | online and working" oninput="updateRpcPreview()">
+                        </label>
+                    </div>
+                    <div class="rpc-custom-status-actions">
+                        <button class="btn btn-primary" type="button" onclick="applyCustomStatus()">Apply status</button>
+                        <button class="btn btn-ghost" type="button" onclick="stopCustomStatus()">Stop status</button>
+                    </div>
+                    <div class="rpc-profile-feedback" id="rpcCustomStatusMsg" role="status" aria-live="polite"></div>
                 </div>
-                <div class="rpc-profile-group">
-                    <label>Now Playing</label>
-                    <strong id="spotifyLyricsTrack">No active track</strong>
-                    <span id="spotifyLyricsLine" class="rpc-profile-feedback">Waiting for Spotify playback</span>
-                </div>
-                <div class="rpc-profile-feedback" id="spotifyLyricsMsg" role="status" aria-live="polite"></div>
             </div>
+
+            <div class="rpc-tab-panel" id="rpcPanelPresets" role="tabpanel" aria-labelledby="rpcTabPresets" data-rpc-panel="presets" hidden>
+                <div class="rpc-profile-toolbar rpc-preset-panel" aria-label="Create and manage RPC presets">
+                    <div class="rpc-preset-fields">
+                        <label class="rpc-preset-field" for="rpcPresetName"><span>Preset name</span><input id="rpcPresetName" class="setting-input" type="text" maxlength="48" placeholder="e.g. Main"></label>
+                        <label class="rpc-preset-field" for="rpcPresetActivityName"><span>Activity name</span><input id="rpcPresetActivityName" class="setting-input" type="text" maxlength="128" placeholder="e.g. Gaming"></label>
+                        <label class="rpc-preset-field" for="rpcPresetType"><span>RPC type</span><select id="rpcPresetType" class="setting-input">
+                            <option value="0">Playing</option><option value="1">Streaming</option><option value="2">Listening</option><option value="3">Watching</option><option value="5">Competing</option>
+                            <optgroup label="Apps"><option value="spotify">Spotify</option><option value="youtube">YouTube</option><option value="crunchyroll">Crunchyroll</option><option value="xbox">Xbox</option><option value="playstation">PlayStation</option><option value="vrchat">VRChat</option></optgroup>
+                        </select></label>
+                        <label class="rpc-preset-field" for="rpcPresetStreamUrl"><span>Stream URL</span><input id="rpcPresetStreamUrl" class="setting-input" type="url" placeholder="https://twitch.tv/channel"></label>
+                        <label class="rpc-preset-field" for="rpcPresetDetails"><span>Details</span><input id="rpcPresetDetails" class="setting-input" type="text" maxlength="128" placeholder="First activity line"></label>
+                        <label class="rpc-preset-field" for="rpcPresetState"><span>State</span><input id="rpcPresetState" class="setting-input" type="text" maxlength="128" placeholder="Second activity line"></label>
+                        <label class="rpc-preset-field" for="rpcPresetEmoji"><span>Status emoji</span><input id="rpcPresetEmoji" class="setting-input" type="text" maxlength="32" placeholder="Optional emoji"></label>
+                        <label class="rpc-preset-field" for="rpcPresetLargeImage"><span>Large image URL</span><input id="rpcPresetLargeImage" class="setting-input" type="url" placeholder="https://.../large.png"></label>
+                        <label class="rpc-preset-field" for="rpcPresetLargeText"><span>Large image tooltip</span><input id="rpcPresetLargeText" class="setting-input" type="text" maxlength="128" placeholder="Image description"></label>
+                        <label class="rpc-preset-field" for="rpcPresetSmallImage"><span>Small image URL</span><input id="rpcPresetSmallImage" class="setting-input" type="url" placeholder="https://.../small.png"></label>
+                        <label class="rpc-preset-field" for="rpcPresetSmallText"><span>Small image tooltip</span><input id="rpcPresetSmallText" class="setting-input" type="text" maxlength="128" placeholder="Badge description"></label>
+                        <label class="rpc-preset-field" for="rpcPresetElapsed"><span>Elapsed (minutes)</span><input id="rpcPresetElapsed" class="setting-input" type="number" min="0" step="1" value="0"></label>
+                        <label class="rpc-preset-field" for="rpcPresetTotal"><span>Total (minutes)</span><input id="rpcPresetTotal" class="setting-input" type="number" min="1" step="1" placeholder="Optional"></label>
+                    </div>
+                    <div class="rpc-preset-footer">
+                        <div class="rpc-profile-inline">
+                            <button class="btn btn-ghost" type="button" onclick="saveRpcPreset()">Save preset</button>
+                            <button class="btn btn-primary" type="button" onclick="applyRpcPresetDraft()">Apply RPC</button>
+                        </div>
+                        <div class="rpc-profile-inline rpc-preset-load">
+                            <select id="rpcPresetSelect" class="setting-input" aria-label="Choose saved RPC preset"><option value="">No presets saved</option></select>
+                            <button class="btn btn-ghost" type="button" onclick="loadRpcPreset()">Load</button>
+                            <button class="btn btn-ghost" type="button" onclick="deleteRpcPreset()" aria-label="Delete selected RPC preset">Delete</button>
+                        </div>
+                    </div>
+                    <div class="rpc-profile-feedback" id="rpcProfileMsg" role="status" aria-live="polite"></div>
+                </div>
+            </div>
+
+            <div class="rpc-tab-panel" id="rpcPanelStack" role="tabpanel" aria-labelledby="rpcTabStack" data-rpc-panel="stack" hidden>
+                <div class="rpc-stack-workspace">
+                    <div class="rpc-stack-list" id="rpcStackList" aria-live="polite">
+                        <div class="rpc-empty-state">
+                            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 9 4.5-9 4.5-9-4.5L12 3Z"/><path d="m3 12 9 4.5 9-4.5M3 16.5 12 21l9-4.5"/></svg>
+                            <strong>No entries</strong>
+                            <span>Click “Add entry” to start building your stack.</span>
+                        </div>
+                    </div>
+                    <div class="rpc-stack-actions">
+                        <span class="rpc-stack-count" id="rpcStackCount">0 / 5</span>
+                        <button class="btn btn-ghost" type="button" onclick="clearRpcStack()">Clear stack</button>
+                    </div>
+                    <div class="rpc-profile-feedback" id="rpcStackMsg" role="status" aria-live="polite"></div>
+                </div>
+            </div>
+
+            <div class="rpc-tab-panel" id="rpcPanelRotation" role="tabpanel" aria-labelledby="rpcTabRotation" data-rpc-panel="rotation" hidden>
+                <div class="rpc-profile-toolbar" aria-label="RPC rotation">
+                    <div class="rpc-profile-group rpc-profile-rotation">
+                        <label for="rpcRotationPresets">Rotation order</label>
+                        <div class="rpc-profile-inline rpc-rotation-controls">
+                            <select id="rpcRotationPresets" class="setting-input" aria-label="Choose a saved preset to add to rotation order">
+                                <option value="">Choose saved preset</option>
+                            </select>
+                            <label class="rpc-interval-label" for="rpcRotationInterval">Seconds</label>
+                            <input id="rpcRotationInterval" class="setting-input small" type="number" min="15" max="3600" value="60" aria-label="Seconds between presets">
+                            <button class="btn btn-ghost" type="button" onclick="setRpcRotation()">Set order</button>
+                            <button class="btn btn-ghost" type="button" onclick="controlRpcRotation('stop')">Stop</button>
+                            <button class="btn btn-ghost" type="button" onclick="controlRpcRotation('clear')">Clear</button>
+                        </div>
+                    </div>
+                    <div class="rpc-rotation-list" id="rpcRotationList" aria-live="polite"></div>
+                    <div class="rpc-empty-state" id="rpcRotationEmpty">
+                        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+                        <strong>No entries</strong>
+                        <span>Click “Add” to build your rotation.</span>
+                    </div>
+                    <div class="rpc-profile-feedback" id="rpcRotationMsg" role="status" aria-live="polite"></div>
+                </div>
+            </div>
+
+            <div class="rpc-tab-panel" id="rpcPanelLyrics" role="tabpanel" aria-labelledby="rpcTabLyrics" data-rpc-panel="lyrics" hidden>
+                <div class="rpc-profile-toolbar" aria-label="Spotify lyrics controls">
+                    <div class="rpc-profile-group">
+                        <label>Spotify Lyrics</label>
+                        <div class="rpc-profile-inline">
+                            <span class="badge badge-off" id="spotifyLyricsBadge">Off</span>
+                            <button class="btn btn-primary" type="button" onclick="setSpotifyLyrics('start')">Start sync</button>
+                            <button class="btn btn-ghost" type="button" onclick="setSpotifyLyrics('stop')">Stop sync</button>
+                        </div>
+                    </div>
+                    <div class="rpc-profile-group">
+                        <label>Now Playing</label>
+                        <strong id="spotifyLyricsTrack">No active track</strong>
+                        <span id="spotifyLyricsLine" class="rpc-profile-feedback">Waiting for Spotify playback</span>
+                    </div>
+                    <div class="rpc-profile-feedback" id="spotifyLyricsMsg" role="status" aria-live="polite"></div>
+                </div>
+            </div>
+
+            <div class="rpc-tab-panel" id="rpcPanelEditor" role="tabpanel" aria-labelledby="rpcTabEditor" data-rpc-panel="editor">
 
             <!-- Builder and Discord preview stay connected to the live RPC draft. -->
             <div class="rpc-studio-layout">
@@ -886,8 +973,9 @@
                 <!-- Live Discord preview -->
                 <div class="rpc-discord-preview-wrap">
                     <div class="rpc-discord-header">
-                        <span class="rpc-discord-header-label">Live Preview</span>
+                        <span class="rpc-discord-header-label">Profile preview</span>
                         <span class="rpc-discord-header-sub">as it appears in Discord</span>
+                        <span class="rpc-preview-spoof" id="rpcPreviewSpoofBadge" hidden>Streaming spoof</span>
                     </div>
                     <!-- Simulated Discord presence card -->
                     <div class="discord-card" id="rpcPreview">
@@ -898,7 +986,7 @@
                             </div>
                             <div class="discord-user-name-wrap">
                                 <div class="discord-username" id="rpcDiscordUsername">Username</div>
-                                <div class="discord-customstatus" id="rpcDiscordCustomStatus"></div>
+                                <div class="discord-customstatus" id="rpcDiscordCustomStatus" data-rpc-focus="rpcCustomStatusTextInput" role="button" tabindex="0" title="Edit status text"></div>
                             </div>
                         </div>
                         <div class="discord-card-divider"></div>
@@ -906,16 +994,16 @@
                             <div class="discord-activity-header">Playing a game</div>
                             <div class="discord-activity-body">
                                 <div class="discord-activity-art-wrap">
-                                    <div class="discord-activity-art" id="rpcDiscordArt">
+                                    <div class="discord-activity-art" id="rpcDiscordArt" data-rpc-focus="rpcLargeImageInput" role="button" tabindex="0" title="Edit large image">
                                         <svg viewBox="0 0 40 40" fill="none" style="width:40px;height:40px;opacity:0.3"><rect width="40" height="40" rx="8" fill="currentColor"/></svg>
                                     </div>
-                                    <div class="discord-activity-small-art" id="rpcDiscordSmallArt"></div>
+                                    <div class="discord-activity-small-art" id="rpcDiscordSmallArt" data-rpc-focus="rpcSmallImageInput" role="button" tabindex="0" title="Edit small image"></div>
                                 </div>
                                 <div class="discord-activity-text">
-                                    <div class="discord-activity-name" id="rpcPreviewName">No activity set</div>
-                                    <div class="discord-activity-detail" id="rpcPreviewDetails"></div>
-                                    <div class="discord-activity-state" id="rpcPreviewState"></div>
-                                    <div class="discord-activity-time" id="rpcDiscordTime"></div>
+                                    <div class="discord-activity-name rpc-preview-editable" id="rpcPreviewName" data-rpc-focus="rpcNameInput" role="button" tabindex="0" title="Edit activity name">No activity set</div>
+                                    <div class="discord-activity-detail rpc-preview-editable" id="rpcPreviewDetails" data-rpc-focus="rpcDetailsInput" role="button" tabindex="0" title="Edit details"></div>
+                                    <div class="discord-activity-state rpc-preview-editable" id="rpcPreviewState" data-rpc-focus="rpcStateInput" role="button" tabindex="0" title="Edit state"></div>
+                                    <div class="discord-activity-time rpc-preview-editable" id="rpcDiscordTime" data-rpc-focus="rpcElapsedMinutes" role="button" tabindex="0" title="Edit elapsed time"></div>
                                 </div>
                             </div>
                             <!-- Progress bar (for music) -->
@@ -958,91 +1046,119 @@
                 <div class="rpc-builder-col">
                     <!-- Builder fields -->
                     <div class="settings-panel rpc-builder-panel">
-                        <div class="settings-panel-header"><span class="settings-title">Activity Builder</span></div>
+                        <div class="settings-panel-header"><span class="settings-title">Live builder</span></div>
 
+                        <div class="rpc-builder-divider">Activity</div>
                         <div class="setting-row setting-row-compact">
-                            <div><div class="setting-label">Activity Type</div></div>
+                            <div><div class="setting-label">RPC type</div></div>
                             <div class="setting-controls">
-                                <select id="rpcType" class="setting-input small" onchange="updateRpcPreview()">
-                                    <option value="custom">Custom RPC</option>
-                                    <option value="0">Playing</option>
-                                    <option value="1">Streaming</option>
-                                    <option value="2">Listening to</option>
-                                    <option value="3">Watching</option>
-                                    <option value="5">Competing in</option>
+                                <div class="rpc-type-picker" id="rpcTypePicker">
+                                    <input id="rpcType" type="hidden" value="0">
+                                    <button class="rpc-type-trigger" id="rpcTypeTrigger" type="button" aria-haspopup="listbox" aria-expanded="false" aria-controls="rpcTypeMenu" onclick="toggleRpcTypeMenu()">
+                                        <span class="rpc-type-trigger-copy"><strong id="rpcTypeLabel">Playing</strong><small id="rpcTypeDescription">Standard game activity</small></span>
+                                        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="m4 6 4 4 4-4"/></svg>
+                                    </button>
+                                    <div class="rpc-type-menu" id="rpcTypeMenu" role="listbox" aria-label="RPC type" hidden>
+                                        <div class="rpc-type-group-label" role="presentation">GENERIC</div>
+                                        <button class="rpc-type-option is-selected" type="button" role="option" aria-selected="true" data-rpc-type="0" tabindex="-1" onclick="selectRpcType('0')"><span><strong>Playing</strong><small>Standard game activity</small></span><i aria-hidden="true">&#10003;</i></button>
+                                        <button class="rpc-type-option" type="button" role="option" aria-selected="false" data-rpc-type="3" tabindex="-1" onclick="selectRpcType('3')"><span><strong>Watching</strong><small>Show, movie or video</small></span><i aria-hidden="true">&#10003;</i></button>
+                                        <button class="rpc-type-option" type="button" role="option" aria-selected="false" data-rpc-type="2" tabindex="-1" onclick="selectRpcType('2')"><span><strong>Listening</strong><small>Music or podcast</small></span><i aria-hidden="true">&#10003;</i></button>
+                                        <button class="rpc-type-option" type="button" role="option" aria-selected="false" data-rpc-type="1" tabindex="-1" onclick="selectRpcType('1')"><span><strong>Streaming</strong><small>Live stream (Twitch/YouTube)</small></span><i aria-hidden="true">&#10003;</i></button>
+                                        <button class="rpc-type-option" type="button" role="option" aria-selected="false" data-rpc-type="5" tabindex="-1" onclick="selectRpcType('5')"><span><strong>Competing in</strong><small>Tournament or ranked match</small></span><i aria-hidden="true">&#10003;</i></button>
+                                        <button class="rpc-type-option rpc-type-status-option" type="button" role="option" aria-selected="false" data-rpc-type="custom_status" tabindex="-1" onclick="selectRpcType('custom_status')"><span><strong>Custom Status</strong><small>Edit in its own tab</small></span><i aria-hidden="true">&#10003;</i></button>
+                                        <div class="rpc-type-group-label" role="presentation">APPS</div>
+                                        <button class="rpc-type-option" type="button" role="option" aria-selected="false" data-rpc-type="spotify" tabindex="-1" onclick="selectRpcType('spotify')"><span><strong>Spotify</strong><small>Listening activity</small></span><i aria-hidden="true">&#10003;</i></button>
+                                        <button class="rpc-type-option" type="button" role="option" aria-selected="false" data-rpc-type="youtube" tabindex="-1" onclick="selectRpcType('youtube')"><span><strong>YouTube</strong><small>Watching activity</small></span><i aria-hidden="true">&#10003;</i></button>
+                                        <button class="rpc-type-option" type="button" role="option" aria-selected="false" data-rpc-type="crunchyroll" tabindex="-1" onclick="selectRpcType('crunchyroll')"><span><strong>Crunchyroll</strong><small>Anime activity</small></span><i aria-hidden="true">&#10003;</i></button>
+                                        <button class="rpc-type-option" type="button" role="option" aria-selected="false" data-rpc-type="xbox" tabindex="-1" onclick="selectRpcType('xbox')"><span><strong>Xbox</strong><small>Console game activity</small></span><i aria-hidden="true">&#10003;</i></button>
+                                        <button class="rpc-type-option" type="button" role="option" aria-selected="false" data-rpc-type="playstation" tabindex="-1" onclick="selectRpcType('playstation')"><span><strong>PlayStation</strong><small>Console game activity</small></span><i aria-hidden="true">&#10003;</i></button>
+                                        <button class="rpc-type-option" type="button" role="option" aria-selected="false" data-rpc-type="vrchat" tabindex="-1" onclick="selectRpcType('vrchat')"><span><strong>VRChat</strong><small>Virtual world activity</small></span><i aria-hidden="true">&#10003;</i></button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="setting-row setting-row-compact rpc-spoof-row" id="rpcSpoofRow" data-rpc-activity-only>
+                            <div><div class="setting-label">Spoof activity type</div><div class="setting-sub">Choose None or Streaming</div></div>
+                            <div class="setting-controls">
+                                <select id="rpcSpoofType" class="setting-input small" onchange="updateRpcPreview()">
+                                    <option value="none">None</option>
+                                    <option value="streaming">Streaming</option>
                                 </select>
                             </div>
                         </div>
 
                         <div class="setting-row setting-row-compact">
-                            <div><div class="setting-label">Name</div><div class="setting-sub">App name for ID detection; fallback activity title <span id="miniAppId" style="font-size:11px;color:var(--muted);margin-left:8px"></span></div></div>
+                            <div><div class="setting-label" id="rpcNameLabel">Name</div><div class="setting-sub" id="rpcNameSub">Activity name <span id="miniAppId" style="font-size:11px;color:var(--muted);margin-left:8px"></span></div></div>
                             <div class="setting-controls">
-                                <input type="text" id="rpcNameInput" class="setting-input" placeholder="e.g. Spotify, Valorant" oninput="updateRpcPreview()">
+                                <input type="text" id="rpcNameInput" class="setting-input" placeholder="Aria" oninput="updateRpcPreview()">
                             </div>
                         </div>
 
-                        <div class="setting-row setting-row-compact">
-                            <div><div class="setting-label">Display Name</div><div class="setting-sub">Activity title shown on Discord (overrides Name)</div></div>
-                            <div class="setting-controls">
-                                <input type="text" id="rpcDisplayNameInput" class="setting-input" placeholder="e.g. Custom Name" oninput="updateRpcPreview()">
-                            </div>
-                        </div>
-
-                        <div class="setting-row setting-row-compact">
-                            <div><div class="setting-label">App ID Mode</div><div class="setting-sub">Auto-detect from activity name, or set custom</div></div>
-                            <div class="setting-controls">
-                                <select id="rpcAppIdMode" class="setting-input small" onchange="updateRpcPreview()">
-                                    <option value="auto">Auto</option>
-                                    <option value="custom">Custom</option>
-                                </select>
-                            </div>
-                        </div>
-
-                        <div class="setting-row setting-row-compact" id="rpcCustomAppIdRow" style="display:none">
-                            <div><div class="setting-label">Custom App ID</div><div class="setting-sub">Overrides auto-detected app id</div></div>
-                            <div class="setting-controls">
-                                <input type="text" id="rpcCustomAppIdInput" class="setting-input mono" placeholder="1494507808329171096" oninput="updateRpcPreview()">
-                            </div>
-                        </div>
-
-                        <div class="setting-row setting-row-compact">
+                        <div class="rpc-builder-divider" data-rpc-activity-only>Content</div>
+                        <div class="setting-row setting-row-compact" data-rpc-activity-only>
                             <div><div class="setting-label">Details</div><div class="setting-sub">Line 1 — song title, map, etc.</div></div>
                             <div class="setting-controls">
-                                <input type="text" id="rpcDetailsInput" class="setting-input" placeholder="e.g. Blinding Lights" oninput="updateRpcPreview()">
+                                <input type="text" id="rpcDetailsInput" class="setting-input" placeholder="Aria - running commands" oninput="updateRpcPreview()">
                             </div>
                         </div>
 
-                        <div class="setting-row setting-row-compact">
+                        <div class="setting-row setting-row-compact" data-rpc-activity-only>
                             <div><div class="setting-label">State</div><div class="setting-sub">Line 2 — artist, server, rank</div></div>
                             <div class="setting-controls">
-                                <input type="text" id="rpcStateInput" class="setting-input" placeholder="e.g. by The Weeknd" oninput="updateRpcPreview()">
+                                <input type="text" id="rpcStateInput" class="setting-input" placeholder="Aria | working" oninput="updateRpcPreview()">
                             </div>
                         </div>
 
-                        <div class="setting-row setting-row-compact" id="rpcStreamUrlRow" style="display:none">
-                            <div><div class="setting-label">Twitch Stream URL</div><div class="setting-sub">Used when Activity Type is Streaming</div></div>
+                        <div class="rpc-builder-divider" data-rpc-activity-only>Timing</div>
+                        <div class="setting-row setting-row-compact" data-rpc-activity-only>
+                            <div><div class="setting-label">Elapsed (minutes)</div></div>
+                            <div class="setting-controls setting-controls-grid-2">
+                                <input type="number" id="rpcElapsedMinutes" class="setting-input" min="0" step="1" value="0" aria-label="Elapsed minutes" oninput="updateRpcPreview()">
+                                <input type="number" id="rpcTotalMinutes" class="setting-input" min="1" step="1" placeholder="e.g. 45" aria-label="Total minutes, optional" oninput="updateRpcPreview()">
+                            </div>
+                        </div>
+                        <div class="rpc-field-note" data-rpc-activity-only>Leave total empty to start counting from now. Fill both to show a progress bar.</div>
+
+                        <div class="setting-row setting-row-compact" id="rpcStreamUrlRow" data-rpc-activity-only style="display:none">
+                            <div><div class="setting-label">Stream URL</div><div class="setting-sub">Twitch or YouTube URL for Streaming activity</div></div>
                             <div class="setting-controls">
                                 <input type="url" id="rpcStreamUrlInput" class="setting-input" placeholder="https://twitch.tv or twitch.com/yourchannel" oninput="updateRpcPreview()">
                             </div>
                         </div>
 
-                        <div class="setting-row setting-row-compact">
-                            <div><div class="setting-label">Large Image Key</div><div class="setting-sub">Asset key or external URL</div></div>
+                        <div class="rpc-builder-divider" data-rpc-activity-only>Artwork</div>
+                        <div class="setting-row setting-row-compact" data-rpc-activity-only>
+                            <div><div class="setting-label">Large image URL</div></div>
                             <div class="setting-controls">
-                                <input type="text" id="rpcLargeImageInput" class="setting-input" placeholder="large_image" oninput="updateRpcPreview()">
+                                <input type="url" id="rpcLargeImageInput" class="setting-input" placeholder="https://…/large.png" oninput="updateRpcPreview()">
                             </div>
                         </div>
 
-                        <div class="setting-row setting-row-compact">
-                            <div><div class="setting-label">Small Image Key</div><div class="setting-sub">Overlay badge image</div></div>
+                        <div class="setting-row setting-row-compact" data-rpc-activity-only>
+                            <div><div class="setting-label">Large image tooltip</div></div>
                             <div class="setting-controls">
-                                <input type="text" id="rpcSmallImageInput" class="setting-input" placeholder="small_image" oninput="updateRpcPreview()">
+                                <input type="text" id="rpcLargeImageTextInput" class="setting-input" maxlength="128" placeholder="Aria" oninput="updateRpcPreview()">
                             </div>
                         </div>
 
-                        <div class="rpc-builder-divider">Buttons (max 2)</div>
+                        <div class="setting-row setting-row-compact" data-rpc-activity-only>
+                            <div><div class="setting-label">Small image URL</div></div>
+                            <div class="setting-controls">
+                                <input type="url" id="rpcSmallImageInput" class="setting-input" placeholder="https://…/small.png" oninput="updateRpcPreview()">
+                            </div>
+                        </div>
 
-                        <div class="setting-row setting-row-compact">
+                        <div class="setting-row setting-row-compact" data-rpc-activity-only>
+                            <div><div class="setting-label">Small image tooltip</div></div>
+                            <div class="setting-controls">
+                                <input type="text" id="rpcSmallImageTextInput" class="setting-input" maxlength="128" placeholder="Aria" oninput="updateRpcPreview()">
+                            </div>
+                        </div>
+
+                        <div class="rpc-builder-divider" data-rpc-activity-only>Buttons (max 2)</div>
+
+                        <div class="setting-row setting-row-compact" data-rpc-activity-only>
                             <div><div class="setting-label">Button 1</div></div>
                             <div class="setting-controls setting-controls-grid-2">
                                 <input type="text" id="rpcButton1Label" class="setting-input" placeholder="Label" oninput="updateRpcPreview()">
@@ -1050,7 +1166,7 @@
                             </div>
                         </div>
 
-                        <div class="setting-row setting-row-compact">
+                        <div class="setting-row setting-row-compact" id="rpcButton2Row" data-rpc-activity-only hidden>
                             <div><div class="setting-label">Button 2</div></div>
                             <div class="setting-controls setting-controls-grid-2">
                                 <input type="text" id="rpcButton2Label" class="setting-input" placeholder="Label" oninput="updateRpcPreview()">
@@ -1058,10 +1174,14 @@
                             </div>
                         </div>
 
+                        <div class="rpc-button-add-row" data-rpc-activity-only>
+                            <button class="btn btn-ghost" id="rpcAddButton" type="button" onclick="addRpcButton()">+ Add</button>
+                        </div>
+
                         <div class="setting-row setting-row-compact" style="border-top:1px solid var(--border);padding-top:14px">
                             <div></div>
                             <div class="setting-controls">
-                                <button class="btn btn-primary" onclick="applyRpc()">Set Presence</button>
+                                <button class="btn btn-primary" onclick="applyRpc()">Apply RPC</button>
                                 <button class="btn btn-ghost" onclick="updateRpcPreview()">Preview</button>
                             </div>
                         </div>
@@ -1069,9 +1189,11 @@
                     </div>
                 </div>
             </div><!-- /rpc-studio-layout -->
+
             <div class="rpc-status-callout">
                 <div><strong>Account status and AFK</strong><span>Manage your online state and automatic away replies.</span></div>
                 <button class="btn btn-ghost" type="button" onclick="navigateTo('presence')">Open status controls</button>
+            </div>
             </div>
         </section>
 

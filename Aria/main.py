@@ -26,9 +26,11 @@ import json
 from urllib.parse import quote as _url_quote
 from rpc_profiles import RPCProfileStore
 from rpc_activity import (
+    RPC_APP_IDS,
     RPC_ACTIVITY_TYPES,
     RPC_TYPE_ALIASES,
     RPC_TYPE_GROUPS,
+    RPC_PROVIDER_CONFIG,
     RPC_TYPES,
     build_rpc_activity,
     parse_rpc_key_values,
@@ -366,6 +368,13 @@ def upload_n_get_asset_key(bot, image_url, application_id=None):
         return cached_asset
     if isinstance(image_url, str) and image_url.startswith("attachments/"):
         return f"mp:{image_url}"
+    if isinstance(image_url, str) and image_url.startswith(("http://", "https://")):
+        attachment_match = _CDN_RE.search(image_url)
+        if attachment_match:
+            channel_id, attachment_id, filename = attachment_match.groups()
+            asset_key = f"mp:attachments/{channel_id}/{attachment_id}/{filename}"
+            _store_cached_rpc_asset(image_url, asset_key, application_id=application_id)
+            return asset_key
 
     if isinstance(image_url, str) and image_url.startswith(("http://", "https://")) and application_id:
         asset = register_external_rpc_asset(bot.api, application_id, image_url)
@@ -399,7 +408,7 @@ def send_spotify_with_spoofing(bot, song_name, artist, album, duration_minutes=3
         "details": song_name,
         "state": artist,
         "timestamps": {"start": start_ms, "end": end_ms},
-        "application_id": "3201606009684",
+        "application_id": RPC_APP_IDS["spotify"],
         "sync_id": track_id,
         "session_id": f"spotify:{os.urandom(8).hex()}",
         "party": {"id": f"spotify:{track_id}", "size": [1, 1]},
@@ -439,14 +448,14 @@ def send_spotify_listening_activity(bot, song_name, artist, album=None, elapsed_
     activity = {
         "type": int(ActivityType.Listening),
         "name": "Spotify",
-        "application_id": "3201606009684",
+        "application_id": RPC_APP_IDS["spotify"],
         "details": song_name,
         "state": artist,
     }
     if total_minutes is not None:
         total_ms = int(float(max(0.1, total_minutes)) * 60 * 1000)
         activity["timestamps"] = {"start": start_ms, "end": start_ms + total_ms}
-
+        asset_key = upload_n_get_asset_key(bot, image_url, application_id=activity.get("application_id")) if image_url else None
     # Handle image with proper error handling
     asset_key = None
     if image_url:
@@ -466,7 +475,7 @@ def send_youtube_activity(bot, title, channel, elapsed_minutes=0.0, total_minute
     activity = {
         "type": int(ActivityType.Watching),
         "name": "YouTube",
-        "application_id": "880218394199220334",
+        "application_id": RPC_APP_IDS["youtube"],
         "details": title,
         "state": channel,
     }
@@ -492,157 +501,8 @@ def send_youtube_activity(bot, title, channel, elapsed_minutes=0.0, total_minute
         activity["metadata"] = {"button_urls": [button_url]}
     bot.set_activity(activity)
 
-def send_soundcloud_activity(bot, track, artist, elapsed_minutes=0.0, total_minutes=None, image_url=None, button_label=None, button_url=None):
-    start_ms = int(time.time() * 1000) - int(float(max(0.0, elapsed_minutes)) * 60 * 1000)
-    activity = {
-        "type": int(ActivityType.Listening),
-        "name": "SoundCloud",
-        "application_id": "451016423729692673",
-        "details": track,
-        "state": artist,
-    }
-    if total_minutes is not None:
-        total_ms = int(float(max(0.1, total_minutes)) * 60 * 1000)
-        activity["timestamps"] = {"start": start_ms, "end": start_ms + total_ms}
-
-    asset_key = upload_n_get_asset_key(bot, image_url, application_id=activity.get("application_id")) if image_url else None
-    if asset_key:
-        activity["assets"] = {
-            "large_image": asset_key,
-            "large_text": "SoundCloud",
-        }
-    else:
-        activity["assets"] = {
-            "large_image": "soundcloud",
-            "large_text": "SoundCloud",
-        }
-        if image_url:
-            _notify_rpc_issue(bot, f"> **✗ SoundCloud RPC** :: Could not use image: {image_url}")
-    if button_label and button_url:
-        activity["buttons"] = [button_label]
-        activity["metadata"] = {"button_urls": [button_url]}
-    bot.set_activity(activity)
-
-
-REAL_RPC_APPS = {
-    "youtube": {
-        "name": "YouTube",
-        "type": int(ActivityType.Watching),
-        "application_id": "880218394199220334",
-        "asset": "youtube",
-        "default_button": "Watch",
-        "default_url": "https://www.youtube.com",
-    },
-    "spotify": {
-        "name": "Spotify",
-        "type": int(ActivityType.Listening),
-        "application_id": "3201606009684",
-        "asset": "spotify",
-        "default_button": "Listen",
-        "default_url": "https://open.spotify.com",
-    },
-    "crunchyroll": {
-        "name": "Crunchyroll",
-        "type": int(ActivityType.Watching),
-        "application_id": "1000782763855949914",
-        "asset": "crunchyroll",
-        "default_button": "Watch",
-        "default_url": "https://www.crunchyroll.com",
-    },
-    "playstation": {
-        "name": "PlayStation",
-        "type": int(ActivityType.Playing),
-        "application_id": "463035646208860161",
-        "asset": "playstation",
-        "default_button": "Play",
-        "default_url": "https://www.playstation.com",
-    },
-    "xbox": {
-        "name": "Xbox",
-        "type": int(ActivityType.Playing),
-        "application_id": "432980957394370572",
-        "asset": "xbox",
-        "default_button": "Play",
-        "default_url": "https://www.xbox.com",
-    },
-    "roblox": {
-        "name": "Roblox",
-        "type": int(ActivityType.Playing),
-        "application_id": "366959252047237121",
-        "asset": "roblox",
-        "default_button": "Play",
-        "default_url": "https://www.roblox.com",
-    },
-    "vscode": {
-        "name": "Visual Studio Code",
-        "type": int(ActivityType.Playing),
-        "application_id": "383226320970055681",
-        "asset": "code",
-        "default_button": "Open",
-        "default_url": "https://code.visualstudio.com",
-    },
-    "browser": {
-        "name": "Browser",
-        "type": int(ActivityType.Playing),
-        "application_id": "485951488964247552",
-        "asset": "browser",
-        "default_button": "Open",
-        "default_url": "https://www.google.com",
-    },
-    "metaquest": {
-        "name": "Meta Quest",
-        "type": int(ActivityType.Playing),
-        "application_id": "1418873561485504553",
-        "asset": "https://upload.wikimedia.org/wikipedia/commons/a/a9/Meta-Logo.png",
-        "default_button": "Play",
-        "default_url": "https://www.meta.com/quest",
-    },
-    "vrchat": {
-        "name": "VRChat",
-        "type": int(ActivityType.Playing),
-        "application_id": "1498387526501535835",
-        "asset": "https://upload.wikimedia.org/wikipedia/commons/0/0d/VRChat_Logo.svg",
-        "default_button": "Join",
-        "default_url": "https://hello.vrchat.com",
-    },
-    "custom_status": {
-        "name": "Custom Status",
-        "type": int(ActivityType.Custom),
-        "application_id": "367827983903490050",
-        "asset": "game",
-        "default_button": "Open",
-        "default_url": "https://discord.com",
-    },
-    "custom": {
-        "name": "Custom",
-        "type": int(ActivityType.Custom),
-        "application_id": "367827983903490050",
-        "asset": "game",
-        "default_button": "Open",
-        "default_url": "https://discord.com",
-    },
-    "clear": {
-        "name": "Clear",
-        "type": int(ActivityType.Playing),
-        "application_id": "367827983903490050",
-        "asset": "game",
-        "default_button": "",
-        "default_url": "",
-    },
-}
-
-REAL_RPC_ALIASES = {
-    **RPC_TYPE_ALIASES,
-    "customstatus": "custom_status",
-    "custom_status": "custom_status",
-    "metaquest": "metaquest",
-    "quest": "metaquest",
-    "quest3": "metaquest",
-    "oculus": "metaquest",
-    "vr": "metaquest",
-    "vrchat": "vrchat",
-    "clear": "clear",
-}
+REAL_RPC_APPS = RPC_PROVIDER_CONFIG
+REAL_RPC_ALIASES = RPC_TYPE_ALIASES
 
 
 def _build_rpc_command_activity(bot, rpc_type, values):
@@ -653,24 +513,12 @@ def _build_rpc_command_activity(bot, rpc_type, values):
     )
     if image_url:
         values.setdefault("large_image", image_url)
-    provider_configs = {
-        key: {
-            "name": config.get("name"),
-            "type": config.get("type", 0),
-            "application_id": config.get("application_id"),
-            "asset": config.get("asset"),
-            "default_button": config.get("default_button"),
-            "default_url": config.get("default_url"),
-        }
-        for key, config in REAL_RPC_APPS.items()
-    }
     return build_rpc_activity(
         REAL_RPC_ALIASES.get(str(rpc_type or "").lower(), str(rpc_type or "").lower()),
         values,
         resolve_asset=lambda url, app_id=None: upload_n_get_asset_key(
             bot, url, application_id=app_id or values.get("app_id")
         ),
-        provider_configs=provider_configs,
     )
 def send_real_app_activity(
     bot,
@@ -719,10 +567,12 @@ def send_real_app_activity(
         except Exception:
             pass
     
-    activity["assets"] = {
-        "large_image": asset_key if asset_key else cfg.get("asset", "game"),
-        "large_text": cfg["name"],
-    }
+    default_asset = cfg.get("asset")
+    if asset_key or default_asset:
+        activity["assets"] = {
+            "large_image": asset_key or default_asset,
+            "large_text": cfg["name"],
+        }
 
     # Add buttons in Discord API format: buttons array for labels, metadata.button_urls for URLs
     final_button = button_label or cfg.get("default_button")
@@ -743,7 +593,7 @@ def send_crunchyroll_activity(bot, name, episode_title, elapsed_minutes, total_m
     end_ms = start_ms + int(total * 60 * 1000)
 
     # Use real Crunchyroll app ID and asset if possible
-    CRUNCHYROLL_APP_ID = "981509069309354054"  # Real Crunchyroll app ID (as of 2024)
+    CRUNCHYROLL_APP_ID = RPC_APP_IDS["crunchyroll"]
     activity = {
         "type": 3,
         "name": "Crunchyroll",
@@ -780,7 +630,7 @@ def send_listening_activity(bot, name, button_label=None, button_url=None, image
     activity = {
         "type": 2,
         "name": "Spotify",
-        "application_id": "3201606009684",
+        "application_id": RPC_APP_IDS["spotify"],
         "flags": 0,
         "details": details if details else name,
     }
@@ -814,7 +664,7 @@ def send_streaming_activity(bot, name, button_label=None, button_url=None, image
         "type": 1,
         "name": name,
         "url": stream_url or "https://www.twitch.tv",
-        "application_id": "111299001912",
+        "application_id": RPC_APP_IDS["youtube"],
         "details": details if details else name,
     }
     if state:
@@ -846,7 +696,7 @@ def send_playing_activity(bot, name, button_label=None, button_url=None, image_u
     activity = {
         "type": 0,
         "name": name,
-        "application_id": "367827983903490050",
+        "application_id": RPC_APP_IDS["generic"],
     }
     if details:
         activity["details"] = details
@@ -873,65 +723,6 @@ def send_playing_activity(bot, name, button_label=None, button_url=None, image_u
             activity["metadata"] = {}
         activity["metadata"]["button_urls"] = [button_url]
 
-    bot.set_activity(activity)
-
-def send_metaquest_activity(bot, game_name=None, details=None, state=None, image_url=None):
-    """Send a 'Playing in Meta Quest 3' RPC activity."""
-    _MQ_APP_ID = "1418873561485504553"  # Meta Quest companion app
-    activity = {
-        "type": 0,  # Playing
-        "name": game_name or "Meta Quest",
-        "application_id": _MQ_APP_ID,
-    }
-    if details:
-        activity["details"] = details
-    if state:
-        activity["state"] = state
-    else:
-        activity["state"] = "Playing in VR"
-
-    asset_key = None
-    if image_url:
-        try:
-            asset_key = upload_n_get_asset_key(bot, image_url, application_id=_MQ_APP_ID)
-        except Exception:
-            pass
-
-    activity["assets"] = {
-        "large_image": asset_key if asset_key else "https://upload.wikimedia.org/wikipedia/commons/a/a9/Meta-Logo.png",
-        "large_text": "Meta Quest 3",
-        "small_image": asset_key if asset_key else None,
-    }
-    if not activity["assets"]["small_image"]:
-        del activity["assets"]["small_image"]
-
-    bot.set_activity(activity)
-
-def send_timer_activity(bot, name, start_time=None, end_time=None, details=None, state=None, image_url=None):
-    activity = {
-        "type": 0,
-        "name": name,
-        "application_id": "367827983903490050",
-    }
-    if start_time and end_time:
-        activity["timestamps"] = {"start": int(start_time * 1000), "end": int(end_time * 1000)}
-    if details:
-        activity["details"] = details
-    if state:
-        activity["state"] = state
-
-    # Handle image with proper error handling
-    asset_key = None
-    if image_url:
-        try:
-            asset_key = upload_n_get_asset_key(bot, image_url, application_id=activity.get("application_id"))
-        except Exception:
-            pass
-    
-    activity["assets"] = {
-        "large_image": asset_key if asset_key else "game",
-        "large_text": name,
-    }
     bot.set_activity(activity)
 
 LAST_SERVER_COPY = None
@@ -4169,10 +3960,10 @@ Example Usage:
             cmds = [
                 (f"{p}help rpc music", "Music providers and examples"),
                 (f"{p}help rpc video", "Video providers and examples"),
-                (f"{p}help rpc streaming", "Generic streaming activity and link formats"),
-                (f"{p}help rpc activity", "Playing / listening / watching / competing"),
-                (f"{p}help rpc custom", "Custom activity and custom status"),
-                (f"{p}help rpc tools", "Timer, app presets, rotation, aliases"),
+                (f"{p}rpc <type> key=value...", "Build an activity from RPC fields"),
+                (f"{p}help rpc activity", "Activity types, fields, and streaming spoof"),
+                (f"{p}rpc custom_status text=...", "Set a separate custom status"),
+                (f"{p}help rpc tools", "Presets and rotation"),
                 (f"{p}rpc preset", "save/load/list/delete <name>"),
                 (f"{p}rpc rotation", "set <seconds> <preset,...> | start | stop | status | clear"),
                 (f"{p}rpc stop", "Clear the active activity"),
@@ -4180,7 +3971,7 @@ Example Usage:
             help_text = fmt.sections(
                 "RPC Commands",
                 fmt.command_list(cmds),
-                fmt._block('Quote multiword values, e.g. name="My Game" details="Ranked match".'),
+                fmt._block(f'Use `{p}rpc <type> key=value...`; quote multiword values, e.g. `{p}rpc playing name="Aria" details="Running commands"`.'),
             )
             msg = ctx["api"].send_message(ctx["channel_id"], help_text)
             return
@@ -4396,6 +4187,38 @@ Example Usage:
 
         kv = _parse_kv_pairs(main_text)
         raw_image_url = _extract_image_url(kv, main_text)
+
+        if parts in RPC_TYPES and kv:
+            rpc_values = dict(kv)
+            if raw_image_url:
+                rpc_values.setdefault("large_image", raw_image_url)
+            if button_label and button_url:
+                rpc_values.setdefault("buttons", []).append(button_label)
+                rpc_values.setdefault("button_urls", []).append(button_url)
+            try:
+                activity = _build_rpc_command_activity(bot, parts, rpc_values)
+                current_activities = getattr(bot, "activities", None)
+                if not isinstance(current_activities, list):
+                    current_activity = getattr(bot, "activity", None)
+                    current_activities = [current_activity] if isinstance(current_activity, dict) else []
+                retained = [item for item in current_activities if int(item.get("type", 0)) != 4]
+                if isinstance(activity, dict) and int(activity.get("type", 0)) == 4:
+                    updated_activities = [*retained, activity]
+                else:
+                    retained_status = [item for item in current_activities if int(item.get("type", 0)) == 4]
+                    updated_activities = [activity, *retained_status] if activity else retained_status
+                apply_rpc_activity(bot, updated_activities, mode=f"rpc:{parts}")
+                if parts == "custom_status":
+                    response_detail = activity.get("state", "cleared") if activity else "cleared"
+                    label = "Custom Status"
+                else:
+                    response_detail = activity.get("name", "cleared") if activity else "cleared"
+                    label = parts.replace("_", " ").title()
+                msg_text = f"> **✓ {label} RPC** :: {response_detail}"
+            except Exception as exc:
+                msg_text = f"> **✗ RPC** :: Error ({parts}): {str(exc)}"
+            ctx["api"].send_message(ctx["channel_id"], msg_text)
+            return
         
         if parts == "crunchyroll":
             try:
@@ -4444,12 +4267,6 @@ Example Usage:
                 duration = kv.get("elapsed_minutes", "")
                 current_pos = kv.get("total_minutes", "")
                 image_url = raw_image_url or image_url
-            elif parts == "soundcloud":
-                details = kv.get("track")
-                state = kv.get("artist")
-                duration = kv.get("elapsed_minutes", "")
-                current_pos = kv.get("total_minutes", "")
-                image_url = raw_image_url or image_url
             elif parts in REAL_RPC_APPS:
                 details = kv.get("title")
                 state = kv.get("context")
@@ -4461,14 +4278,6 @@ Example Usage:
                 details = kv.get("details")
                 state = kv.get("state")
                 image_url = raw_image_url or image_url
-            elif parts == "timer":
-                name = kv.get("name")
-                details = kv.get("details")
-                state = kv.get("state")
-                start_time = kv.get("start", "")
-                end_time = kv.get("end", "")
-                image_url = raw_image_url or image_url
-
         elif ' | ' in main_text:
             pipe_parts = [part.strip() for part in main_text.split('|')]
             
@@ -4498,16 +4307,6 @@ Example Usage:
                     if len(pipe_parts) >= 5:
                         image_url = pipe_parts[4]
 
-            elif parts == "soundcloud":
-                if len(pipe_parts) >= 3:
-                    details = pipe_parts[0]  # track
-                    state = pipe_parts[1]    # artist
-                    duration = pipe_parts[2] # elapsed
-                    if len(pipe_parts) >= 4:
-                        current_pos = pipe_parts[3]  # total
-                    if len(pipe_parts) >= 5:
-                        image_url = pipe_parts[4]
-
             elif parts in REAL_RPC_APPS:
                 if len(pipe_parts) >= 3:
                     details = pipe_parts[0]
@@ -4527,17 +4326,6 @@ Example Usage:
                     if len(pipe_parts) >= 4:
                         image_url = pipe_parts[3]
             
-            elif parts == "timer":
-                if len(pipe_parts) >= 5:
-                    details = pipe_parts[0]
-                    state = pipe_parts[1]
-                    name = pipe_parts[2]
-                    start_time = pipe_parts[3]
-                    end_time = pipe_parts[4]
-                    
-                    if len(pipe_parts) >= 6:
-                        image_url = pipe_parts[5]
-        
         if parts == "spotify":
             try:
                 if details and state and name:
@@ -4605,41 +4393,6 @@ Example Usage:
                     msg_text = f"> **YouTube RPC** :: Format: title=<name> channel=<name> elapsed_minutes=<n> [total_minutes=<n>] [image_url=<url>] [>> Button >> URL] — Example: {bot.prefix}rpc youtube title=Devlog_12 channel=Aria_Channel elapsed_minutes=2.5"
             except Exception as e:
                 msg_text = f"> **✗ YouTube RPC** :: Error: {str(e)}"
-
-        elif parts == "soundcloud":
-            try:
-                if details and state:
-                    elapsed_val = float(duration) if duration else 0.0
-                    total_val = float(current_pos) if current_pos else None
-                    send_soundcloud_activity(bot, details, state, elapsed_val, total_val, image_url, button_label, button_url)
-                    _sc_start = time.time() - (elapsed_val * 60.0)
-                    _sc_total = float(total_val) if total_val is not None else None
-
-                    def _refresh_soundcloud(
-                        _track=details,
-                        _artist=state,
-                        _start=_sc_start,
-                        _total=_sc_total,
-                        _img=image_url,
-                        _btn=button_label,
-                        _url=button_url,
-                    ):
-                        if _total is not None and _total > 0:
-                            cyc_elapsed = ((time.time() - _start) / 60.0) % _total
-                        else:
-                            cyc_elapsed = max(0.0, (time.time() - _start) / 60.0)
-                        send_soundcloud_activity(bot, _track, _artist, cyc_elapsed, _total, _img, _btn, _url)
-
-                    configure_rpc_keepalive(bot, "soundcloud", _refresh_soundcloud)
-                    _sc_fields = [f"track={details}", f"artist={state}", f"elapsed={elapsed_val}min"]
-                    if total_val is not None: _sc_fields.append(f"total={total_val}min")
-                    if button_label: _sc_fields.append(f"button={button_label}")
-                    if image_url: _sc_fields.append(f"image_url={image_url}")
-                    msg_text = "> **✓ SoundCloud RPC** :: " + " · ".join(_sc_fields)
-                else:
-                    msg_text = f"> **SoundCloud RPC** :: Format: track=<name> artist=<name> elapsed_minutes=<n> [total_minutes=<n>] [image_url=<url>] — Example: {bot.prefix}rpc soundcloud track=Track_Name artist=Artist_Name elapsed_minutes=1.2"
-            except Exception as e:
-                msg_text = f"> **✗ SoundCloud RPC** :: Error: {str(e)}"
 
         elif parts in REAL_RPC_APPS:
             try:
@@ -4760,52 +4513,6 @@ Example Usage:
             except Exception as e:
                 msg_text = f"> **✗ Playing RPC** :: Error: {str(e)}"
 
-        elif parts == "metaquest":
-            try:
-                game = kv.get("name") or kv.get("game") or name or "Meta Quest 3"
-                det = kv.get("details") or details or "In VR"
-                st = kv.get("state") or state or "Playing in VR"
-                img = raw_image_url or image_url
-                send_metaquest_activity(bot, game, det, st, img)
-
-                def _refresh_mq(_g=game, _d=det, _s=st, _i=img):
-                    send_metaquest_activity(bot, _g, _d, _s, _i)
-
-                configure_rpc_keepalive(bot, "metaquest", _refresh_mq)
-                msg_text = f"> **Meta Quest RPC** :: **{game}** · {det} · {st}" + (f" · image set" if img else "")
-            except Exception as e:
-                msg_text = f"> **✗ Meta Quest RPC** :: Error: {str(e)}"
-
-        elif parts == "timer":
-            try:
-                if name and start_time and end_time:
-                    start_val = float(start_time) if start_time else time.time()
-                    end_val = float(end_time) if end_time else time.time() + 3600
-                    send_timer_activity(bot, name, start_val, end_val, details, state, image_url)
-                    timer_duration = max(60.0, end_val - start_val)
-
-                    def _refresh_timer(
-                        _name=name,
-                        _dur=timer_duration,
-                        _details=details,
-                        _state=state,
-                        _img=image_url,
-                    ):
-                        now = time.time()
-                        send_timer_activity(bot, _name, now, now + _dur, _details, _state, _img)
-
-                    configure_rpc_keepalive(bot, "timer", _refresh_timer)
-                    duration_min = int((end_val - start_val) / 60)
-                    _tm_fields = [f"name={name}", f"duration={duration_min}min"]
-                    if details: _tm_fields.append(f"details={details}")
-                    if state: _tm_fields.append(f"state={state}")
-                    if image_url: _tm_fields.append(f"image_url={image_url}")
-                    msg_text = "> **✓ Timer RPC** :: " + " · ".join(_tm_fields)
-                else:
-                    msg_text = f"> **Timer RPC** :: Format: name=<name> details=<text> state=<text> start=<unix> end=<unix> [image_url=<url>] — Example: {bot.prefix}rpc timer name=Gym details=Workout_session"
-            except Exception as e:
-                msg_text = f"> **✗ Timer RPC** :: Error: {str(e)}"
-
         elif parts in {"watching", "competing", "custom", "custom_status"}:
             try:
                 values = dict(kv)
@@ -4814,7 +4521,7 @@ Example Usage:
                 if button_label and button_url:
                     values["buttons"] = [button_label]
                     values["button_urls"] = [button_url]
-                default_app_id = str(values.get("app_id") or "367827983903490050")
+                default_app_id = str(values.get("app_id") or RPC_APP_IDS["generic"])
                 activity = build_rpc_activity(
                     parts,
                     values,
@@ -4834,9 +4541,7 @@ Example Usage:
             pass
 
         else:
-            valid_types = [*REAL_RPC_APPS, "soundcloud", "listening", "streaming", "playing",
-                           "watching", "competing", "custom", "custom_status", "timer"]
-            msg_text = "> **✗ RPC** :: Invalid type. Use: " + ", ".join(valid_types)
+            msg_text = "> **✗ RPC** :: Invalid type. Use: " + ", ".join(RPC_TYPES)
 
         msg = ctx["api"].send_message(ctx["channel_id"], msg_text)
     @bot.command(name="rpcsave", aliases=["saverpc", "persistrpc"])
@@ -8120,7 +7825,7 @@ Example Usage:
             "rpc": {
                 "title": f"{p}help RPC",
                 "lines": [
-                    ("help rpc music", "Spotify / SoundCloud"),
+                    ("help rpc music", "Spotify"),
                     ("help rpc video", "YouTube / Crunchyroll"),
                     ("help rpc streaming", "Generic Twitch / YouTube streaming links"),
                     ("help rpc activity", "Playing / Listening / Watching / Streaming / Competing"),
@@ -8132,11 +7837,10 @@ Example Usage:
 
             "rpc music": help_page(
                 f"{p}rpc <provider> <args>",
-                "Music modes: spotify and soundcloud.",
+                "Music mode: spotify.",
                 "",
                 {"type": "section", "text": "Examples"},
                 f"{p}rpc spotify song=Nightcall artist=Kavinsky elapsed_minutes=1 total_minutes=4",
-                f"{p}rpc soundcloud track=Track artist=Artist elapsed_minutes=2 total_minutes=3",
             ),
 
             "rpc video": help_page(
@@ -8160,12 +7864,13 @@ Example Usage:
 
             "rpc activity": help_page(
                 f"{p}rpc <playing|listening|watching|competing|streaming> <key=value ...>",
-                "Set a generic activity. Quote values containing spaces; supported keys include name, details, state, app_id, elapsed_minutes, total_minutes, image_url, large_text, small_image, and small_text.",
+                "Set a generic activity. Quote values containing spaces; supported keys include name, details, state, app_id, elapsed_minutes, total_minutes, image_url, large_text, small_image, small_text, spoof, and stream_url. spoof=true presents supported activities as streaming; custom_status is unchanged.",
                 "",
                 {"type": "section", "text": "Examples"},
                 f'{p}rpc watching name="Arcane" details="Season 2" state="Episode 1"',
                 f'{p}rpc competing name="Ranked tournament" details="Final round"',
                 f'{p}rpc playing name="My Game" details="Ranked match"',
+                f"{p}rpc youtube title=Devlog channel=Aria spoof=true stream_url=https://youtube.com/@aria",
                 f"{p}rpc custom activity_type=1 name=Live stream_url=https://twitch.com/channel",
                 "Optional buttons: buttons=Website,Community button_urls=https://example.com,https://discord.com",
             ),
@@ -8182,16 +7887,15 @@ Example Usage:
 
             "rpc tools": help_page(
                 f"{p}rpc <mode> <args>",
-                "Utility modes: timer, browser, vscode, stop.",
+                "RPC controls: presets, rotation, and stop.",
                 "",
                 {"type": "section", "text": "Examples"},
-                f"{p}rpc timer name=Session details=Coding state=Focus start=<unix> end=<unix>",
                 f"{p}rpc preset save work",
                 f"{p}rpc rotation set 45 work,break",
                 f"{p}rpc stop",
                 "",
                 {"type": "section", "text": "Aliases"},
-                "watch => watching; game => playing; golive => streaming; ps4/ps5 => playstation",
+                "ps4/ps5 => playstation",
             ),
 
                         "join": help_page(

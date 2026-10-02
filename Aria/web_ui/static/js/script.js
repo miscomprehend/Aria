@@ -1392,7 +1392,12 @@ function loadSection(name) {
     if (name === 'history')   loadHistory();
     if (name === 'logger')    loadMessageLogger();
     if (name === 'boost')     loadBoost();
-    if (name === 'rpc')       { loadRpc(); loadSpotifyLyrics(); }
+    if (name === 'rpc')       {
+        let savedTab = 'editor';
+        try { savedTab = localStorage.getItem('aria.rpcDashboardTab') || savedTab; } catch (_) {}
+        setRpcTab(savedTab);
+        loadRpc(); loadRpcStack(); loadSpotifyLyrics();
+    }
     if (name === 'presence')  loadPresence();
     if (name === 'hosted')    loadHosted();
     if (name === 'logs')      loadLogs();
@@ -1753,29 +1758,33 @@ async function loadWidgets() {
 
 // ── RPC ───────────────────────────────────────────────────────────────────────
 const RPC_TYPE_LABELS = ['Playing', 'Streaming', 'Listening to', 'Watching', '', 'Competing in'];
-const DEFAULT_RPC_APPLICATION_ID = '1494507808329171096';
+const DEFAULT_RPC_APPLICATION_ID = '367827983903490050';
 const RPC_DRAFT_STORAGE_KEY = 'aria_rpc_draft_v1';
 let _rpcDraftRestored = false;
+let _rpcActiveActivities = [];
+
+const RPC_TYPE_CONFIG = {
+    0: { activityType: 0, label: 'Playing a game', applicationId: '367827983903490050' },
+    1: { activityType: 1, label: 'Streaming', applicationId: '111299001912' },
+    2: { activityType: 2, label: 'Listening to', applicationId: '534203414247112723' },
+    3: { activityType: 3, label: 'Watching', applicationId: '367827983903490050' },
+    5: { activityType: 5, label: 'Competing in', applicationId: '367827983903490050' },
+    spotify: { activityType: 2, label: 'Listening to', applicationId: '3201606009684', name: 'Spotify' },
+    youtube: { activityType: 3, label: 'Watching', applicationId: '111299001912', name: 'YouTube' },
+    crunchyroll: { activityType: 3, label: 'Watching', applicationId: '981509069309354054', name: 'Crunchyroll' },
+    xbox: { activityType: 0, label: 'Playing a game', applicationId: '622174530214821906', name: 'Game' },
+    playstation: { activityType: 0, label: 'Playing a game', applicationId: '1470539864909943067', name: 'Game' },
+    vrchat: { activityType: 0, label: 'Playing VRChat', applicationId: '1498387526501535835', name: 'VRChat' },
+    custom_status: { activityType: 4, label: 'Custom Status', applicationId: '367827983903490050', name: 'Custom Status', customStatus: true },
+};
 
 const RPC_APP_ID_BY_NAME = [
-    { keys: ['spotify'], appId: '1494507808329171096' },
-    { keys: ['crunchyroll', 'crunchy roll'], appId: '463097721130188830' },
-    { keys: ['youtube music', 'yt music', 'youtube_music'], appId: '880218394199220334' },
-    { keys: ['youtube', 'yt'], appId: '880218394199220334' },
-    { keys: ['soundcloud', 'sound cloud'], appId: '195323574500409344' },
-    { keys: ['netflix'], appId: '883483001462849607' },
-    { keys: ['disneyplus', 'disney plus', 'disney+'], appId: '883483001462849607' },
-    { keys: ['primevideo', 'prime video', 'amazon prime'], appId: '883483001462849607' },
-    { keys: ['twitch'], appId: '488633707456348190' },
-    { keys: ['kick'], appId: '1096876388377366548' },
-    { keys: ['apple music', 'applemusic'], appId: '886578863147192350' },
-    { keys: ['deezer'], appId: '356268235697553409' },
-    { keys: ['tidal'], appId: '1041821781058760745' },
-    { keys: ['plex'], appId: '910362402908213248' },
-    { keys: ['jellyfin'], appId: '969748111193886730' },
-    { keys: ['vscode', 'visual studio code', 'code'], appId: '383226320970055681' },
-    { keys: ['valorant'], appId: '813612000139853844' },
-    { keys: ['discord'], appId: '938956540159881230' },
+    { keys: ['spotify'], appId: '3201606009684' },
+    { keys: ['crunchyroll', 'crunchy roll'], appId: '981509069309354054' },
+    { keys: ['youtube'], appId: '111299001912' },
+    { keys: ['xbox'], appId: '622174530214821906' },
+    { keys: ['playstation', 'ps4', 'ps5'], appId: '1470539864909943067' },
+    { keys: ['vrchat'], appId: '1498387526501535835' },
 ];
 
 function normalizeRpcActivityName(name) {
@@ -1825,49 +1834,180 @@ function resolveRpcPreviewImage(rawValue, applicationId = '') {
     return toCdnPath(value);
 }
 
-function getRpcAppIdMode() {
-    const mode = (document.getElementById('rpcAppIdMode')?.value || 'auto').toLowerCase();
-    return mode === 'custom' ? 'custom' : 'auto';
+function getRpcTypeConfig(type = document.getElementById('rpcType')?.value) {
+    return RPC_TYPE_CONFIG[String(type)] || RPC_TYPE_CONFIG['0'];
+}
+
+function syncRpcTypePicker() {
+    const picker = document.getElementById('rpcTypePicker');
+    const value = String(document.getElementById('rpcType')?.value || '0');
+    if (!picker) return;
+    const options = [...picker.querySelectorAll('[data-rpc-type]')];
+    const selected = options.find(option => option.dataset.rpcType === value) || options[0];
+    if (!selected) return;
+    const label = selected.querySelector('strong')?.textContent || 'Playing';
+    const description = selected.querySelector('small')?.textContent || '';
+    setText('rpcTypeLabel', label);
+    setText('rpcTypeDescription', description);
+    options.forEach(option => {
+        const isSelected = option === selected;
+        option.classList.toggle('is-selected', isSelected);
+        option.setAttribute('aria-selected', String(isSelected));
+    });
+}
+
+function setRpcTypeMenuOpen(open, focusSelection = false) {
+    const menu = document.getElementById('rpcTypeMenu');
+    const trigger = document.getElementById('rpcTypeTrigger');
+    if (!menu || !trigger) return;
+    menu.hidden = !open;
+    trigger.setAttribute('aria-expanded', String(open));
+    if (open && focusSelection) {
+        const selected = menu.querySelector('[aria-selected="true"]');
+        (selected || menu.querySelector('[role="option"]'))?.focus();
+    }
+}
+
+function toggleRpcTypeMenu() {
+    const menu = document.getElementById('rpcTypeMenu');
+    setRpcTypeMenuOpen(Boolean(menu?.hidden), Boolean(menu?.hidden));
+}
+
+function selectRpcType(value) {
+    setRpcTypeMenuOpen(false);
+    if (value === 'custom_status') {
+        setRpcTab('status');
+        document.getElementById('rpcTabStatus')?.focus();
+        return;
+    }
+    const input = document.getElementById('rpcType');
+    if (input) input.value = value;
+    syncRpcTypePicker();
+    syncRpcStreamingControls();
+    updateRpcPreview();
+    document.getElementById('rpcTypeTrigger')?.focus();
+}
+
+document.getElementById('rpcTypeTrigger')?.addEventListener('keydown', event => {
+    if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return;
+    event.preventDefault();
+    setRpcTypeMenuOpen(true, true);
+});
+
+document.getElementById('rpcTypeMenu')?.addEventListener('keydown', event => {
+    const options = [...event.currentTarget.querySelectorAll('[role="option"]')];
+    const currentIndex = options.indexOf(document.activeElement);
+    let nextIndex = currentIndex;
+    if (event.key === 'ArrowDown') nextIndex = Math.min(options.length - 1, currentIndex + 1);
+    else if (event.key === 'ArrowUp') nextIndex = Math.max(0, currentIndex - 1);
+    else if (event.key === 'Home') nextIndex = 0;
+    else if (event.key === 'End') nextIndex = options.length - 1;
+    else if (event.key === 'Escape') {
+        event.preventDefault();
+        setRpcTypeMenuOpen(false);
+        document.getElementById('rpcTypeTrigger')?.focus();
+        return;
+    } else return;
+    event.preventDefault();
+    options[nextIndex]?.focus();
+});
+
+document.addEventListener('click', event => {
+    const picker = document.getElementById('rpcTypePicker');
+    if (picker && !picker.contains(event.target)) setRpcTypeMenuOpen(false);
+});
+
+function getRpcTypeForActivity(activity) {
+    if (Number(activity?.type) === 4) return 'custom_status';
+    const appId = String(activity?.application_id || '');
+    const provider = Object.entries(RPC_TYPE_CONFIG).find(([key, config]) =>
+        config.name && config.applicationId === appId && String(key) === key
+    );
+    return provider ? provider[0] : String(activity?.type ?? '0');
 }
 
 function getEffectiveRpcAppId() {
-    const mode = getRpcAppIdMode();
-    const custom = (document.getElementById('rpcCustomAppIdInput')?.value || '').trim();
     const name = (document.getElementById('rpcNameInput')?.value || '').trim();
     const details = (document.getElementById('rpcDetailsInput')?.value || '').trim();
     const state = (document.getElementById('rpcStateInput')?.value || '').trim();
-    if (mode === 'custom' && custom) return custom;
-    return inferRpcAppIdFromActivity(name, details, state);
-}
-
-function syncRpcAppIdControls() {
-    const customRow = document.getElementById('rpcCustomAppIdRow');
-    if (customRow) customRow.style.display = getRpcAppIdMode() === 'custom' ? '' : 'none';
+    const config = getRpcTypeConfig();
+    if (config.customStatus) return '';
+    return config.name ? config.applicationId : inferRpcAppIdFromActivity(name, details, state);
 }
 
 function syncRpcStreamingControls() {
-    const typeVal = parseInt(document.getElementById('rpcType')?.value, 10) || 0;
+    const typeVal = String(document.getElementById('rpcType')?.value || '0');
     const row = document.getElementById('rpcStreamUrlRow');
-    if (row) row.style.display = typeVal === 1 ? '' : 'none';
+    const typeConfig = getRpcTypeConfig(typeVal);
+    const spoofType = document.getElementById('rpcSpoofType')?.value || 'none';
+    const spoofRequested = spoofType === 'streaming' && !typeConfig.customStatus && typeVal !== '1';
+    const spoofSelect = document.getElementById('rpcSpoofType');
+    if (spoofSelect) spoofSelect.disabled = typeConfig.customStatus || typeVal === '1';
+    if (row) row.style.display = typeVal === '1' || spoofRequested ? '' : 'none';
+}
+
+function getRpcTimestamps(now = Date.now()) {
+    const elapsedRaw = document.getElementById('rpcElapsedMinutes')?.value || '0';
+    const totalRaw = document.getElementById('rpcTotalMinutes')?.value || '';
+    const elapsed = Number(elapsedRaw);
+    const total = totalRaw === '' ? null : Number(totalRaw);
+    if (!Number.isFinite(elapsed) || elapsed < 0 || (total !== null && (!Number.isFinite(total) || total <= 0))) return null;
+    const start = now - elapsed * 60000;
+    return { start, ...(total === null ? {} : { end: start + total * 60000 }) };
+}
+
+function renderRpcTimeline(timestamps) {
+    const progressWrap = document.getElementById('rpcDiscordProgressWrap');
+    const progressBar = document.getElementById('rpcPreviewProgress');
+    const start = Number(timestamps?.start);
+    const end = Number(timestamps?.end);
+    if (!Number.isFinite(start)) {
+        if (progressWrap) progressWrap.style.display = 'none';
+        if (progressBar) progressBar.style.width = '0%';
+        setText('rpcDiscordTime', '');
+        return;
+    }
+
+    const now = Date.now();
+    const elapsedSeconds = Math.max(0, (now - start) / 1000);
+    const formatTime = seconds => {
+        const minutes = Math.floor(seconds / 60);
+        return `${minutes}:${String(Math.floor(seconds % 60)).padStart(2, '0')}`;
+    };
+    if (Number.isFinite(end) && end > start) {
+        const totalSeconds = (end - start) / 1000;
+        const percent = Math.max(0, Math.min(100, (elapsedSeconds / totalSeconds) * 100));
+        if (progressWrap) progressWrap.style.display = '';
+        if (progressBar) progressBar.style.width = `${percent}%`;
+        setText('rpcDiscordProgressStart', formatTime(elapsedSeconds));
+        setText('rpcDiscordProgressEnd', formatTime(totalSeconds));
+        setText('rpcDiscordTime', '');
+    } else {
+        if (progressWrap) progressWrap.style.display = 'none';
+        if (progressBar) progressBar.style.width = '0%';
+        setText('rpcDiscordTime', `${formatTime(elapsedSeconds)} elapsed`);
+    }
 }
 
 function readRpcDraftFromInputs() {
     const val = id => (document.getElementById(id)?.value || '').trim();
     return {
-        type: String(parseInt(document.getElementById('rpcType')?.value, 10) || 0),
+        type: String(document.getElementById('rpcType')?.value || '0'),
         name: val('rpcNameInput'),
-        display_name: val('rpcDisplayNameInput'),
         details: val('rpcDetailsInput'),
         state: val('rpcStateInput'),
+        elapsedMinutes: val('rpcElapsedMinutes'),
+        totalMinutes: val('rpcTotalMinutes'),
         streamUrl: val('rpcStreamUrlInput'),
         largeImage: val('rpcLargeImageInput'),
+        largeImageText: val('rpcLargeImageTextInput'),
         smallImage: val('rpcSmallImageInput'),
+        smallImageText: val('rpcSmallImageTextInput'),
         button1Label: val('rpcButton1Label'),
         button1Url: val('rpcButton1Url'),
         button2Label: val('rpcButton2Label'),
         button2Url: val('rpcButton2Url'),
-        appIdMode: getRpcAppIdMode(),
-        customAppId: val('rpcCustomAppIdInput'),
+        spoofType: val('rpcSpoofType') || 'none',
     };
 }
 
@@ -1885,20 +2025,23 @@ function applyRpcDraftToInputs(draft) {
     };
     setVal('rpcType', draft.type || '0');
     setVal('rpcNameInput', draft.name || '');
-    setVal('rpcDisplayNameInput', draft.display_name || '');
     setVal('rpcDetailsInput', draft.details || '');
     setVal('rpcStateInput', draft.state || '');
+    setVal('rpcElapsedMinutes', draft.elapsedMinutes ?? '0');
+    setVal('rpcTotalMinutes', draft.totalMinutes || '');
     setVal('rpcStreamUrlInput', draft.streamUrl || '');
     setVal('rpcLargeImageInput', draft.largeImage || '');
+    setVal('rpcLargeImageTextInput', draft.largeImageText || '');
     setVal('rpcSmallImageInput', draft.smallImage || '');
+    setVal('rpcSmallImageTextInput', draft.smallImageText || '');
     setVal('rpcButton1Label', draft.button1Label || '');
     setVal('rpcButton1Url', draft.button1Url || '');
     setVal('rpcButton2Label', draft.button2Label || '');
     setVal('rpcButton2Url', draft.button2Url || '');
-    setVal('rpcAppIdMode', draft.appIdMode === 'custom' ? 'custom' : 'auto');
-    setVal('rpcCustomAppIdInput', draft.customAppId || '');
-    syncRpcAppIdControls();
+    setVal('rpcSpoofType', draft.spoofType || (draft.spoof ? 'streaming' : 'none'));
+    syncRpcTypePicker();
     syncRpcStreamingControls();
+    syncRpcButtonControls();
     return true;
 }
 
@@ -1917,8 +2060,13 @@ async function loadRpc() {
     loadRpcProfiles();
     const res = await fetchJSON('/api/rpc');
     if (!res) return;
-    const active = res.active || false;
-    const act    = res.activity || {};
+    const activities = Array.isArray(res.activities)
+        ? res.activities.filter(activity => activity && typeof activity === 'object')
+        : (res.activity && typeof res.activity === 'object' ? [res.activity] : []);
+    _rpcActiveActivities = activities;
+    const act = activities.find(activity => Number(activity.type) !== 4) || {};
+    const customStatus = activities.find(activity => Number(activity.type) === 4) || null;
+    const active = activities.length > 0;
     const assets = act.assets || {};
 
     // Active badge
@@ -1955,15 +2103,30 @@ async function loadRpc() {
         if (s !== 'online') botStatusDot.classList.add(s);
     }
 
-    // Custom status line
-    setText('rpcDiscordCustomStatus', active ? (act.state || '') : '');
+    // Custom Status stays independent from the activity editor.
+    const customStatusText = customStatus?.state || '';
+    const customStatusEmoji = customStatus?.emoji?.name || '';
+    const setStatusInput = (id, value) => {
+        const input = document.getElementById(id);
+        if (input) input.value = value;
+    };
+    setStatusInput('rpcCustomStatusTextInput', customStatusText);
+    setStatusInput('rpcCustomStatusEmojiInput', customStatusEmoji);
+    setText('rpcDiscordCustomStatus', [customStatusEmoji, customStatusText].filter(Boolean).join(' '));
+    const statusBadge = document.getElementById('rpcCustomStatusBadge');
+    if (statusBadge) {
+        statusBadge.textContent = customStatus ? 'Active' : 'Off';
+        statusBadge.className = `badge ${customStatus ? 'badge-ok' : 'badge-off'}`;
+    }
 
     // Activity type header
     const headerEl = document.querySelector('.discord-activity-header');
     if (headerEl) headerEl.textContent = RPC_ACTIVITY_HEADERS[act.type ?? 0] || 'Playing a game';
+    const activityPreview = document.getElementById('rpcDiscordActivity');
+    if (activityPreview) activityPreview.style.display = act.name ? '' : 'none';
 
     // Activity text
-    setText('rpcPreviewName',    active ? (act.name || '—') : '');
+    setText('rpcPreviewName',    active ? (act.name || '') : '');
     setText('rpcPreviewDetails', active ? (act.details || '') : '');
     setText('rpcPreviewState',   active ? (act.state   || '') : '');
 
@@ -2005,28 +2168,12 @@ async function loadRpc() {
         btnsEl.style.display = labels.length ? '' : 'none';
     }
 
-    // Progress bar (music/timestamps)
-    const progressWrap = document.getElementById('rpcDiscordProgressWrap');
-    const progressBar  = document.getElementById('rpcPreviewProgress');
-    if (act.timestamps && act.timestamps.start && act.timestamps.end) {
-        const now   = Date.now();
-        const start = Number(act.timestamps.start) * 1000;
-        const end   = Number(act.timestamps.end)   * 1000;
-        const pct   = Math.max(0, Math.min(100, ((now - start) / Math.max(end - start, 1)) * 100));
-        if (progressWrap) progressWrap.style.display = '';
-        if (progressBar)  progressBar.style.width    = pct + '%';
-        const fmt = s => { const m = Math.floor(s/60); return `${m}:${String(Math.floor(s%60)).padStart(2,'0')}`; };
-        setText('rpcDiscordProgressStart', fmt((now - start) / 1000));
-        setText('rpcDiscordProgressEnd',   fmt((end - start) / 1000));
-    } else {
-        if (progressWrap) progressWrap.style.display = 'none';
-        if (progressBar)  progressBar.style.width    = '0%';
-    }
+    renderRpcTimeline(act.timestamps);
 
     // No-activity overlay
     const noAct = document.getElementById('rpcNoActivity');
     if (noAct) {
-        if (active && act.name) noAct.classList.remove('visible');
+        if (active && (act.name || customStatus)) noAct.classList.remove('visible');
         else                    noAct.classList.add('visible');
     }
 
@@ -2041,14 +2188,24 @@ async function loadRpc() {
         const restored = restoreRpcDraft();
         if (!restored) {
             const setVal = (id, v) => { const el = document.getElementById(id); if (el) el.value = v || ''; };
-            setVal('rpcType',            act.type != null ? String(act.type) : '0');
+            setVal('rpcType',            getRpcTypeForActivity(act));
             setVal('rpcNameInput',       act.name    || '');
-            setVal('rpcDisplayNameInput', act.display_name || '');
             setVal('rpcDetailsInput',    act.details || '');
             setVal('rpcStateInput',      act.state   || '');
+            const timestamps = act.timestamps || {};
+            const timestampStart = Number(timestamps.start);
+            const timestampEnd = Number(timestamps.end);
+            if (Number.isFinite(timestampStart)) {
+                setVal('rpcElapsedMinutes', Math.floor(Math.max(0, Date.now() - timestampStart) / 60000));
+                setVal('rpcTotalMinutes', Number.isFinite(timestampEnd) && timestampEnd > timestampStart
+                    ? Math.round((timestampEnd - timestampStart) / 60000)
+                    : '');
+            }
             setVal('rpcStreamUrlInput',  act.url     || '');
             setVal('rpcLargeImageInput', assets.large_image || '');
+            setVal('rpcLargeImageTextInput', assets.large_text || '');
             setVal('rpcSmallImageInput', assets.small_image || '');
+            setVal('rpcSmallImageTextInput', assets.small_text || '');
             const btns    = Array.isArray(act.buttons) ? act.buttons : [];
             const btnUrls = act.metadata && Array.isArray(act.metadata.button_urls) ? act.metadata.button_urls : [];
             setVal('rpcButton1Label', btns[0]    || '');
@@ -2056,13 +2213,9 @@ async function loadRpc() {
             setVal('rpcButton2Label', btns[1]    || '');
             setVal('rpcButton2Url',   btnUrls[1] || '');
 
-            const inferredAppId = inferRpcAppIdFromActivity(act.name || '', act.details || '', act.state || '');
-            const loadedAppId = String(act.application_id || '').trim();
-            const customMode = loadedAppId && loadedAppId !== inferredAppId;
-            setVal('rpcAppIdMode', customMode ? 'custom' : 'auto');
-            setVal('rpcCustomAppIdInput', customMode ? loadedAppId : '');
-            syncRpcAppIdControls();
+            setVal('rpcSpoofType', 'none');
             syncRpcStreamingControls();
+            syncRpcButtonControls();
             saveRpcDraft();
         }
     }
@@ -2072,7 +2225,7 @@ async function loadRpc() {
 // ── RPC live Discord-card preview ────────────────────────────────────────────
 const RPC_ACTIVITY_HEADERS = {
     0: 'Playing a game',
-    1: 'Live on Twitch',
+    1: 'Streaming',
     2: 'Listening to',
     3: 'Watching',
     4: 'Custom Status',
@@ -2080,12 +2233,15 @@ const RPC_ACTIVITY_HEADERS = {
 };
 
 function updateRpcPreview() {
-    syncRpcAppIdControls();
+    syncRpcTypePicker();
     syncRpcStreamingControls();
 
-    let typeVal = document.getElementById('rpcType')?.value;
-    if (typeVal === 'custom') typeVal = 'custom';
-    else typeVal = parseInt(typeVal) || 0;
+    const typeKey = String(document.getElementById('rpcType')?.value || '0');
+    const typeConfig = getRpcTypeConfig(typeKey);
+    const typeVal = typeConfig.activityType;
+    const spoof = (document.getElementById('rpcSpoofType')?.value || 'none') === 'streaming'
+        && !typeConfig.customStatus && typeVal !== 1;
+    const previewType = spoof ? 1 : typeVal;
     const name      = (document.getElementById('rpcNameInput')?.value    || '').trim();
     const details   = (document.getElementById('rpcDetailsInput')?.value || '').trim();
     const state     = (document.getElementById('rpcStateInput')?.value   || '').trim();
@@ -2094,40 +2250,45 @@ function updateRpcPreview() {
     const smallImg  = (document.getElementById('rpcSmallImageInput')?.value  || '').trim();
     const btn1Label = (document.getElementById('rpcButton1Label')?.value || '').trim();
     const btn2Label = (document.getElementById('rpcButton2Label')?.value || '').trim();
+    const timestamps = getRpcTimestamps();
 
     // Activity header text
     const headerEl = document.querySelector('.discord-activity-header');
-    if (headerEl) headerEl.textContent = RPC_ACTIVITY_HEADERS[typeVal] || 'Playing a game';
+    if (headerEl) headerEl.textContent = spoof ? 'Streaming' : typeConfig.label || RPC_ACTIVITY_HEADERS[typeVal] || 'Playing a game';
 
     // Text fields in card
     // Use spoofed display name if provided, else real name
-    const displayName = (document.getElementById('rpcDisplayNameInput')?.value || '').trim();
-    setText('rpcPreviewName', displayName || name || '—');
+    setText('rpcPreviewName', typeConfig.customStatus ? 'Custom Status' : name || typeConfig.name || '—');
     setText('rpcPreviewDetails', details || '');
     setText('rpcPreviewState',   typeVal === 1 ? (streamUrl || state || '') : (state || ''));
+    const customStatusText = (document.getElementById('rpcCustomStatusTextInput')?.value || '').trim();
+    const customStatusEmoji = (document.getElementById('rpcCustomStatusEmojiInput')?.value || '').trim();
+    setText('rpcDiscordCustomStatus', [customStatusEmoji, customStatusText].filter(Boolean).join(' '));
+    renderRpcTimeline(typeConfig.customStatus ? null : timestamps);
+    const activityEl = document.getElementById('rpcDiscordActivity');
+    if (activityEl) activityEl.style.display = typeConfig.customStatus ? 'none' : '';
+    const nameLabel = document.getElementById('rpcNameLabel');
+    if (nameLabel) nameLabel.textContent = typeConfig.customStatus ? 'Status text' : 'Name';
+    const nameSub = document.getElementById('rpcNameSub');
+    if (nameSub) nameSub.firstChild.textContent = typeConfig.customStatus ? 'Custom status text ' : 'Activity name ';
+    const nameInput = document.getElementById('rpcNameInput');
+    if (nameInput) nameInput.placeholder = typeConfig.customStatus ? 'e.g. Away for lunch' : 'e.g. Spotify, Valorant';
+    const spoofBadge = document.getElementById('rpcPreviewSpoofBadge');
+    if (spoofBadge) spoofBadge.hidden = !spoof;
 
     // Mini app id display
     const miniAppId = document.getElementById('miniAppId');
     if (miniAppId) {
-        let appId = '';
-        if (typeVal === 'custom') {
-            appId = getEffectiveRpcAppId();
-        } else {
-            appId = inferRpcAppIdFromActivity(name, details, state);
-        }
-        miniAppId.textContent = appId && appId !== '1494507808329171096' ? `App ID: ${appId}` : '';
+        const appId = getEffectiveRpcAppId();
+        miniAppId.textContent = !typeConfig.customStatus && appId && appId !== DEFAULT_RPC_APPLICATION_ID ? `App ID: ${appId}` : '';
     }
 
     // Large image
     const artEl = document.getElementById('rpcDiscordArt');
     if (artEl) {
-        let appIdForImage = getEffectiveRpcAppId();
-        if (typeVal === 'custom') {
-            appIdForImage = getEffectiveRpcAppId();
-        } else {
-            appIdForImage = inferRpcAppIdFromActivity(name, details, state);
-        }
+        const appIdForImage = getEffectiveRpcAppId();
         const largePreview = resolveRpcPreviewImage(largeImg, appIdForImage);
+        artEl.title = (document.getElementById('rpcLargeImageTextInput')?.value || '').trim() || 'Edit large image';
         if (largePreview) {
             artEl.style.backgroundImage = `url("${String(largePreview).replace(/"/g, '%22')}")`;
             artEl.style.backgroundSize  = 'cover';
@@ -2141,13 +2302,9 @@ function updateRpcPreview() {
     // Small art visibility
     const smallArtEl = document.getElementById('rpcDiscordSmallArt');
     if (smallArtEl) {
-        let appIdForImage = getEffectiveRpcAppId();
-        if (typeVal === 'custom') {
-            appIdForImage = getEffectiveRpcAppId();
-        } else {
-            appIdForImage = inferRpcAppIdFromActivity(name, details, state);
-        }
+        const appIdForImage = getEffectiveRpcAppId();
         const smallPreview = resolveRpcPreviewImage(smallImg, appIdForImage);
+        smallArtEl.title = (document.getElementById('rpcSmallImageTextInput')?.value || '').trim() || 'Edit small image';
         if (smallPreview) {
             smallArtEl.classList.add('visible');
             smallArtEl.style.backgroundImage = `url("${String(smallPreview).replace(/"/g, '%22')}")`;
@@ -2163,23 +2320,49 @@ function updateRpcPreview() {
     // Buttons
     const btnsEl = document.getElementById('rpcDiscordButtons');
     if (btnsEl) {
-        const labels = [btn1Label, btn2Label].filter(Boolean);
-        btnsEl.innerHTML = labels.map(l => `<div class="discord-btn">${esc(l)}</div>`).join('');
-        btnsEl.style.display = labels.length ? '' : 'none';
+        const entries = [
+            { label: btn1Label, url: (document.getElementById('rpcButton1Url')?.value || '').trim() },
+            { label: btn2Label, url: (document.getElementById('rpcButton2Url')?.value || '').trim() },
+        ].filter(entry => entry.label);
+        btnsEl.replaceChildren();
+        entries.forEach(entry => {
+            const button = document.createElement('div');
+            button.className = 'discord-btn';
+            button.textContent = entry.label;
+            if (entry.url) button.title = entry.url;
+            btnsEl.append(button);
+        });
+        btnsEl.style.display = entries.length ? '' : 'none';
     }
+    syncRpcButtonControls();
 
     // Toggle no-activity overlay
     const noAct = document.getElementById('rpcNoActivity');
     if (noAct) {
-        if (name) noAct.classList.remove('visible');
+        if (name || typeConfig.customStatus || customStatusText) noAct.classList.remove('visible');
         else      noAct.classList.add('visible');
     }
 
     // Update meta strip
-    setText('rpcPreviewTypeId', typeVal);
-    setText('rpcPreviewAppId', getEffectiveRpcAppId());
+    setText('rpcPreviewTypeId', previewType);
+    setText('rpcPreviewAppId', typeConfig.customStatus ? '—' : getEffectiveRpcAppId());
+    setText('rpcPreviewButtons', [btn1Label, btn2Label].filter(Boolean).length);
     saveRpcDraft();
 }
+
+document.getElementById('rpcPreview')?.addEventListener('click', event => {
+    const target = event.target.closest('[data-rpc-focus]');
+    if (!target) return;
+    document.getElementById(target.dataset.rpcFocus)?.focus();
+});
+
+document.getElementById('rpcPreview')?.addEventListener('keydown', event => {
+    if (event.key !== 'Enter' && event.key !== ' ') return;
+    const target = event.target.closest('[data-rpc-focus]');
+    if (!target) return;
+    event.preventDefault();
+    document.getElementById(target.dataset.rpcFocus)?.focus();
+});
 
 function showRpcMsg(msg, ok) {
     const el = document.getElementById('rpcMsg');
@@ -2189,12 +2372,78 @@ function showRpcMsg(msg, ok) {
     setTimeout(() => { el.textContent = ''; el.className = 'settings-msg'; }, 3000);
 }
 
+function setCustomStatusMessage(message, ok) {
+    const element = document.getElementById('rpcCustomStatusMsg');
+    if (!element) return;
+    element.textContent = message;
+    element.className = `rpc-profile-feedback ${ok ? 'success' : 'error'}`;
+}
+
+async function applyCustomStatus() {
+    const text = (document.getElementById('rpcCustomStatusTextInput')?.value || '').trim();
+    const emoji = (document.getElementById('rpcCustomStatusEmojiInput')?.value || '').trim();
+    if (!text) {
+        setCustomStatusMessage('Status text is required.', false);
+        return;
+    }
+    const otherActivities = _rpcActiveActivities.filter(activity => Number(activity.type) !== 4);
+    if (otherActivities.length >= 5) {
+        setCustomStatusMessage('Presence already has the maximum of five activities.', false);
+        return;
+    }
+    const status = { type: 4, name: 'Custom Status', state: text };
+    if (emoji) status.emoji = { name: emoji, id: null, animated: false };
+    const response = await postJSON('/api/rpc', { action: 'set', activity: [...otherActivities, status] });
+    if (response?.ok) {
+        setCustomStatusMessage('Custom Status applied.', true);
+        trackDashboardAction('rpc_status_set', 'Set Custom Status');
+        loadRpc();
+    } else {
+        setCustomStatusMessage(response?.error || 'Custom Status could not be applied.', false);
+    }
+}
+
+async function stopCustomStatus() {
+    const remainingActivities = _rpcActiveActivities.filter(activity => Number(activity.type) !== 4);
+    const response = remainingActivities.length
+        ? await postJSON('/api/rpc', { action: 'set', activity: remainingActivities })
+        : await postJSON('/api/rpc', { action: 'stop' });
+    if (response?.ok) {
+        document.getElementById('rpcCustomStatusTextInput').value = '';
+        document.getElementById('rpcCustomStatusEmojiInput').value = '';
+        setCustomStatusMessage('Custom Status stopped.', true);
+        trackDashboardAction('rpc_status_clear', 'Stopped Custom Status');
+        loadRpc();
+    } else {
+        setCustomStatusMessage(response?.error || 'Custom Status could not be stopped.', false);
+    }
+}
+
+let _rpcSecondButtonOpen = false;
+
+function syncRpcButtonControls() {
+    const row = document.getElementById('rpcButton2Row');
+    const addButton = document.getElementById('rpcAddButton');
+    if (!row || !addButton) return;
+    const hasSecondButton = Boolean(
+        document.getElementById('rpcButton2Label')?.value
+        || document.getElementById('rpcButton2Url')?.value
+    );
+    row.hidden = !_rpcSecondButtonOpen && !hasSecondButton;
+    addButton.hidden = !row.hidden;
+}
+
+function addRpcButton() {
+    _rpcSecondButtonOpen = true;
+    syncRpcButtonControls();
+    document.getElementById('rpcButton2Label')?.focus();
+}
+
 async function applyRpc() {
-    let type = document.getElementById('rpcType').value;
-    if (type === 'custom') type = 0; // fallback to Playing for custom
-    else type = parseInt(type) || 0;
-    const name = document.getElementById('rpcNameInput').value.trim();
-    const display_name = (document.getElementById('rpcDisplayNameInput')?.value || '').trim();
+    const typeKey = String(document.getElementById('rpcType')?.value || '0');
+    const typeConfig = getRpcTypeConfig(typeKey);
+    const type = typeConfig.activityType;
+    const name = document.getElementById('rpcNameInput').value.trim() || typeConfig.name || '';
     const details = document.getElementById('rpcDetailsInput').value.trim();
     const state = document.getElementById('rpcStateInput').value.trim();
     const streamUrl = (document.getElementById('rpcStreamUrlInput')?.value || '').trim();
@@ -2205,18 +2454,21 @@ async function applyRpc() {
     const button2Label = (document.getElementById('rpcButton2Label')?.value || '').trim();
     const button2Url = (document.getElementById('rpcButton2Url')?.value || '').trim();
     const appId = getEffectiveRpcAppId();
+    const spoof = (document.getElementById('rpcSpoofType')?.value || 'none') === 'streaming'
+        && !typeConfig.customStatus && type !== 1;
+    const timestamps = getRpcTimestamps();
     if (!name) { showRpcMsg('Name is required.', false); return; }
+    if (!timestamps) { showRpcMsg('Elapsed must be zero or more minutes and total must be greater than zero.', false); return; }
 
-    if (type === 1) {
-        const twitchOk = /^https?:\/\/(www\.)?twitch\.(?:tv|com)\/[A-Za-z0-9_]+/i.test(streamUrl);
-        if (!twitchOk) {
-            showRpcMsg('Streaming type requires a valid Twitch URL.', false);
+    if (type === 1 || spoof) {
+        const streamHostOk = /^https?:\/\/(www\.)?(twitch\.(tv|com)|youtube\.com|youtu\.be)\//i.test(streamUrl);
+        if (!streamHostOk) {
+            showRpcMsg('Streaming type requires a valid Twitch or YouTube URL.', false);
             return;
         }
     }
 
-    const activity = { type, name, application_id: appId };
-    if (display_name) activity.display_name = display_name;
+    const activity = { type, name, application_id: appId, timestamps };
     if (details) activity.details = details;
     if (state) activity.state = state;
     if (type === 1 && streamUrl) activity.url = streamUrl;
@@ -2224,7 +2476,11 @@ async function applyRpc() {
     // Build assets object properly for Discord API
     const assets = {};
     if (largeImage) assets.large_image = largeImage;
+    const largeImageText = (document.getElementById('rpcLargeImageTextInput')?.value || '').trim();
+    if (largeImageText) assets.large_text = largeImageText;
     if (smallImage) assets.small_image = smallImage;
+    const smallImageText = (document.getElementById('rpcSmallImageTextInput')?.value || '').trim();
+    if (smallImageText) assets.small_text = smallImageText;
     if (Object.keys(assets).length > 0) activity.assets = assets;
     
     // Build buttons properly - Discord API expects buttons array of labels and metadata.button_urls array
@@ -2245,7 +2501,9 @@ async function applyRpc() {
 
     saveRpcDraft();
     
-    const res = await postJSON('/api/rpc', { action: 'set', activity });
+    const retainedStatus = _rpcActiveActivities.filter(item => Number(item.type) === 4);
+    const activities = [activity, ...retainedStatus].slice(0, 5);
+    const res = await postJSON('/api/rpc', { action: 'set', activity: activities, spoof, stream_url: streamUrl });
     if (res && res.ok) {
         showRpcMsg('RPC set.', true);
         trackDashboardAction('rpc_set', `Set RPC ${name}`);
@@ -2256,7 +2514,10 @@ async function applyRpc() {
 }
 
 async function clearRpc() {
-    const res = await postJSON('/api/rpc', { action: 'stop' });
+    const customStatus = _rpcActiveActivities.find(activity => Number(activity.type) === 4);
+    const res = customStatus
+        ? await postJSON('/api/rpc', { action: 'set', activity: [customStatus] })
+        : await postJSON('/api/rpc', { action: 'stop' });
     if (res && res.ok) {
         showRpcMsg('RPC cleared.', true);
         trackDashboardAction('rpc_clear', 'Stopped RPC activity');
@@ -2298,24 +2559,356 @@ async function setSpotifyLyrics(action) {
 }
 
 function showRpcProfileMsg(message, state = '') {
-    const el = document.getElementById('rpcProfileMsg');
-    if (!el) return;
-    el.textContent = message;
-    el.className = `rpc-profile-feedback${state ? ` ${state}` : ''}`;
+    for (const id of ['rpcProfileMsg', 'rpcRotationMsg']) {
+        const el = document.getElementById(id);
+        if (!el) continue;
+        el.textContent = message;
+        el.className = `rpc-profile-feedback${state ? ` ${state}` : ''}`;
+    }
 }
 
-let _rpcRotationOrder = [];
-document.getElementById('rpcRotationPresets')?.addEventListener('change', event => {
-    const select = event.currentTarget;
-    const selected = new Set(Array.from(select.selectedOptions, option => option.value));
-    _rpcRotationOrder = _rpcRotationOrder.filter(name => selected.has(name));
-    for (const option of select.options) {
-        if (option.selected && !_rpcRotationOrder.includes(option.value)) _rpcRotationOrder.push(option.value);
+const RPC_DASHBOARD_TABS = ['editor', 'status', 'presets', 'stack', 'rotation', 'lyrics'];
+const RPC_STATIC_PREVIEW = document.querySelector('meta[name="csrf-token"]')?.content === '__CSRF_TOKEN__';
+const RPC_PREVIEW_PRESETS_KEY = 'aria.rpcPreviewPresets';
+const RPC_PREVIEW_STACK_KEY = 'aria.rpcPreviewStack';
+const RPC_PREVIEW_ROTATION_KEY = 'aria.rpcPreviewRotation';
+const RPC_PAGE_COPY = {
+    editor: ['Rich Presence', 'Build an activity, preview it as it will appear, then apply it to your connected account.'],
+    status: ['Custom Status', 'Set a status text independently from your activity.'],
+    presets: ['RPC Presets', 'Switch between saved activity configurations instantly.'],
+    stack: ['RPC Stack', 'Queue activities to play one after another, each for a set duration.'],
+    rotation: ['RPC Rotation', 'Cycle through saved activities automatically in your chosen order.'],
+    lyrics: ['Spotify Lyrics', 'Sync your presence with the currently playing Spotify track.'],
+};
+
+function setRpcTab(tabName, moveFocus = false) {
+    if (!RPC_DASHBOARD_TABS.includes(tabName)) return;
+    for (const name of RPC_DASHBOARD_TABS) {
+        const suffix = name[0].toUpperCase() + name.slice(1);
+        const tab = document.getElementById(`rpcTab${suffix}`);
+        const panel = document.getElementById(`rpcPanel${suffix}`);
+        const selected = name === tabName;
+        if (tab) {
+            tab.classList.toggle('is-active', selected);
+            tab.setAttribute('aria-selected', String(selected));
+            tab.tabIndex = selected ? 0 : -1;
+        }
+        if (panel) panel.hidden = !selected;
     }
+    setText('rpcPageTitle', RPC_PAGE_COPY[tabName][0]);
+    setText('rpcPageSubtitle', RPC_PAGE_COPY[tabName][1]);
+    document.querySelectorAll('[data-rpc-page-action]').forEach(button => {
+        button.hidden = button.dataset.rpcPageAction !== tabName;
+    });
+    try { localStorage.setItem('aria.rpcDashboardTab', tabName); } catch (_) {}
+    if (moveFocus) {
+        const suffix = tabName[0].toUpperCase() + tabName.slice(1);
+        document.getElementById(`rpcTab${suffix}`)?.focus();
+    }
+}
+
+function readRpcPreviewStore(key, fallback) {
+    try {
+        const value = JSON.parse(localStorage.getItem(key) || 'null');
+        return value == null ? fallback : value;
+    } catch (_) {
+        return fallback;
+    }
+}
+
+function writeRpcPreviewStore(key, value) {
+    try { localStorage.setItem(key, JSON.stringify(value)); return true; }
+    catch (_) { return false; }
+}
+
+function buildRpcPresetActivity() {
+    const value = id => (document.getElementById(id)?.value || '').trim();
+    const typeKey = value('rpcPresetType') || 'custom';
+    const typeConfig = getRpcTypeConfig(typeKey);
+    const name = value('rpcPresetActivityName') || typeConfig.name || '';
+    const statusEmoji = value('rpcPresetEmoji');
+    const elapsed = Number(value('rpcPresetElapsed') || 0);
+    const totalRaw = value('rpcPresetTotal');
+    const total = totalRaw ? Number(totalRaw) : null;
+    if (!name) return { error: typeConfig.customStatus ? 'Status text is required.' : 'Activity name is required.' };
+    if (!typeConfig.customStatus && (!Number.isFinite(elapsed) || elapsed < 0 || (total !== null && (!Number.isFinite(total) || total <= 0)))) {
+        return { error: 'Elapsed must be zero or more and total must be greater than zero.' };
+    }
+    const activity = typeConfig.customStatus
+        ? { type: 4, name: 'Custom Status', state: name }
+        : {
+            type: typeConfig.activityType,
+            name,
+            application_id: typeConfig.name
+                ? typeConfig.applicationId
+                : inferRpcAppIdFromActivity(name, value('rpcPresetDetails'), value('rpcPresetState')),
+            timestamps: { start: Date.now() - elapsed * 60000 },
+        };
+    if (typeConfig.customStatus && statusEmoji) activity.emoji = { name: statusEmoji, id: null, animated: false };
+    if (!typeConfig.customStatus && total !== null) activity.timestamps.end = activity.timestamps.start + total * 60000;
+    if (value('rpcPresetDetails')) activity.details = value('rpcPresetDetails');
+    if (!typeConfig.customStatus && value('rpcPresetState')) activity.state = value('rpcPresetState');
+    if (typeConfig.activityType === 1 && value('rpcPresetStreamUrl')) activity.url = value('rpcPresetStreamUrl');
+    const assets = {};
+    if (value('rpcPresetLargeImage')) assets.large_image = value('rpcPresetLargeImage');
+    if (value('rpcPresetLargeText')) assets.large_text = value('rpcPresetLargeText');
+    if (value('rpcPresetSmallImage')) assets.small_image = value('rpcPresetSmallImage');
+    if (value('rpcPresetSmallText')) assets.small_text = value('rpcPresetSmallText');
+    if (Object.keys(assets).length) activity.assets = assets;
+    return { activity };
+}
+
+function fillRpcPresetComposer(name, activity) {
+    const setVal = (id, nextValue) => {
+        const input = document.getElementById(id);
+        if (input) input.value = nextValue == null ? '' : String(nextValue);
+    };
+    const assets = activity.assets || {};
+    const timestamps = activity.timestamps || {};
+    const status = Number(activity.type) === 4;
+    setVal('rpcPresetName', name);
+    setVal('rpcPresetActivityName', status ? activity.state : activity.name);
+    setVal('rpcPresetType', getRpcTypeForActivity(activity));
+    setVal('rpcPresetEmoji', activity.emoji?.name || '');
+    setVal('rpcPresetDetails', activity.details);
+    setVal('rpcPresetState', activity.state);
+    setVal('rpcPresetStreamUrl', activity.url);
+    setVal('rpcPresetLargeImage', assets.large_image);
+    setVal('rpcPresetLargeText', assets.large_text);
+    setVal('rpcPresetSmallImage', assets.small_image);
+    setVal('rpcPresetSmallText', assets.small_text);
+    setVal('rpcPresetElapsed', Number.isFinite(Number(timestamps.start))
+        ? Math.floor(Math.max(0, Date.now() - Number(timestamps.start)) / 60000)
+        : 0);
+    setVal('rpcPresetTotal', Number.isFinite(Number(timestamps.end)) && Number(timestamps.end) > Number(timestamps.start)
+        ? Math.round((Number(timestamps.end) - Number(timestamps.start)) / 60000)
+        : '');
+}
+
+function previewRpcPresetOnEditor(activity) {
+    const assets = activity.assets || {};
+    const timestamps = activity.timestamps || {};
+    applyRpcDraftToInputs({
+        type: getRpcTypeForActivity(activity),
+        name: Number(activity.type) === 4 ? activity.state || '' : activity.name || '',
+        display_name: activity.display_name || '',
+        details: activity.details || '',
+        state: activity.state || '',
+        statusEmoji: activity.emoji?.name || '',
+        elapsedMinutes: Number.isFinite(Number(timestamps.start))
+            ? Math.floor(Math.max(0, Date.now() - Number(timestamps.start)) / 60000)
+            : '0',
+        totalMinutes: Number.isFinite(Number(timestamps.end)) && Number(timestamps.end) > Number(timestamps.start)
+            ? Math.round((Number(timestamps.end) - Number(timestamps.start)) / 60000)
+            : '',
+        largeImage: assets.large_image || '',
+        smallImage: assets.small_image || '',
+        streamUrl: activity.url || '',
+    });
+    setRpcTab('editor');
+    updateRpcPreview();
+}
+
+document.querySelector('.rpc-tabs')?.addEventListener('keydown', event => {
+    const current = RPC_DASHBOARD_TABS.find(name => {
+        const suffix = name[0].toUpperCase() + name.slice(1);
+        return document.getElementById(`rpcTab${suffix}`) === event.target;
+    });
+    if (!current) return;
+    const currentIndex = RPC_DASHBOARD_TABS.indexOf(current);
+    let nextIndex = currentIndex;
+    if (event.key === 'ArrowRight') nextIndex = (currentIndex + 1) % RPC_DASHBOARD_TABS.length;
+    else if (event.key === 'ArrowLeft') nextIndex = (currentIndex + RPC_DASHBOARD_TABS.length - 1) % RPC_DASHBOARD_TABS.length;
+    else if (event.key === 'Home') nextIndex = 0;
+    else if (event.key === 'End') nextIndex = RPC_DASHBOARD_TABS.length - 1;
+    else return;
+    event.preventDefault();
+    setRpcTab(RPC_DASHBOARD_TABS[nextIndex], true);
 });
 
+function renderRpcStack(stack) {
+    const list = document.getElementById('rpcStackList');
+    if (!list) return;
+    list.replaceChildren();
+    const activities = Array.isArray(stack) ? stack : [];
+    setText('rpcStackCount', `${activities.length} / 5`);
+    if (!activities.length) {
+        const empty = document.createElement('div');
+        empty.className = 'rpc-empty-state';
+        empty.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 9 4.5-9 4.5-9-4.5L12 3Z"/><path d="m3 12 9 4.5 9-4.5M3 16.5 12 21l9-4.5"/></svg><strong>No entries</strong><span>Click “Add entry” to start building your stack.</span>';
+        list.append(empty);
+        return;
+    }
+    activities.forEach((activity, index) => {
+        const row = document.createElement('div');
+        row.className = 'rpc-stack-item';
+        const number = document.createElement('span');
+        number.className = 'rpc-stack-index';
+        number.textContent = String(index + 1).padStart(2, '0');
+        const copy = document.createElement('div');
+        copy.className = 'rpc-stack-item-copy';
+        const title = document.createElement('strong');
+        title.textContent = activity.name || 'Activity';
+        const detail = document.createElement('span');
+        detail.textContent = [activity.details, activity.state].filter(Boolean).join(' · ') || 'No details';
+        copy.append(title, detail);
+        const remove = document.createElement('button');
+        remove.className = 'rpc-stack-remove';
+        remove.type = 'button';
+        remove.textContent = 'Remove';
+        remove.setAttribute('aria-label', `Remove ${activity.name || 'activity'} from stack`);
+        remove.addEventListener('click', () => updateRpcStack('remove', index));
+        row.append(number, copy, remove);
+        list.append(row);
+    });
+}
+
+async function loadRpcStack() {
+    let data = await fetchJSON('/api/rpc/stack');
+    if ((!data || !data.ok) && RPC_STATIC_PREVIEW) {
+        data = { ok: true, stack: readRpcPreviewStore(RPC_PREVIEW_STACK_KEY, []) };
+    }
+    if (data?.ok) renderRpcStack(data.stack);
+}
+
+async function updateRpcStack(action, index, activity) {
+    const payload = { action };
+    if (index !== undefined) payload.index = index;
+    if (activity) payload.activity = activity;
+    let response = await postJSON('/api/rpc/stack', payload);
+    if ((!response || !response.ok) && RPC_STATIC_PREVIEW) {
+        const stack = readRpcPreviewStore(RPC_PREVIEW_STACK_KEY, []);
+        if (action === 'add') {
+            if (stack.length >= 5) response = { ok: false, error: 'A stack can contain up to five activities.' };
+            else if (!activity) response = { ok: false, error: 'Build an activity in Editor before adding it.' };
+            else { stack.push(activity); writeRpcPreviewStore(RPC_PREVIEW_STACK_KEY, stack); response = { ok: true, stack }; }
+        } else if (action === 'remove') {
+            stack.splice(index, 1);
+            writeRpcPreviewStore(RPC_PREVIEW_STACK_KEY, stack);
+            response = { ok: true, stack };
+        } else if (action === 'clear') {
+            writeRpcPreviewStore(RPC_PREVIEW_STACK_KEY, []);
+            response = { ok: true, stack: [] };
+        } else {
+            response = { ok: false, error: 'Applying activities requires a connected client.' };
+        }
+    }
+    const message = document.getElementById('rpcStackMsg');
+    if (message) {
+        message.textContent = response?.ok
+            ? ({ add: 'Activity added to the stack.', add_current: 'Added the live activity to the stack.', apply: 'Activity stack applied.', clear: 'Activity stack cleared.', remove: 'Activity removed from the stack.' }[action] || 'Stack updated.')
+            : (response?.error || 'Stack action failed.');
+        message.className = `rpc-profile-feedback ${response?.ok ? 'success' : 'error'}`;
+    }
+    if (response?.ok) {
+        renderRpcStack(response.stack);
+        if (action === 'apply') loadRpc();
+    }
+}
+
+function buildRpcEditorActivity() {
+    const draft = readRpcDraftFromInputs();
+    const typeConfig = getRpcTypeConfig(draft.type);
+    const name = draft.name || typeConfig.name || '';
+    if (!name) return null;
+    const timestamps = typeConfig.customStatus ? null : getRpcTimestamps();
+    if (!typeConfig.customStatus && !timestamps) return null;
+    const spoof = draft.spoofType === 'streaming' && !typeConfig.customStatus && typeConfig.activityType !== 1;
+    const activity = typeConfig.customStatus
+        ? { type: 4, name: 'Custom Status', state: name }
+        : { type: spoof ? 1 : typeConfig.activityType, name, application_id: getEffectiveRpcAppId(), timestamps };
+    if (typeConfig.customStatus && draft.statusEmoji) activity.emoji = { name: draft.statusEmoji, id: null, animated: false };
+    if (draft.display_name) activity.display_name = draft.display_name;
+    if (!typeConfig.customStatus && draft.details) activity.details = draft.details;
+    if (!typeConfig.customStatus && draft.state) activity.state = draft.state;
+    if ((typeConfig.activityType === 1 || spoof) && draft.streamUrl) activity.url = draft.streamUrl;
+    const assets = {};
+    if (draft.largeImage) assets.large_image = draft.largeImage;
+    if (draft.largeImageText) assets.large_text = draft.largeImageText;
+    if (draft.smallImage) assets.small_image = draft.smallImage;
+    if (draft.smallImageText) assets.small_text = draft.smallImageText;
+    if (Object.keys(assets).length) activity.assets = assets;
+    const labels = [draft.button1Label, draft.button2Label].filter(Boolean);
+    const urls = [draft.button1Label ? draft.button1Url : '', draft.button2Label ? draft.button2Url : ''].filter(Boolean);
+    if (labels.length) {
+        activity.buttons = labels;
+        activity.metadata = { button_urls: urls };
+    }
+    return activity;
+}
+
+function addCurrentRpcToStack() {
+    const activity = buildRpcEditorActivity();
+    if (!activity) {
+        const message = document.getElementById('rpcStackMsg');
+        if (message) {
+            message.textContent = 'Build an activity in Editor first, then add it here.';
+            message.className = 'rpc-profile-feedback error';
+        }
+        return;
+    }
+    updateRpcStack('add', undefined, activity);
+}
+function applyRpcStack() { updateRpcStack('apply'); }
+function clearRpcStack() { updateRpcStack('clear'); }
+
+let _rpcRotationOrder = [];
+let _rpcRotationDirty = false;
+
+function renderRpcRotationOrder() {
+    const list = document.getElementById('rpcRotationList');
+    const empty = document.getElementById('rpcRotationEmpty');
+    if (!list) return;
+    list.replaceChildren();
+    if (empty) empty.hidden = _rpcRotationOrder.length > 0;
+    _rpcRotationOrder.forEach((name, index) => {
+        const row = document.createElement('div');
+        row.className = 'rpc-rotation-item';
+        const position = document.createElement('span');
+        position.className = 'rpc-stack-index';
+        position.textContent = String(index + 1).padStart(2, '0');
+        const label = document.createElement('strong');
+        label.textContent = name;
+        const remove = document.createElement('button');
+        remove.className = 'rpc-stack-remove';
+        remove.type = 'button';
+        remove.textContent = 'Remove';
+        remove.setAttribute('aria-label', `Remove ${name} from rotation`);
+        remove.addEventListener('click', () => {
+            _rpcRotationOrder.splice(index, 1);
+            _rpcRotationDirty = true;
+            renderRpcRotationOrder();
+            showRpcProfileMsg('Rotation order changed. Set order to save it.');
+        });
+        row.append(position, label, remove);
+        list.append(row);
+    });
+    const startButton = document.querySelector('[data-rpc-page-action="rotation"][onclick*="controlRpcRotation"]');
+    if (startButton) startButton.disabled = _rpcRotationDirty || _rpcRotationOrder.length < 2;
+}
+
+function addRpcRotationPreset() {
+    const select = document.getElementById('rpcRotationPresets');
+    const name = select?.value || '';
+    if (!name) { showRpcProfileMsg('Choose a saved preset to add.', 'error'); select?.focus(); return; }
+    if (_rpcRotationOrder.includes(name)) { showRpcProfileMsg(`${name} is already in the rotation.`, 'error'); return; }
+    _rpcRotationOrder.push(name);
+    _rpcRotationDirty = true;
+    renderRpcRotationOrder();
+    showRpcProfileMsg('Rotation entry added. Set order to save it.');
+}
+
 async function loadRpcProfiles() {
-    const data = await fetchJSON('/api/rpc/profiles');
+    let data = await fetchJSON('/api/rpc/profiles');
+    if ((!data || !data.ok) && RPC_STATIC_PREVIEW) {
+        const rotation = readRpcPreviewStore(RPC_PREVIEW_ROTATION_KEY, null);
+        data = {
+            ok: true,
+            presets: Object.keys(readRpcPreviewStore(RPC_PREVIEW_PRESETS_KEY, {})).sort((left, right) => left.localeCompare(right)),
+            rotation,
+            rotation_running: false,
+        };
+    }
     if (!data || !data.ok) return;
 
     const presets = Array.isArray(data.presets) ? data.presets : [];
@@ -2325,19 +2918,18 @@ async function loadRpcProfiles() {
     const intervalInput = document.getElementById('rpcRotationInterval');
     const selectedPreset = presetSelect?.value || '';
 
-    for (const select of [presetSelect, rotationSelect]) {
-        if (!select) continue;
-        select.replaceChildren();
-        if (!presets.length && select === presetSelect) {
-            select.add(new Option('No presets saved', ''));
-        }
-        for (const name of presets) {
-            const option = new Option(name, name);
-            if (select === rotationSelect) option.selected = rotationNames.includes(name);
-            select.add(option);
-        }
+    if (presetSelect) {
+        presetSelect.replaceChildren();
+        if (!presets.length) presetSelect.add(new Option('No presets saved', ''));
+        for (const name of presets) presetSelect.add(new Option(name, name));
+    }
+    if (rotationSelect) {
+        rotationSelect.replaceChildren(new Option('Choose saved preset', ''));
+        for (const name of presets) rotationSelect.add(new Option(name, name));
     }
     _rpcRotationOrder = rotationNames.filter(name => presets.includes(name));
+    _rpcRotationDirty = false;
+    renderRpcRotationOrder();
     if (presetSelect && presets.includes(selectedPreset)) presetSelect.value = selectedPreset;
     if (intervalInput && data.rotation?.interval) intervalInput.value = data.rotation.interval;
     if (data.rotation_running) {
@@ -2352,16 +2944,48 @@ async function loadRpcProfiles() {
 async function saveRpcPreset() {
     const name = (document.getElementById('rpcPresetName')?.value || '').trim();
     if (!name) { showRpcProfileMsg('Enter a preset name first.', 'error'); return; }
-    const res = await postJSON('/api/rpc/profiles/preset', { action: 'save', name });
+    const built = buildRpcPresetActivity();
+    if (built.error) { showRpcProfileMsg(built.error, 'error'); return; }
+    let res = await postJSON('/api/rpc/profiles/preset', { action: 'save', name, activity: built.activity });
+    if ((!res || !res.ok) && RPC_STATIC_PREVIEW) {
+        const presets = readRpcPreviewStore(RPC_PREVIEW_PRESETS_KEY, {});
+        presets[name] = built.activity;
+        if (writeRpcPreviewStore(RPC_PREVIEW_PRESETS_KEY, presets)) res = { ok: true };
+    }
     if (!res?.ok) { showRpcProfileMsg(res?.error || 'Preset could not be saved.', 'error'); return; }
     document.getElementById('rpcPresetName').value = '';
     showRpcProfileMsg(`Saved “${name}”.`, 'success');
     await loadRpcProfiles();
 }
 
+async function applyRpcPresetDraft() {
+    const built = buildRpcPresetActivity();
+    if (built.error) { showRpcProfileMsg(built.error, 'error'); return; }
+    const response = await postJSON('/api/rpc', { action: 'set', activity: built.activity });
+    if (response?.ok) {
+        showRpcProfileMsg('RPC applied.', 'success');
+        loadRpc();
+        return;
+    }
+    if (RPC_STATIC_PREVIEW) {
+        previewRpcPresetOnEditor(built.activity);
+        showRpcMsg('Preview updated. Applying requires a connected client.', true);
+        return;
+    }
+    showRpcProfileMsg(response?.error || 'RPC could not be applied.', 'error');
+}
+
 async function loadRpcPreset() {
     const name = document.getElementById('rpcPresetSelect')?.value || '';
     if (!name) { showRpcProfileMsg('Choose a saved preset first.', 'error'); return; }
+    if (RPC_STATIC_PREVIEW) {
+        const activity = readRpcPreviewStore(RPC_PREVIEW_PRESETS_KEY, {})[name];
+        if (!activity) { showRpcProfileMsg('Preset could not be found in this preview.', 'error'); return; }
+        fillRpcPresetComposer(name, activity);
+        previewRpcPresetOnEditor(activity);
+        showRpcMsg(`Loaded “${name}” into the live preview.`, true);
+        return;
+    }
     const res = await postJSON('/api/rpc/profiles/preset', { action: 'load', name });
     if (!res?.ok) { showRpcProfileMsg(res?.error || 'Preset could not be loaded.', 'error'); return; }
     showRpcProfileMsg(`Loaded “${name}”.`, 'success');
@@ -2371,29 +2995,54 @@ async function loadRpcPreset() {
 async function deleteRpcPreset() {
     const name = document.getElementById('rpcPresetSelect')?.value || '';
     if (!name) { showRpcProfileMsg('Choose a saved preset first.', 'error'); return; }
-    if (!window.confirm(`Delete the RPC preset “${name}”?`)) return;
-    const res = await postJSON('/api/rpc/profiles/preset', { action: 'delete', name });
+    let res;
+    if (RPC_STATIC_PREVIEW) {
+        const presets = readRpcPreviewStore(RPC_PREVIEW_PRESETS_KEY, {});
+        if (!Object.hasOwn(presets, name)) { showRpcProfileMsg('Preset could not be found in this preview.', 'error'); return; }
+        delete presets[name];
+        writeRpcPreviewStore(RPC_PREVIEW_PRESETS_KEY, presets);
+        res = { ok: true };
+    } else {
+        if (!window.confirm(`Delete the RPC preset “${name}”?`)) return;
+        res = await postJSON('/api/rpc/profiles/preset', { action: 'delete', name });
+    }
     if (!res?.ok) { showRpcProfileMsg(res?.error || 'Preset could not be deleted.', 'error'); return; }
     showRpcProfileMsg(`Deleted “${name}”.`, 'success');
     await loadRpcProfiles();
 }
 
 async function setRpcRotation() {
-    const select = document.getElementById('rpcRotationPresets');
-    const selected = new Set(Array.from(select?.selectedOptions || [], option => option.value));
-    const presets = _rpcRotationOrder.filter(name => selected.has(name));
-    for (const option of select?.options || []) {
-        if (option.selected && !presets.includes(option.value)) presets.push(option.value);
-    }
+    const presets = [..._rpcRotationOrder];
     const interval = Number.parseInt(document.getElementById('rpcRotationInterval')?.value, 10);
-    if (presets.length < 2) { showRpcProfileMsg('Select at least two presets in rotation order.', 'error'); return; }
-    const res = await postJSON('/api/rpc/profiles/rotation', { action: 'set', presets, interval });
+    if (presets.length < 2) { showRpcProfileMsg('Add at least two presets to the rotation order.', 'error'); return; }
+    let res = await postJSON('/api/rpc/profiles/rotation', { action: 'set', presets, interval });
+    if ((!res || !res.ok) && RPC_STATIC_PREVIEW) {
+        if (writeRpcPreviewStore(RPC_PREVIEW_ROTATION_KEY, { presets, interval })) res = { ok: true };
+    }
     if (!res?.ok) { showRpcProfileMsg(res?.error || 'Rotation could not be saved.', 'error'); return; }
+    _rpcRotationDirty = false;
     showRpcProfileMsg(`Rotation saved · ${presets.join(' → ')} · ${interval}s`, 'success');
     await loadRpcProfiles();
 }
 
 async function controlRpcRotation(action) {
+    if (action === 'start' && (_rpcRotationDirty || _rpcRotationOrder.length < 2)) {
+        showRpcProfileMsg('Save a rotation order with at least two presets first.', 'error');
+        return;
+    }
+    if (RPC_STATIC_PREVIEW) {
+        if (action === 'clear') {
+            localStorage.removeItem(RPC_PREVIEW_ROTATION_KEY);
+            _rpcRotationOrder = [];
+            _rpcRotationDirty = false;
+            renderRpcRotationOrder();
+            showRpcProfileMsg('Rotation configuration cleared.', 'success');
+            await loadRpcProfiles();
+        } else {
+            showRpcProfileMsg('Starting rotation requires a connected dashboard.', 'error');
+        }
+        return;
+    }
     const res = await postJSON('/api/rpc/profiles/rotation', { action });
     if (!res?.ok) { showRpcProfileMsg(res?.error || `Rotation ${action} failed.`, 'error'); return; }
     const messages = { start: 'Rotation started.', stop: 'Rotation stopped.', clear: 'Rotation configuration cleared.' };
@@ -3353,6 +4002,207 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 });
+
+const _dashboardSelectStates = new WeakMap();
+let _dashboardSelectSequence = 0;
+
+function updateDashboardSelectPosition(state) {
+    const rect = state.trigger.getBoundingClientRect();
+    const maxHeight = Math.min(360, Math.max(160, window.innerHeight - 24));
+    state.menu.style.width = `${rect.width}px`;
+    state.menu.style.maxHeight = `${maxHeight}px`;
+    const menuHeight = Math.min(state.menu.scrollHeight, maxHeight);
+    const top = rect.bottom + menuHeight + 8 <= window.innerHeight || rect.top < menuHeight + 8
+        ? rect.bottom + 4
+        : rect.top - menuHeight - 4;
+    state.menu.style.top = `${Math.max(8, Math.min(top, window.innerHeight - menuHeight - 8))}px`;
+    state.menu.style.left = `${Math.max(8, Math.min(rect.left, window.innerWidth - rect.width - 8))}px`;
+}
+
+function closeDashboardSelect(state, restoreFocus = false) {
+    state.menu.hidden = true;
+    state.trigger.setAttribute('aria-expanded', 'false');
+    if (restoreFocus) state.trigger.focus();
+}
+
+function renderDashboardSelect(state) {
+    const { select, trigger, menu } = state;
+    const options = [...select.options];
+    const selected = options.find(option => option.selected) || options[0];
+    const selectedText = selected?.textContent.trim() || 'Choose';
+    const copy = document.createElement('span');
+    copy.className = 'aria-select-trigger-copy';
+    copy.textContent = selectedText;
+    trigger.replaceChildren(copy);
+    trigger.disabled = select.disabled;
+    trigger.setAttribute('aria-label', state.label);
+
+    const fragment = document.createDocumentFragment();
+    let lastGroup = null;
+    for (const option of options) {
+        const group = option.parentElement instanceof HTMLOptGroupElement
+            ? option.parentElement.label
+            : '';
+        if (group && group !== lastGroup) {
+            const heading = document.createElement('div');
+            heading.className = 'aria-select-group-label';
+            heading.setAttribute('role', 'presentation');
+            heading.textContent = group;
+            fragment.append(heading);
+        }
+        lastGroup = group;
+
+        const row = document.createElement('button');
+        row.className = 'aria-select-option';
+        row.type = 'button';
+        row.setAttribute('role', 'option');
+        row.setAttribute('aria-selected', String(option.value === select.value));
+        row.dataset.value = option.value;
+        row.disabled = option.disabled || select.disabled;
+        const label = document.createElement('span');
+        label.className = 'aria-select-option-copy';
+        const title = document.createElement('strong');
+        title.textContent = option.textContent.trim();
+        label.append(title);
+        const description = option.dataset.description || '';
+        if (description) {
+            const detail = document.createElement('small');
+            detail.textContent = description;
+            label.append(detail);
+        }
+        const check = document.createElement('i');
+        check.setAttribute('aria-hidden', 'true');
+        check.textContent = '\u2713';
+        row.append(label, check);
+        fragment.append(row);
+    }
+    menu.replaceChildren(fragment);
+}
+
+function openDashboardSelect(state) {
+    for (const other of document.querySelectorAll('.aria-select-menu:not([hidden])')) {
+        if (other !== state.menu) other.hidden = true;
+    }
+    renderDashboardSelect(state);
+    state.menu.hidden = false;
+    state.trigger.setAttribute('aria-expanded', 'true');
+    updateDashboardSelectPosition(state);
+    state.menu.querySelector('[aria-selected="true"]')?.focus();
+}
+
+function enhanceDashboardSelect(select) {
+    if (select.dataset.ariaSelectEnhanced) return;
+    select.dataset.ariaSelectEnhanced = 'true';
+    const label = select.closest('.setting-row')?.querySelector('.setting-label')?.textContent.trim()
+        || [...(select.labels || [])].map(item => {
+            const namedSpan = item.querySelector('.setting-label, span');
+            if (namedSpan) return namedSpan.textContent.trim();
+            return [...item.childNodes].filter(node => node.nodeType === Node.TEXT_NODE).map(node => node.textContent.trim()).filter(Boolean).join(' ');
+        }).filter(Boolean).join(' ')
+        || select.getAttribute('aria-label')
+        || select.id;
+    const state = { select, label, trigger: null, menu: null };
+    const root = document.createElement('span');
+    root.className = `aria-select-root${select.classList.contains('small') ? ' is-small' : ''}`;
+    const trigger = document.createElement('button');
+    trigger.className = 'aria-select-trigger';
+    trigger.type = 'button';
+    trigger.setAttribute('aria-haspopup', 'listbox');
+    trigger.setAttribute('aria-expanded', 'false');
+    trigger.id = `${select.id || 'dashboardSelect'}Trigger`;
+    const menu = document.createElement('div');
+    menu.className = 'aria-select-menu';
+    menu.id = `${select.id || 'dashboardSelect'}Menu${++_dashboardSelectSequence}`;
+    menu.setAttribute('role', 'listbox');
+    menu.setAttribute('aria-label', label);
+    menu.hidden = true;
+    trigger.setAttribute('aria-controls', menu.id);
+    state.trigger = trigger;
+    state.menu = menu;
+    select.insertAdjacentElement('afterend', root);
+    root.append(trigger);
+    document.body.append(menu);
+    select.classList.add('aria-select-native');
+    select.tabIndex = -1;
+    select.setAttribute('aria-hidden', 'true');
+    for (const associatedLabel of [...(select.labels || [])]) associatedLabel.htmlFor = trigger.id;
+    _dashboardSelectStates.set(select, state);
+
+    trigger.addEventListener('click', () => {
+        if (menu.hidden) openDashboardSelect(state);
+        else closeDashboardSelect(state);
+    });
+    trigger.addEventListener('keydown', event => {
+        if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+            event.preventDefault();
+            openDashboardSelect(state);
+        }
+    });
+    menu.addEventListener('click', event => {
+        const option = event.target.closest('[role="option"]');
+        if (!option || option.disabled) return;
+        select.value = option.dataset.value;
+        select.dispatchEvent(new Event('change', { bubbles: true }));
+        renderDashboardSelect(state);
+        closeDashboardSelect(state, true);
+    });
+    menu.addEventListener('keydown', event => {
+        const options = [...menu.querySelectorAll('[role="option"]:not(:disabled)')];
+        const index = options.indexOf(document.activeElement);
+        let next = index;
+        if (event.key === 'ArrowDown') next = Math.min(options.length - 1, index + 1);
+        else if (event.key === 'ArrowUp') next = Math.max(0, index - 1);
+        else if (event.key === 'Home') next = 0;
+        else if (event.key === 'End') next = options.length - 1;
+        else if (event.key === 'Escape') {
+            event.preventDefault();
+            closeDashboardSelect(state, true);
+            return;
+        } else return;
+        event.preventDefault();
+        options[next]?.focus();
+    });
+    select.addEventListener('change', () => renderDashboardSelect(state));
+    const observer = new MutationObserver(() => renderDashboardSelect(state));
+    observer.observe(select, { childList: true, subtree: true, attributes: true, attributeFilter: ['disabled', 'label', 'value'] });
+    state.observer = observer;
+    renderDashboardSelect(state);
+}
+
+function refreshDashboardSelects() {
+    document.querySelectorAll('select:not([data-native-menu])').forEach(enhanceDashboardSelect);
+    for (const select of document.querySelectorAll('select.aria-select-native')) {
+        const state = _dashboardSelectStates.get(select);
+        if (state) renderDashboardSelect(state);
+    }
+}
+
+document.addEventListener('pointerdown', event => {
+    for (const select of document.querySelectorAll('select.aria-select-native')) {
+        const state = _dashboardSelectStates.get(select);
+        if (state && !state.menu.hidden && !state.menu.contains(event.target) && !state.trigger.contains(event.target)) {
+            closeDashboardSelect(state);
+        }
+    }
+});
+window.addEventListener('resize', () => {
+    for (const select of document.querySelectorAll('select.aria-select-native')) {
+        const state = _dashboardSelectStates.get(select);
+        if (state && !state.menu.hidden) updateDashboardSelectPosition(state);
+    }
+});
+window.addEventListener('scroll', () => {
+    for (const select of document.querySelectorAll('select.aria-select-native')) {
+        const state = _dashboardSelectStates.get(select);
+        if (state && !state.menu.hidden) updateDashboardSelectPosition(state);
+    }
+}, true);
+
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', refreshDashboardSelects, { once: true });
+} else {
+    refreshDashboardSelects();
+}
 
 // ── Live Chat Support System ─────────────────────────────────────────────────
 let _chatState = {

@@ -25,6 +25,7 @@ from formatter import VERSION
 class FakeBot:
     def __init__(self, directory):
         self.activity = {"type": 0, "name": "Initial"}
+        self.activities = [self.activity]
         self.message_logger = MessageLogger(str(Path(directory) / "logger.json"))
         self._rpc_rotation_state = {"running": False}
         self.connection_active = True
@@ -40,7 +41,8 @@ class FakeBot:
         self._rpc_stop_rotation = self.stop_rotation
 
     def apply_activity(self, bot, activity, mode="dashboard"):
-        self.activity = activity
+        self.activities = activity if isinstance(activity, list) else [activity] if isinstance(activity, dict) else []
+        self.activity = self.activities[0] if self.activities else None
         return True, activity
 
     def apply_preset(self, bot, name):
@@ -195,6 +197,8 @@ class WebPanelControlTests(unittest.TestCase):
         self.assertEqual(self.client.get("/api/rpc").status_code, 403)
         self.assertEqual(self.client.post("/api/rpc", json={"activity": {"name": "No"}}).status_code, 403)
         self.assertEqual(self.client.get("/api/rpc/profiles").status_code, 403)
+        self.assertEqual(self.client.get("/api/rpc/stack").status_code, 403)
+        self.assertEqual(self.client.post("/api/rpc/stack", json={"action": "clear"}).status_code, 403)
         self.assertEqual(self.client.get("/api/message-logger").status_code, 403)
         self.assertEqual(self.client.get("/api/config").status_code, 403)
         self.assertEqual(self.client.post("/api/client", json={"client_type": "vr"}).status_code, 403)
@@ -260,6 +264,70 @@ class WebPanelControlTests(unittest.TestCase):
         self.assertTrue(response.json["ok"])
         self.assertEqual(panel.bot.activity["name"], activity["name"])
 
+    def test_rpc_activity_list_keeps_custom_status_independent(self):
+        self.authenticated = True
+        with self.client.session_transaction() as active_session:
+            active_session["user_id"] = _PANEL_MASTER_ID
+        activities = [
+            {"type": 0, "name": "Spotify", "details": "Song", "application_id": "3201606009684"},
+            {"type": 4, "name": "Custom Status", "state": "Aria is online", "emoji": {"name": "heart"}},
+        ]
+        response = self.client.post("/api/rpc", json={
+            "action": "set",
+            "activity": activities,
+            "spoof": True,
+            "stream_url": "https://twitch.tv/aria",
+        })
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json["activity"]["type"], 1)
+        self.assertEqual(len(response.json["activities"]), 2)
+        self.assertEqual(response.json["activities"][1]["type"], 4)
+        self.assertNotIn("application_id", response.json["activities"][1])
+        self.assertEqual(panel.bot.activities, response.json["activities"])
+        status = self.client.get("/api/rpc")
+        self.assertEqual(len(status.json["activities"]), 2)
+        self.assertEqual(status.json["activity"]["name"], "Spotify")
+
+    def test_rpc_spoof_applies_to_providers_and_generic_activities(self):
+        self.authenticated = True
+        with self.client.session_transaction() as active_session:
+            active_session["user_id"] = _PANEL_MASTER_ID
+        provider_names = ("Spotify", "YouTube", "Crunchyroll", "Xbox", "PlayStation", "VRChat")
+        for name in (*provider_names, "My Activity"):
+            response = self.client.post("/api/rpc", json={
+                "action": "set",
+                "spoof": True,
+                "stream_url": "https://twitch.tv/aria",
+                "activity": {"type": 0, "name": name, "application_id": "123456789012345678"},
+            })
+            self.assertEqual(response.status_code, 200, name)
+            self.assertEqual(response.json["activity"]["type"], 1, name)
+            self.assertEqual(response.json["activity"]["url"], "https://twitch.tv/aria", name)
+            self.assertNotIn("spoof", response.json["activity"])
+
+        status = self.client.post("/api/rpc", json={
+            "action": "set",
+            "spoof": True,
+            "stream_url": "invalid",
+            "activity": {"type": 4, "name": "Custom Status", "state": "Away"},
+        })
+        self.assertEqual(status.status_code, 200)
+        self.assertEqual(status.json["activity"]["type"], 4)
+        self.assertNotIn("url", status.json["activity"])
+        self.assertNotIn("application_id", status.json["activity"])
+
+    def test_rpc_spoof_rejects_invalid_stream_url(self):
+        self.authenticated = True
+        with self.client.session_transaction() as active_session:
+            active_session["user_id"] = _PANEL_MASTER_ID
+        response = self.client.post("/api/rpc", json={
+            "action": "set",
+            "spoof": True,
+            "stream_url": "https://example.com/not-a-stream",
+            "activity": {"type": 2, "name": "Listening"},
+        })
+        self.assertEqual(response.status_code, 400)
+
     def test_rpc_display_name_overrides_title_after_app_id_detection(self):
         self.authenticated = True
         with self.client.session_transaction() as active_session:
@@ -268,15 +336,35 @@ class WebPanelControlTests(unittest.TestCase):
             "action": "set",
             "activity": {
                 "type": 0,
-                "name": "Twitch",
+                "name": "Spotify",
                 "display_name": "My Stream",
-                "application_id": "1494507808329171096",
+                "application_id": "367827983903490050",
             },
         })
         self.assertEqual(response.status_code, 200)
         self.assertEqual(panel.bot.activity["name"], "My Stream")
-        self.assertEqual(panel.bot.activity["application_id"], "488633707456348190")
+        self.assertEqual(panel.bot.activity["application_id"], "3201606009684")
         self.assertNotIn("display_name", panel.bot.activity)
+
+    def test_rpc_provider_application_ids_match_dashboard_catalog(self):
+        self.authenticated = True
+        with self.client.session_transaction() as active_session:
+            active_session["user_id"] = _PANEL_MASTER_ID
+        provider_ids = {
+            "Spotify": "3201606009684",
+            "YouTube": "111299001912",
+            "Crunchyroll": "981509069309354054",
+            "Xbox": "622174530214821906",
+            "PlayStation": "1470539864909943067",
+            "VRChat": "1498387526501535835",
+        }
+        for name, expected_app_id in provider_ids.items():
+            response = self.client.post("/api/rpc", json={
+                "action": "set",
+                "activity": {"type": 0, "name": name},
+            })
+            self.assertEqual(response.status_code, 200, name)
+            self.assertEqual(response.json["activity"]["application_id"], expected_app_id, name)
 
     def test_rpc_discord_cdn_attachment_urls_become_media_proxy_keys(self):
         image_url = "https://media.discordapp.net/attachments/123/456/cover.png?ex=abc&is=def"
@@ -1219,11 +1307,43 @@ class WebPanelControlTests(unittest.TestCase):
         self.assertEqual(event["duration_ms"], 41.0)
         self.assertEqual(event["status"], "failed")
 
+    def test_rpc_stack_dashboard_route(self):
+        self.authenticated = True
+        with self.client.session_transaction() as active_session:
+            active_session["user_id"] = _PANEL_MASTER_ID
+        response = self.client.get("/api/rpc/stack")
+        self.assertEqual(response.json["stack"], [])
+
+        added = self.client.post("/api/rpc/stack", json={"action": "add_current"})
+        self.assertTrue(added.json["ok"])
+        self.assertEqual(added.json["stack"], [{"type": 0, "name": "Initial"}])
+
+        draft = {"type": 3, "name": "Draft", "details": "Built offline"}
+        added_draft = self.client.post("/api/rpc/stack", json={"action": "add", "activity": draft})
+        self.assertTrue(added_draft.json["ok"])
+        self.assertEqual(added_draft.json["stack"][-1], draft)
+
+        applied = self.client.post("/api/rpc/stack", json={"action": "apply"})
+        self.assertTrue(applied.json["ok"])
+        self.assertEqual(panel.bot.activities, [{"type": 0, "name": "Initial"}, draft])
+
+        removed = self.client.post("/api/rpc/stack", json={"action": "remove", "index": 1})
+        self.assertTrue(removed.json["ok"])
+        self.assertEqual(removed.json["stack"], [{"type": 0, "name": "Initial"}])
+        self.assertTrue(self.client.post("/api/rpc/stack", json={"action": "clear"}).json["ok"])
+        self.assertEqual(self.client.post("/api/rpc/stack", json={"action": "apply"}).status_code, 400)
+
     def test_presets_rotation_and_logger_routes(self):
         self.authenticated = True
         with self.client.session_transaction() as active_session:
             active_session["user_id"] = _PANEL_MASTER_ID
         self.assertTrue(self.client.post("/api/rpc/profiles/preset", json={"action": "save", "name": "Desk"}).json["ok"])
+        composed_activity = {"type": 3, "name": "Read", "details": "A book"}
+        composed_preset = self.client.post("/api/rpc/profiles/preset", json={
+            "action": "save", "name": "Composed", "activity": composed_activity,
+        })
+        self.assertTrue(composed_preset.json["ok"])
+        self.assertEqual(panel._rpc_profile_store.get_preset("Composed"), composed_activity)
         panel.bot.activity = {"type": 3, "name": "Reading"}
         self.assertTrue(self.client.post("/api/rpc/profiles/preset", json={"action": "save", "name": "Away"}).json["ok"])
         self.assertTrue(self.client.post("/api/rpc/profiles/preset", json={"action": "load", "name": "Desk"}).json["ok"])

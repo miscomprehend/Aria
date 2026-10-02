@@ -6,21 +6,16 @@ from urllib.parse import urlparse
 
 
 RPC_TYPE_GROUPS = {
-    "music": ("spotify", "soundcloud", "listening"),
+    "music": ("spotify", "listening"),
     "video": ("youtube", "watching", "crunchyroll"),
     "activity": ("playing", "streaming", "listening", "watching", "competing"),
-    "platform": ("xbox", "playstation", "vrchat", "metaquest", "roblox", "vscode", "browser"),
+    "platform": ("xbox", "playstation", "vrchat"),
     "custom": ("custom_status", "custom"),
 }
 
 RPC_TYPE_ALIASES = {
     "ps4": "playstation",
     "ps5": "playstation",
-    "golive": "streaming",
-    "watch": "watching",
-    "game": "playing",
-    "customstatus": "custom_status",
-    "yt": "youtube",
 }
 
 RPC_ACTIVITY_TYPES = {
@@ -34,15 +29,10 @@ RPC_ACTIVITY_TYPES = {
 RPC_APP_IDS = {
     "spotify": "3201606009684",
     "youtube": "111299001912",
-    "soundcloud": "451016423729692673",
     "xbox": "622174530214821906",
     "playstation": "1470539864909943067",
     "crunchyroll": "981509069309354054",
     "vrchat": "1498387526501535835",
-    "metaquest": "1418873561485504553",
-    "roblox": "366959252047237121",
-    "vscode": "383226320970055681",
-    "browser": "485951488964247552",
     "generic": "367827983903490050",
     "listening": "534203414247112723",
     "streaming": "111299001912",
@@ -50,31 +40,50 @@ RPC_APP_IDS = {
 
 RPC_TYPES = (
     "custom_status", "playing", "watching", "listening", "streaming",
-    "competing", "spotify", "youtube", "soundcloud", "xbox", "playstation",
-    "crunchyroll", "vrchat", "metaquest", "roblox", "vscode", "browser",
-    "custom", "clear",
+    "competing", "spotify", "youtube", "xbox", "playstation", "crunchyroll",
+    "vrchat", "custom", "clear",
 )
 
 ROTATABLE_FIELDS = (
     "text", "state", "details", "name", "song", "artist", "album",
-    "track", "title", "context", "channel", "video_title", "channel_name",
-    "anime_title", "episode_title", "game_name", "large_text", "small_text",
-    "image_url", "imglink", "small_image_url", "small_imglink",
+    "video_title", "channel_name", "anime_title", "episode_title",
+    "game_name", "large_text", "small_text",
 )
 
 _PROVIDER_CONFIG = {
-    "spotify": {"type": 2, "name": "Spotify", "app": "spotify"},
-    "youtube": {"type": 3, "name": "YouTube", "app": "youtube"},
-    "soundcloud": {"type": 2, "name": "SoundCloud", "app": "soundcloud", "asset": "soundcloud"},
-    "xbox": {"type": 0, "name": "Game", "app": "xbox", "platform": "xbox"},
-    "playstation": {"type": 0, "name": "Game", "app": "playstation", "platform": "ps5"},
-    "crunchyroll": {"type": 3, "name": "Crunchyroll", "app": "crunchyroll"},
-    "vrchat": {"type": 0, "name": "VRChat", "app": "vrchat", "platform": "meta_quest"},
-    "metaquest": {"type": 0, "name": "Meta Quest", "app": "metaquest", "platform": "meta_quest"},
-    "roblox": {"type": 0, "name": "Roblox", "app": "roblox", "asset": "roblox"},
-    "vscode": {"type": 0, "name": "Visual Studio Code", "app": "vscode", "asset": "code"},
-    "browser": {"type": 0, "name": "Browser", "app": "browser", "asset": "browser"},
+    "spotify": {
+        "type": 2, "name": "Spotify", "app": "spotify",
+        "application_id": RPC_APP_IDS["spotify"], "asset": "spotify",
+        "default_button": "Listen", "default_url": "https://open.spotify.com",
+    },
+    "youtube": {
+        "type": 3, "name": "YouTube", "app": "youtube",
+        "application_id": RPC_APP_IDS["youtube"], "asset": "youtube",
+        "default_button": "Watch", "default_url": "https://www.youtube.com",
+    },
+    "xbox": {
+        "type": 0, "name": "Xbox", "app": "xbox",
+        "application_id": RPC_APP_IDS["xbox"], "asset": "xbox", "platform": "xbox",
+        "default_button": "Play", "default_url": "https://www.xbox.com",
+    },
+    "playstation": {
+        "type": 0, "name": "PlayStation", "app": "playstation",
+        "application_id": RPC_APP_IDS["playstation"], "asset": "playstation", "platform": "ps5",
+        "default_button": "Play", "default_url": "https://www.playstation.com",
+    },
+    "crunchyroll": {
+        "type": 3, "name": "Crunchyroll", "app": "crunchyroll",
+        "application_id": RPC_APP_IDS["crunchyroll"], "asset": "crunchyroll",
+        "default_button": "Watch", "default_url": "https://www.crunchyroll.com",
+    },
+    "vrchat": {
+        "type": 0, "name": "VRChat", "app": "vrchat",
+        "application_id": RPC_APP_IDS["vrchat"], "platform": "meta_quest",
+        "default_button": "Join", "default_url": "https://hello.vrchat.com",
+    },
 }
+
+RPC_PROVIDER_CONFIG = _PROVIDER_CONFIG
 
 
 def parse_rpc_key_values(text):
@@ -129,8 +138,26 @@ def _stream_url(value):
     return url
 
 
+def apply_rpc_spoofing(activity, enabled=False, stream_url=None):
+    """Present eligible activities as streaming using the configured stream URL."""
+    if not isinstance(activity, dict):
+        return activity
+    try:
+        activity_type = int(activity.get("type", 0))
+    except (TypeError, ValueError) as exc:
+        raise ValueError("activity type must be numeric") from exc
+    if activity_type == 4:
+        return activity
+    if activity_type == 1:
+        activity["url"] = _stream_url(stream_url or activity.get("url"))
+    elif str(enabled).lower() in {"true", "1", "yes"}:
+        activity["type"] = 1
+        activity["url"] = _stream_url(stream_url)
+    return activity
+
+
 def build_rpc_activity(rpc_type, values, resolve_asset=None, now_ms=None, provider_configs=None):
-    """Build one Discord activity from a Beyond-style RPC command dictionary."""
+    """Build one Discord activity from an Aria RPC command dictionary."""
     rpc_type = str(rpc_type or "").lower()
     rpc_type = RPC_TYPE_ALIASES.get(rpc_type, rpc_type)
     values = dict(values) if isinstance(values, dict) else {}
@@ -151,7 +178,7 @@ def build_rpc_activity(rpc_type, values, resolve_asset=None, now_ms=None, provid
             activity["emoji"] = {"name": emoji[:32], "id": None, "animated": False}
         return activity
 
-    provider = _PROVIDER_CONFIG.get(rpc_type)
+    provider = RPC_PROVIDER_CONFIG.get(rpc_type)
     if provider is None and isinstance(provider_configs, dict):
         config = provider_configs.get(rpc_type)
         if isinstance(config, dict):
@@ -195,7 +222,7 @@ def build_rpc_activity(rpc_type, values, resolve_asset=None, now_ms=None, provid
     activity = {"type": activity_type, "name": name[:128], "application_id": app_id}
 
     details = values.get("details") or values.get("video_title") or values.get("episode_title")
-    if rpc_type in {"spotify", "soundcloud"}:
+    if rpc_type == "spotify":
         details = details or values.get("song") or values.get("track") or values.get("title")
     if rpc_type == "youtube":
         details = details or values.get("title")
@@ -258,19 +285,13 @@ def build_rpc_activity(rpc_type, values, resolve_asset=None, now_ms=None, provid
             },
         })
 
-    if rpc_type == "soundcloud":
-        activity["name"] = "SoundCloud"
-        activity["details"] = str(values.get("track") or details or name)[:128]
-        if values.get("artist") or state:
-            activity["state"] = str(values.get("artist") or state)[:128]
-
     if activity_type == 1:
         activity["url"] = _stream_url(values.get("stream_url") or values.get("url"))
 
     assets = {}
     image_fields = (
-        ("large_image", "imglink", "image_url", "image", "large_text"),
-        ("small_image", "small_imglink", "small_image_url", "small_image", "small_text"),
+        ("large_image", "large_image", "imglink", "image_url", "image", "large_text"),
+        ("small_image", "small_image", "small_imglink", "small_image_url", "small_text"),
     )
     for target, *sources in image_fields:
         label_field = sources.pop()
@@ -329,7 +350,8 @@ def build_rpc_activity(rpc_type, values, resolve_asset=None, now_ms=None, provid
             raise ValueError("party_cur and party_max must describe a valid party size")
         activity["party"] = {"id": f"{rpc_type}-party", "size": [current_size, max_size]}
 
-    if str(values.get("spoof", "")).lower() in {"true", "1", "yes"} and activity_type != 1:
-        activity["type"] = 1
-        activity["url"] = _stream_url(values.get("stream_url") or "https://twitch.tv/discord")
-    return activity
+    return apply_rpc_spoofing(
+        activity,
+        enabled=values.get("spoof"),
+        stream_url=values.get("stream_url"),
+    )

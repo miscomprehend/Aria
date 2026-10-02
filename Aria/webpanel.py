@@ -31,26 +31,17 @@ from mongo_store import get_mongo_store
 from api_client import DiscordAPIClient
 from panel_security import load_panel_secret_key
 from rpc_profiles import RPCProfileStore
+from rpc_activity import RPC_APP_IDS, apply_rpc_spoofing
 from formatter import VERSION
 
-_DEFAULT_RPC_APPLICATION_ID = "1494507808329171096"
+_DEFAULT_RPC_APPLICATION_ID = RPC_APP_IDS["generic"]
 _RPC_APP_ID_HINTS: list[tuple[set[str], str]] = [
-    ({"spotify"}, "1494507808329171096"),
-    ({"crunchyroll", "crunchy roll"}, "463097721130188830"),
-    ({"youtube music", "yt music", "youtube_music"}, "880218394199220334"),
-    ({"youtube", "yt"}, "880218394199220334"),
-    ({"soundcloud", "sound cloud"}, "195323574500409344"),
-    ({"apple music", "applemusic"}, "886578863147192350"),
-    ({"deezer"}, "356268235697553409"),
-    ({"tidal"}, "1041821781058760745"),
-    ({"twitch"}, "488633707456348190"),
-    ({"kick"}, "1096876388377366548"),
-    ({"netflix"}, "883483001462849607"),
-    ({"disneyplus", "disney plus", "disney+"}, "883483001462849607"),
-    ({"primevideo", "prime video", "amazon prime"}, "883483001462849607"),
-    ({"plex"}, "910362402908213248"),
-    ({"jellyfin"}, "969748111193886730"),
-    ({"vscode", "visual studio code", "code"}, "383226320970055681"),
+    ({"spotify"}, RPC_APP_IDS["spotify"]),
+    ({"crunchyroll", "crunchy roll"}, RPC_APP_IDS["crunchyroll"]),
+    ({"youtube"}, RPC_APP_IDS["youtube"]),
+    ({"xbox"}, RPC_APP_IDS["xbox"]),
+    ({"playstation", "ps4", "ps5"}, RPC_APP_IDS["playstation"]),
+    ({"vrchat"}, RPC_APP_IDS["vrchat"]),
 ]
 
 
@@ -1154,6 +1145,42 @@ class WebPanel:
                 if key in haystack:
                     return app_id
         return _DEFAULT_RPC_APPLICATION_ID
+
+    def _normalize_rpc_activity(self, activity: dict[str, Any]) -> dict[str, Any]:
+        activity = dict(activity)
+        display_name = str(activity.pop("display_name", "") or "").strip()
+        if any(key in activity for key in ("large_image", "small_image", "large_text", "small_text")):
+            assets = activity.pop("assets", {}) if isinstance(activity.get("assets"), dict) else {}
+            for key in ("large_image", "small_image", "large_text", "small_text"):
+                if key in activity:
+                    assets[key] = activity.pop(key)
+            if assets:
+                activity["assets"] = assets
+
+        buttons = activity.get("buttons")
+        if isinstance(buttons, list) and buttons and isinstance(buttons[0], dict):
+            activity["buttons"] = [button.get("label", "Button") for button in buttons if isinstance(button, dict)][:2]
+            activity.setdefault("metadata", {})["button_urls"] = [
+                button.get("url", "https://discord.com") for button in buttons if isinstance(button, dict)
+            ][:2]
+
+        if int(activity.get("type", 0)) == 4:
+            activity.pop("application_id", None)
+            app_id = ""
+        else:
+            explicit_app_id = str(activity.get("application_id") or "").strip()
+            app_id = explicit_app_id if explicit_app_id and explicit_app_id != _DEFAULT_RPC_APPLICATION_ID else self._infer_rpc_application_id(activity)
+            activity["application_id"] = app_id
+        if display_name:
+            activity["name"] = display_name
+
+        assets = activity.get("assets")
+        if isinstance(assets, dict):
+            for key in ("large_image", "small_image"):
+                value = assets.get(key)
+                if isinstance(value, str) and value:
+                    assets[key] = self._normalize_rpc_asset_key(value, app_id)
+        return activity
 
     def _upload_rpc_image_to_self_dm(self, api, image_url: str) -> Optional[str]:
         """Upload an image URL to self-DM and return `mp:attachments/...` key."""
@@ -3003,13 +3030,22 @@ class WebPanel:
                 runtime_state = self._read_hosted_runtime_state(target)
                 runtime_rpc = runtime_state.get("rpc", {})
                 status = self._read_hosted_rpc_status(target)
-                activity = runtime_rpc.get("activity") if isinstance(runtime_rpc, dict) else None
-                if not isinstance(activity, dict):
-                    activity = status.get("activity") if isinstance(status.get("activity"), dict) else None
+                activities = runtime_rpc.get("activities") if isinstance(runtime_rpc, dict) else None
+                if not isinstance(activities, list):
+                    activities = status.get("activities") if isinstance(status.get("activities"), list) else []
+                if not activities:
+                    runtime_activity = runtime_rpc.get("activity") if isinstance(runtime_rpc, dict) else None
+                    status_activity = status.get("activity")
+                    activity_fallback = runtime_activity if isinstance(runtime_activity, dict) else status_activity
+                    activities = [activity_fallback] if isinstance(activity_fallback, dict) else []
+                activity = next((item for item in activities if int(item.get("type", 0)) != 4), None)
+                if activity is None and activities:
+                    activity = activities[0]
                 return jsonify({
                     "ok": True,
-                    "active": isinstance(activity, dict),
+                    "active": bool(activities),
                     "activity": activity,
+                    "activities": activities,
                     "mode": runtime_rpc.get("mode", "none") if isinstance(runtime_rpc, dict) else "none",
                     "saved_at": runtime_rpc.get("saved_at") if isinstance(runtime_rpc, dict) else None,
                     "rotation_running": bool(status.get("rotation_running")),
@@ -3017,7 +3053,10 @@ class WebPanel:
                     "available_types": [0, 1, 2, 3, 5],
                 })
             b = self.bot
-            activity = getattr(b, "activity", None) if b else None
+            activities = getattr(b, "activities", None) if b else None
+            if not isinstance(activities, list):
+                activity = getattr(b, "activity", None) if b else None
+                activities = [activity] if isinstance(activity, dict) else []
             runtime_rpc: dict = {}
             try:
                 rp = os.path.join(self._base_dir, "runtime_state.json")
@@ -3025,12 +3064,21 @@ class WebPanel:
                     runtime_rpc = json.load(f).get("rpc", {})
             except Exception:
                 pass
-            runtime_activity = runtime_rpc.get("activity") if isinstance(runtime_rpc, dict) else None
-            final_activity = activity if isinstance(activity, dict) else runtime_activity if isinstance(runtime_activity, dict) else None
+            if not activities:
+                runtime_activities = runtime_rpc.get("activities") if isinstance(runtime_rpc, dict) else None
+                if isinstance(runtime_activities, list):
+                    activities = runtime_activities
+                else:
+                    runtime_activity = runtime_rpc.get("activity") if isinstance(runtime_rpc, dict) else None
+                    activities = [runtime_activity] if isinstance(runtime_activity, dict) else []
+            final_activity = next((item for item in activities if int(item.get("type", 0)) != 4), None)
+            if final_activity is None and activities:
+                final_activity = activities[0]
             return jsonify({
                 "ok": True,
-                "active": bool(final_activity),
+                "active": bool(activities),
                 "activity": final_activity,
+                "activities": activities,
                 "mode": runtime_rpc.get("mode", "none"),
                 "saved_at": runtime_rpc.get("saved_at"),
                 "version": "v2",
@@ -3065,79 +3113,56 @@ class WebPanel:
                     return jsonify({"ok": False, "error": str(e)}), 500
                 return jsonify({"ok": True, "action": "stopped"})
             # action == "set"
-            activity = data.get("activity")
-            if not isinstance(activity, dict):
-                return jsonify({"ok": False, "error": "activity must be a dict"}), 400
-            display_name = str(activity.pop("display_name", "") or "").strip()
-            
-            # Normalize activity structure for Discord API compatibility
+            activity_data = data.get("activity")
+            single_activity = isinstance(activity_data, dict)
+            if single_activity:
+                incoming_activities = [activity_data]
+            elif isinstance(activity_data, list) and 1 <= len(activity_data) <= 5 and all(
+                isinstance(activity, dict) for activity in activity_data
+            ):
+                incoming_activities = activity_data
+            else:
+                return jsonify({"ok": False, "error": "activity must be an object or a list of up to five activities"}), 400
+
             try:
-                # Process assets: handle both single image keys and nested asset object
-                if "large_image" in activity or "small_image" in activity or "large_text" in activity or "small_text" in activity:
-                    assets = activity.pop("assets", {}) if isinstance(activity.get("assets"), dict) else {}
-                    if "large_image" in activity:
-                        assets["large_image"] = activity.pop("large_image")
-                    if "small_image" in activity:
-                        assets["small_image"] = activity.pop("small_image")
-                    if "large_text" in activity:
-                        assets["large_text"] = activity.pop("large_text")
-                    if "small_text" in activity:
-                        assets["small_text"] = activity.pop("small_text")
-                    if assets:
-                        activity["assets"] = assets
-                
-                # Process buttons: convert from old format {label, url} to Discord format (buttons + metadata.button_urls)
-                if "buttons" in activity:
-                    buttons_data = activity.get("buttons", [])
-                    # If it's a list of objects with label/url, convert to proper Discord format
-                    if buttons_data and isinstance(buttons_data[0], dict):
-                        button_labels = [b.get("label", "Button") for b in buttons_data if isinstance(b, dict)]
-                        button_urls = [b.get("url", "https://discord.com") for b in buttons_data if isinstance(b, dict)]
-                        activity["buttons"] = button_labels if button_labels else None
-                        if "metadata" not in activity:
-                            activity["metadata"] = {}
-                        activity["metadata"]["button_urls"] = button_urls
-                    # If already list of strings, keep as is (already in Discord format)
-                    elif buttons_data and isinstance(buttons_data[0], str):
-                        # buttons are already labels, just ensure metadata is set if needed
-                        metadata = activity.get("metadata", {})
-                        if isinstance(metadata, dict) and "button_urls" not in metadata and "metadata" not in data:
-                            # No URLs provided, use Discord's default
-                            pass
-
-                # Resolve app id: keep explicit custom ids, otherwise infer from activity text.
-                explicit_app_id = str(activity.get("application_id") or "").strip()
-                if explicit_app_id and explicit_app_id != _DEFAULT_RPC_APPLICATION_ID:
-                    app_id = explicit_app_id
-                else:
-                    app_id = self._infer_rpc_application_id(activity)
-                activity["application_id"] = app_id
-                if display_name:
-                    activity["name"] = display_name
-                assets = activity.get("assets") if isinstance(activity.get("assets"), dict) else {}
-                if assets:
-                    li = assets.get("large_image")
-                    si = assets.get("small_image")
-                    if isinstance(li, str) and li:
-                        assets["large_image"] = self._normalize_rpc_asset_key(li, app_id)
-                    if isinstance(si, str) and si:
-                        assets["small_image"] = self._normalize_rpc_asset_key(si, app_id)
-                    activity["assets"] = assets
-
+                normalized_activities = []
+                for incoming in incoming_activities:
+                    activity = dict(incoming)
+                    is_custom_status = int(activity.get("type", 0)) == 4
+                    if not is_custom_status:
+                        apply_rpc_spoofing(activity, data.get("spoof"), data.get("stream_url"))
+                    normalized_activities.append(self._normalize_rpc_activity(activity))
+                payload = normalized_activities[0] if single_activity else normalized_activities
+                response_activity = next(
+                    (item for item in normalized_activities if int(item.get("type", 0)) != 4),
+                    normalized_activities[0],
+                )
                 if target:
-                    result = self._dispatch_hosted_rpc(target, "set", activity)
+                    result = self._dispatch_hosted_rpc(target, "set", payload)
                     if not result.get("ok"):
                         return jsonify(result), 503
-                    return jsonify({"ok": True, "action": "set", "activity": result.get("activity") or activity})
+                    return jsonify({
+                        "ok": True,
+                        "action": "set",
+                        "activity": result.get("activity") or response_activity,
+                        "activities": result.get("activities") or normalized_activities,
+                    })
                 
                 apply_activity = getattr(b, "_rpc_apply_activity", None)
                 if callable(apply_activity):
-                    apply_activity(b, activity)
+                    apply_activity(b, payload)
                 else:
-                    b.set_activity(activity)
+                    b.set_activity(payload)
+            except ValueError as e:
+                return jsonify({"ok": False, "error": str(e)}), 400
             except Exception as e:
                 return jsonify({"ok": False, "error": str(e)}), 500
-            return jsonify({"ok": True, "action": "set", "activity": activity})
+            return jsonify({
+                "ok": True,
+                "action": "set",
+                "activity": response_activity,
+                "activities": normalized_activities,
+            })
 
         @self.app.get("/api/rpc/profiles")
         def api_rpc_profiles_get() -> Any:
@@ -3186,7 +3211,12 @@ class WebPanel:
             b = self.bot if target is None else None
             try:
                 if action == "save":
-                    if target:
+                    submitted_activity = data.get("activity")
+                    if isinstance(submitted_activity, (dict, list)):
+                        activity = submitted_activity
+                    elif submitted_activity is not None:
+                        return jsonify({"ok": False, "error": "activity must be an object or list"}), 400
+                    elif target:
                         activity = self._read_hosted_runtime_state(target).get("rpc", {}).get("activity")
                     else:
                         activity = getattr(b, "activity", None) if b else None
@@ -3282,6 +3312,88 @@ class WebPanel:
             except Exception as e:
                 return jsonify({"ok": False, "error": str(e)}), 500
             return jsonify({"ok": True, "action": action, "rotation": rotation})
+
+        @self.app.get("/api/rpc/stack")
+        def api_rpc_stack_get() -> Any:
+            if not self._require_session():
+                return jsonify({"ok": False, "error": "Unauthorized"}), 403
+            target = self._current_hosted_rpc_target()
+            if target and target.get("error"):
+                return jsonify({"ok": False, "error": target["error"]}), 409
+            store = self._rpc_profile_store_for_target(target)
+            if store is None:
+                return jsonify({"ok": False, "error": "RPC profile store is unavailable"}), 503
+            return jsonify({"ok": True, "stack": store.get_stack()})
+
+        @self.app.post("/api/rpc/stack")
+        def api_rpc_stack_action() -> Any:
+            if not self._require_session():
+                return jsonify({"ok": False, "error": "Unauthorized"}), 403
+            data = request.get_json(silent=True)
+            if not isinstance(data, dict):
+                return jsonify({"ok": False, "error": "Expected a JSON object"}), 400
+            action = str(data.get("action") or "").strip().lower()
+            target = self._current_hosted_rpc_target()
+            if target and target.get("error"):
+                return jsonify({"ok": False, "error": target["error"]}), 409
+            store = self._rpc_profile_store_for_target(target)
+            if store is None:
+                return jsonify({"ok": False, "error": "RPC profile store is unavailable"}), 503
+            stack = store.get_stack()
+            try:
+                if action in {"add_current", "add"}:
+                    if action == "add" and isinstance(data.get("activity"), dict):
+                        activities = [data["activity"]]
+                    elif action == "add":
+                        return jsonify({"ok": False, "error": "activity must be an object"}), 400
+                    elif target:
+                        current = self._read_hosted_runtime_state(target).get("rpc", {}).get("activity")
+                        activities = current if isinstance(current, list) else [current]
+                    else:
+                        current = getattr(self.bot, "activity", None) if self.bot else None
+                        activities = current if isinstance(current, list) else [current]
+                    if not activities or not all(isinstance(item, dict) for item in activities):
+                        return jsonify({"ok": False, "error": "Set or build an RPC activity before adding it to the stack"}), 400
+                    if len(stack) + len(activities) > 5:
+                        return jsonify({"ok": False, "error": "An RPC stack can contain up to five activities"}), 400
+                    stack = store.save_stack(stack + activities)
+                elif action == "remove":
+                    try:
+                        index = int(data.get("index"))
+                    except (TypeError, ValueError):
+                        return jsonify({"ok": False, "error": "Stack index must be an integer"}), 400
+                    if index < 0 or index >= len(stack):
+                        return jsonify({"ok": False, "error": "Stack index is out of range"}), 400
+                    stack.pop(index)
+                    if stack:
+                        stack = store.save_stack(stack)
+                    else:
+                        store.clear_stack()
+                elif action == "clear":
+                    store.clear_stack()
+                    stack = []
+                elif action == "apply":
+                    if not stack:
+                        return jsonify({"ok": False, "error": "RPC stack is empty"}), 400
+                    if target:
+                        result = self._dispatch_hosted_rpc(target, "set", stack)
+                        if not result.get("ok"):
+                            return jsonify(result), 503
+                    else:
+                        bot = self.bot
+                        if bot is None:
+                            return jsonify({"ok": False, "error": "No bot instance"}), 400
+                        apply_activity = getattr(bot, "_rpc_apply_activity", None)
+                        result = apply_activity(bot, stack) if callable(apply_activity) else bot.set_activity(stack)
+                        if isinstance(result, tuple) and result and not result[0]:
+                            return jsonify({"ok": False, "error": str(result[1] if len(result) > 1 else "Stack could not be applied")}), 400
+                else:
+                    return jsonify({"ok": False, "error": "Action must be add, add_current, remove, apply, or clear"}), 400
+            except ValueError as error:
+                return jsonify({"ok": False, "error": str(error)}), 400
+            except Exception as error:
+                return jsonify({"ok": False, "error": str(error)}), 500
+            return jsonify({"ok": True, "action": action, "stack": stack})
 
         @self.app.get("/api/message-logger")
         def api_message_logger_get() -> Any:
