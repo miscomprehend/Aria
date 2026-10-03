@@ -1,0 +1,17 @@
+{
+  "version": 2,
+  "dgSpecHash": "fBG1KQPdl6A=",
+  "success": true,
+  "projectFilePath": "/workspaces/Aria/Aria/Aria.Native/Aria.Native.csproj",
+  "expectedPackageFiles": [
+    "/home/codespace/.nuget/packages/microsoft.web.webview2/1.0.2903.40/microsoft.web.webview2.1.0.2903.40.nupkg.sha512",
+    "/home/codespace/.nuget/packages/microsoft.windows.sdk.buildtools/10.0.22621.756/microsoft.windows.sdk.buildtools.10.0.22621.756.nupkg.sha512",
+    "/home/codespace/.nuget/packages/microsoft.windowsappsdk/1.7.250401001/microsoft.windowsappsdk.1.7.250401001.nupkg.sha512",
+    "/home/codespace/.nuget/packages/microsoft.netcore.app.ref/8.0.31/microsoft.netcore.app.ref.8.0.31.nupkg.sha512",
+    "/home/codespace/.nuget/packages/microsoft.windowsdesktop.app.ref/8.0.31/microsoft.windowsdesktop.app.ref.8.0.31.nupkg.sha512",
+    "/home/codespace/.nuget/packages/microsoft.aspnetcore.app.ref/8.0.31/microsoft.aspnetcore.app.ref.8.0.31.nupkg.sha512",
+    "/home/codespace/.nuget/packages/microsoft.netcore.app.host.linux-x64/8.0.31/microsoft.netcore.app.host.linux-x64.8.0.31.nupkg.sha512",
+    "/home/codespace/.nuget/packages/microsoft.windows.sdk.net.ref/10.0.19041.57/microsoft.windows.sdk.net.ref.10.0.19041.57.nupkg.sha512"
+  ],
+  "logs": []
+}
