@@ -10,8 +10,14 @@ import signal
 from datetime import datetime, timedelta
 
 HOSTED_USERS_FILE = "hosted_users.json"
-MAX_KEEPALIVE_RESTARTS = 3
+KEEPALIVE_MAX_BACKOFF_SECONDS = 300
 logger = logging.getLogger(__name__)
+
+
+def _keepalive_restart_delay(restart_count):
+    """Back off repeated crashes without permanently abandoning the instance."""
+    exponent = max(0, int(restart_count) - 1)
+    return min(5 * (2 ** min(exponent, 6)), KEEPALIVE_MAX_BACKOFF_SECONDS)
 
 
 def _hosted_process_is_alive(pid, token_id):
@@ -447,8 +453,7 @@ else:
         def _monitor():
             restart_count = 0
             while not stop_event.is_set():
-                time.sleep(5)
-                if stop_event.is_set():
+                if stop_event.wait(5):
                     break
 
                 with self.lock:
@@ -465,17 +470,15 @@ else:
                 if stop_event.is_set():
                     break
 
-                if restart_count >= MAX_KEEPALIVE_RESTARTS:
-                    logger.error("Hosted instance %s exceeded its restart limit; leaving it stopped", token_id)
-                    break
                 restart_count += 1
-                with self.lock:
-                    saved = self.saved_users.get(token_id, {})
-                uname = saved.get("username") or "unknown"
-                uid = saved.get("uid") or token_id
-                pass  # keepalive restart suppressed — output goes to hosted log
-                time.sleep(5)
-                if stop_event.is_set():
+                restart_delay = _keepalive_restart_delay(restart_count)
+                logger.warning(
+                    "Hosted instance %s exited; retrying in %s seconds (attempt %s)",
+                    token_id,
+                    restart_delay,
+                    restart_count,
+                )
+                if stop_event.wait(restart_delay):
                     break
 
                 with self.lock:
@@ -495,7 +498,10 @@ else:
                     user_id=saved.get("user_id"),
                     username=saved.get("username"),
                 )
-                if not new_process or not self._adopt_keepalive_process(token_id, stop_event, new_process):
+                if new_process is None:
+                    logger.error("Could not restart hosted instance %s; watchdog will retry", token_id)
+                    continue
+                if not self._adopt_keepalive_process(token_id, stop_event, new_process):
                     break
 
         t = threading.Thread(target=_monitor, name=f"keepalive-{token_id}", daemon=True)

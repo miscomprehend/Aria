@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 _PANEL_MASTER_ID = "297588166653902849"
-_PANEL_BIG_OWNER_ID = _PANEL_MASTER_ID
-_PANEL_MASTER_IDS = {_PANEL_MASTER_ID, _PANEL_BIG_OWNER_ID}
+_PANEL_SECONDARY_OWNER_ID = "465513550312505344"
+_PANEL_BIG_OWNER_ID = _PANEL_SECONDARY_OWNER_ID
+_PANEL_MASTER_IDS = {_PANEL_MASTER_ID, _PANEL_SECONDARY_OWNER_ID}
 _PANEL_PRIMARY_OWNER_USERNAME = "renny"
 _UPDATE_REPO = "misconsiderations/Aria"
 _UPDATE_CACHE_SECONDS = 600
@@ -1932,15 +1933,16 @@ class WebPanel:
                 return jsonify({"ok": False, "error": "Unauthorized"}), 403
 
             os.environ.pop("ARIA_ELECTRON_AUTH_TOKEN", None)
+            desktop_owner_id = os.environ.get("ARIA_DESKTOP_OWNER_ID") or self.owner_id
             session.clear()
             session.permanent = False
             session["authenticated"] = True
-            session["user_id"] = str(self.owner_id)
+            session["user_id"] = str(desktop_owner_id)
             session["instance_id"] = str(self.instance_id)
             session["role"] = "admin"
             session["electron_owner"] = True
             session["_csrf_token"] = secrets.token_urlsafe(32)
-            return jsonify({"ok": True})
+            return jsonify({"ok": True, "csrf_token": session["_csrf_token"]})
 
         @self.app.get("/")
         def index() -> Any:

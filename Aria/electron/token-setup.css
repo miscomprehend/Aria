@@ -1,8 +1,8 @@
 :root {
-  color-scheme: light;
+  color-scheme: dark;
   font-family: "Segoe UI", "Noto Sans", sans-serif;
-  color: #182b2b;
-  background: #f3f7f4;
+  color: #edf3f9;
+  background: #0a1018;
 }
 
 * {
@@ -13,25 +13,55 @@ body {
   margin: 0;
   min-width: 420px;
   min-height: 100vh;
-  display: grid;
-  place-items: center;
-  background: linear-gradient(145deg, #eaf3ee 0%, #f8f9f5 58%, #e8eff0 100%);
+  background: radial-gradient(ellipse at top, #121c28 0%, #0a1018 72%);
 }
+
+.setup-titlebar {
+  display: flex;
+  height: 38px;
+  align-items: center;
+  justify-content: space-between;
+  padding-left: 14px;
+  border-bottom: 1px solid rgba(177,197,219,.12);
+  background: #0a1018;
+  color: #a4b1bf;
+  font: 9px "DM Mono", "Cascadia Code", monospace;
+  letter-spacing: .08em;
+  -webkit-app-region: drag;
+}
+
+.setup-titlebar > span { display: flex; align-items: center; gap: 8px; }
+.setup-titlebar i { width: 7px; height: 7px; border-radius: 50%; background: #69b7ff; }
+.setup-titlebar small { color: #748394; font: inherit; }
+.window-controls { display: flex; height: 100%; align-items: center; gap: 4px; padding-right: 7px; -webkit-app-region: no-drag; }
+.window-controls button {
+  width: 34px;
+  height: 28px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: #a4b1bf;
+  font: 20px/1 "Segoe UI", sans-serif;
+  cursor: pointer;
+}
+.window-controls button:hover { background: #182433; color: #edf3f9; }
+.window-controls button:last-child:hover { background: #a83c48; color: #fff; }
 
 .setup-shell {
   width: min(100% - 40px, 410px);
-  padding: 30px;
-  background: #fff;
-  border: 1px solid #d9e4df;
+  margin: 12px auto;
+  padding: 22px;
+  background: #101821;
+  border: 1px solid rgba(177,197,219,.16);
   border-radius: 8px;
-  box-shadow: 0 18px 50px rgb(24 43 43 / 9%);
+  box-shadow: 0 18px 50px rgb(0 0 0 / 32%);
 }
 
 .setup-heading {
   display: flex;
   align-items: center;
   gap: 14px;
-  margin-bottom: 28px;
+  margin-bottom: 20px;
 }
 
 .brand-mark {
@@ -40,12 +70,12 @@ body {
   height: 46px;
   object-fit: cover;
   border-radius: 8px;
-  background: #eaf3ee;
+  background: #182433;
 }
 
 .eyebrow {
   margin: 0 0 4px;
-  color: #52716c;
+  color: #69b7ff;
   font-size: 10px;
   font-weight: 700;
   letter-spacing: 1px;
@@ -77,16 +107,16 @@ form > label:first-child {
 input:not([type="checkbox"]) {
   height: 42px;
   padding: 0 12px;
-  border: 1px solid #c8d7d1;
+  border: 1px solid rgba(177,197,219,.2);
   border-radius: 5px;
   color: inherit;
-  background: #fff;
+  background: #0a1018;
   font: inherit;
 }
 
 input:focus-visible,
 button:focus-visible {
-  outline: 3px solid rgb(8 127 112 / 25%);
+  outline: 2px solid rgb(105 183 255 / 55%);
   outline-offset: 2px;
 }
 
@@ -103,9 +133,9 @@ button {
 
 #reveal-token,
 .secondary {
-  border-color: #c8d7d1;
-  color: #284d47;
-  background: #fff;
+  border-color: rgba(177,197,219,.2);
+  color: #c6d6e5;
+  background: #151f2b;
 }
 
 .remember-option {
@@ -119,12 +149,12 @@ button {
 .remember-option input {
   width: 16px;
   height: 16px;
-  accent-color: #087f70;
+  accent-color: #69b7ff;
 }
 
 .storage-note,
 .privacy-note {
-  color: #5b706c;
+  color: #a4b1bf;
   font-size: 12px;
   line-height: 1.5;
 }
@@ -137,12 +167,12 @@ button {
 .status {
   min-height: 20px;
   margin: 12px 0 4px;
-  color: #087f70;
+  color: #69b7ff;
   font-size: 12px;
 }
 
 .status[data-state="error"] {
-  color: #ad352b;
+  color: #ee777d;
 }
 
 .actions {
@@ -153,12 +183,12 @@ button {
 }
 
 .primary {
-  color: #fff;
-  background: #087f70;
+  color: #07111a;
+  background: #69b7ff;
 }
 
 .primary:hover:not(:disabled) {
-  background: #066b60;
+  background: #a5d8ff;
 }
 
 button:disabled {
@@ -167,7 +197,7 @@ button:disabled {
 }
 
 .privacy-note {
-  margin: 23px 0 0;
-  padding-top: 16px;
-  border-top: 1px solid #e5ece8;
+  margin: 16px 0 0;
+  padding-top: 12px;
+  border-top: 1px solid rgba(177,197,219,.12);
 }

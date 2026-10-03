@@ -5,6 +5,12 @@ const storageNote = document.getElementById("storage-note");
 const status = document.getElementById("status");
 const submitButton = document.getElementById("submit");
 
+document.querySelectorAll("[data-window-action]").forEach((button) => {
+  button.addEventListener("click", () => {
+    window.ariaDesktop.perform(button.dataset.windowAction);
+  });
+});
+
 document.getElementById("reveal-token").addEventListener("click", (event) => {
   const reveal = tokenInput.type === "password";
   tokenInput.type = reveal ? "text" : "password";

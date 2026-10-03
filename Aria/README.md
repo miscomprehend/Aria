@@ -1,216 +1,310 @@
 # Aria
-Auto update repo for Aria selfbot!
 
-Install the Python runtime dependencies from this directory with:
+Aria is a Python Discord client with a local web dashboard, hosted-instance
+management, RPC activity tools, analytics, and message logging.
+
+> **Account and platform notice:** Aria connects using Discord account
+> credentials. Keep tokens private, use the app only with accounts you control,
+> and review Discord's current terms and policies before connecting. A token
+> grants access to its account and must be handled like a password.
+
+## Project layout
+
+The repository contains the Aria application in the `Aria` subdirectory:
+
+- `main.py`, `aria.py`, and related Python modules implement the runtime.
+- `webpanel.py` provides the local dashboard API and browser dashboard.
+- `web_ui/` contains the browser dashboard.
+- `electron/` contains the desktop launcher and setup resources.
+- `Aria.Native/` contains the Windows WinUI dashboard.
+- `host.py` manages hosted client processes.
+
+Run commands below from the application directory—the directory containing
+`package.json` and `requirements.txt`.
+
+## Requirements
+
+For the Python runtime:
+
+- Python 3.11 or later
+- The Python packages in `requirements.txt`
+
+For desktop development:
+
+- Node.js 22.12 or later and npm
+- On Windows, the .NET 8 SDK or later to build the native WinUI dashboard
+- On Windows, Python 3.11 and PyInstaller to package the backend
+
+The finished Windows installer includes the Python backend and native
+dashboard. Users installing that installer do not need to install Python, Node,
+or the .NET SDK.
+
+## Run Aria from source
+
+From the application directory, create and activate a virtual environment and
+install the runtime dependencies:
 
 ```bash
+python -m venv .venv
+```
+
+On Windows PowerShell:
+
+```powershell
+.\.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
+python aria.py
 ```
 
-Real slash command bot setup: see `REAL_SLASH_SETUP.md`.
-
-## MongoDB backend
-
-Aria can store hot runtime state in MongoDB instead of repeatedly writing JSON files.
-
-Enable it in `config.json`:
-
-```json
-{
-	"mongo_enabled": true,
-	"mongo_uri": "mongodb://127.0.0.1:27017",
-	"mongo_database": "aria",
-	"mongo_collection": "app_state",
-	"mongo_timeout_ms": 1500
-}
-```
-
-Install the driver in the active Python environment:
+On macOS or Linux:
 
 ```bash
-pip install pymongo
+source .venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
+python aria.py
 ```
 
-Current Mongo-backed runtime datasets:
+Aria reads its account and runtime settings from its local configuration.
+Follow the prompts shown by the application and do not publish configuration
+files containing tokens or other credentials.
 
-- `history_data`
-- `account_stats`
-- `analytics`
-- `dashboard_users`
-- `access_requests`
+## Dashboard and desktop app
 
-If MongoDB is disabled or unavailable, Aria falls back to the existing JSON files automatically.
+### Browser dashboard
 
-## Electron desktop app
+The Python service serves the browser dashboard locally, usually at
+`http://127.0.0.1:8080`. If that port is occupied, Aria tries ports 8081 through
+8084. Sign in with the dashboard account for the relevant instance. Public
+website pages and the protected dashboard are separate; public browser and
+mobile-access information is available from the website's `/docs` page.
 
-Public browser and mobile access notes are on the website's `/docs` page.
+The browser dashboard remains HTML-based and is available independently of the
+desktop app.
 
-The Electron app opens only the protected dashboard at `/dashboard`; public pages such as `/`, `/home`, `/features`, `/get-token`, `/terms`, and `/privacy` remain website pages and open in the regular browser. Both the dashboard and website remain available on the local web server at `http://127.0.0.1:8080` (or the next available port through `8084`).
+### Windows native desktop app
 
-For development, install the Python dependencies above, then run:
+On Windows, Aria's dashboard is a **native WinUI application**. It is built
+from XAML and uses Windows controls; it does not embed or render the HTML
+dashboard. The Python service still runs locally to provide the Discord
+runtime and authenticated API.
+
+Current native dashboard sections:
+
+- **Overview:** runtime connection, account, uptime, command, and hosted-client
+  summary.
+- **Hosted instances:** connect, view, restart, and disconnect hosted clients.
+- **Owner tools:** account summary and password-reset request review.
+
+Other sections in the browser dashboard have not yet been ported to WinUI. They
+remain available in the browser dashboard.
+
+The Windows desktop application uses Aria's icon and a native token setup
+screen. Token setup verifies the account, then sends the token to the local
+launcher through a short-lived, authenticated localhost channel. The token is
+not written to application logs. Choose **Remember token** to save it in
+Aria's encrypted local configuration; otherwise it is used only for the
+current run. A token's verified account ID is used to identify the desktop
+runtime owner. The configured secondary owner ID is
+`465513550312505344`.
+
+If a local Aria service is already running, the desktop app connects to it.
+Sign in with the dashboard account if that service does not have a desktop
+owner session.
+
+### Linux and macOS desktop
+
+Linux and macOS use the existing Electron dashboard shell. The native WinUI
+dashboard is Windows-only; a non-Windows build does not produce a WinUI
+executable.
+
+To start the desktop shell during development:
 
 ```bash
 npm install
 npm start
 ```
 
-The desktop app opens a branded startup window immediately, then expands that same window into the dashboard when the backend is ready. During token setup and startup with a remembered token, Aria verifies the account profile and saves that account's ID as the local panel owner; it never prints or logs the token. When Electron starts its own backend, it signs into that dashboard as **Owner**, not merely Admin, and the owner account is not treated as an unlinked hosted client. An already-running web panel keeps its normal login. Remembered tokens are saved through Aria's encrypted config; if you turn off **Remember token**, Aria uses it only for the current run. Hosted clients each load their own copied config and RPC profile store; the controller's RPC presets are not copied into child instances. Each hosted instance has one active child process, with up to three automatic restarts only after that child exits. Use **Aria Desktop > Set / Change Token...** to update the token later, **Open Dashboard in Browser** for `/dashboard`, or **Open Aria Website** for the public home page. Closing the desktop app stops a backend it started, but does not stop a backend that was already running.
+## Hosted instances and owner access
 
-Electron prints startup and backend output when launched from a terminal. It also writes `logs/aria-desktop.log` under Electron's user data folder; the full path is printed during startup and shown if startup fails.
+Hosted clients run as separate processes. Their command permissions are scoped
+to the requester and token account for that client, rather than granting every
+hosted client the main bot's global-owner access. The main instance retains
+configured global-owner controls.
 
-### Build the Windows installer (.exe), step by step
+The hosted-process watchdog retries after exits and failed launches, using
+interruptible exponential backoff capped at five minutes. A restart is not
+guaranteed to connect successfully; check the hosted-client status and runtime
+logs if a client continues failing.
 
-Follow these steps on a Windows PC connected to the internet. Build from Windows; this project does not create the Windows installer from Linux or macOS.
+Hosted instances use their own runtime configuration and RPC profile store.
+The controller's RPC presets are not copied into child instances.
 
-#### 1. Install the build tools
+## Build the Windows installer
 
-Install these tools before opening PowerShell:
+Build the Windows installer on a Windows PC. The WinUI XAML compiler is
+Windows-only, so building this target from Linux or macOS is not supported.
 
-- **Git for Windows**, if you still need to download the project.
-- **Node.js LTS**, version 22.12 or newer. npm is included with Node.js.
-- **Python 3.11**. Keep the Python Launcher (`py`) enabled in the installer.
+### 1. Install build tools
 
-After installing them, close and reopen PowerShell. Check that the commands are available:
+Install:
+
+- Git for Windows, if you need to clone the repository
+- Node.js 22.12 or later (npm is included)
+- Python 3.11 with the Python Launcher (`py`)
+- The .NET 8 SDK or later
+
+Open a new PowerShell window and check that the commands are available:
 
 ```powershell
 node --version
 npm --version
 py -3.11 --version
+dotnet --version
 ```
 
-Each command should print a version. If `node`, `npm`, or `py` is not recognized, finish its installation and reopen PowerShell before continuing.
+### 2. Open the application directory
 
-#### 2. Get into the project and app folder
-
-If you do not already have the project source on your PC, open PowerShell and clone it:
+Clone the repository if needed, or open your existing checkout:
 
 ```powershell
 git clone https://github.com/misconsiderations/Aria.git
 cd Aria
 ```
 
-If you already have the project source, do not clone it again. In PowerShell, change to its folder instead. For example, replace this sample path with the folder where you keep your copy:
-
-```powershell
-cd "C:\path\to\your\Aria"
-```
-
-The repository has an outer project folder and an inner `Aria` app folder. This command detects which one you opened and enters the app folder if needed:
+The repository has an outer folder and an inner application folder. Enter the
+inner folder when `package.json` is not in the current directory:
 
 ```powershell
 if (-not (Test-Path .\package.json)) {
-	if (Test-Path .\Aria\package.json) {
-		Set-Location .\Aria
-	} else {
-		throw "This is not the Aria source folder. Open the folder containing package.json."
-	}
+    if (Test-Path .\Aria\package.json) {
+        Set-Location .\Aria
+    } else {
+        throw "Open the Aria application folder containing package.json."
+    }
 }
 Test-Path .\package.json
 ```
 
-The last command must print `True`. If you only have the installed Aria app and not its source folder, follow the clone steps above; the installed app does not contain the files needed to build a new installer.
+The final command should print `True`.
 
-#### 3. Create the Python build environment
+### 3. Install Python build dependencies
 
-Run these commands from the folder where `Test-Path .\package.json` printed `True`:
+Create and activate an isolated build environment:
 
 ```powershell
 py -3.11 -m venv .venv-build
 Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 .\.venv-build\Scripts\Activate.ps1
 python -m pip install --upgrade pip
-python -m pip install -r requirements.txt aiohttp curl-cffi colorama pyinstaller
+python -m pip install -r requirements.txt
+python -m pip install pyinstaller
 ```
 
-The execution-policy command only changes this PowerShell window. The `(.venv-build)` prefix in the prompt means the build environment is active.
+The execution-policy command only applies to the current PowerShell window.
+Check that `(.venv-build)` appears in the prompt before continuing.
 
-#### 4. Install Electron and build the installer
+### 4. Build the installer
 
-Still in the same folder, run:
+From the same application directory:
 
 ```powershell
 npm install
 npm run dist
 ```
 
-The first build downloads dependencies and freezes the Python backend, so it can take several minutes. Keep the internet connection active and wait for the command to finish without closing PowerShell.
+This builds the Python backend, publishes the native WinUI app, and packages
+the Windows installer. The first build downloads dependencies and may take
+several minutes. Keep the internet connection active.
 
-#### 5. Find and install the `.exe`
+To build just the native WinUI dashboard:
 
-The installer and Windows app use the Aria favicon as their icon. The installer is written to the `release` folder. Check for it with:
+```powershell
+npm run build:native
+```
+
+### 5. Install and launch
+
+The installer is written to `release`. Find the generated file with:
 
 ```powershell
 Get-ChildItem .\release\*.exe
 ```
 
-For this version, the file is named `Aria Setup 1.0.0.exe`. Open it and follow the installer prompts. Only run an installer you built yourself or obtained from a source you trust; an unsigned personal build may show a Windows publisher warning.
+The filename includes the application version, for example
+`Aria Setup 1.0.0.exe`. The NSIS installer allows you to choose an installation
+directory and creates Aria shortcuts in the Start menu and on the desktop.
+Run the installer and follow its prompts. An unsigned personal build may show
+a Windows publisher warning; only install builds from sources you trust.
 
-#### 6. Start Aria for the first time
+Launch Aria from the Start menu or desktop shortcut. On first launch, enter the
+account token in the native setup window and select whether to remember it.
+The app then starts its local Python service and opens the native dashboard.
+After installation, Python, Node.js, and the .NET SDK are not needed to run the
+packaged application.
 
-Launch Aria from the Start menu. The app includes its own frozen Python backend, so Python and Node.js are not needed on PCs where you install the finished app. When prompted, enter your Aria token and choose whether to remember it. Aria verifies the account and records its ID as the local owner. If a token was already saved, Aria refreshes that identity before starting its backend. If Electron starts its own backend, it opens the dashboard as owner without asking for the web-panel login. If a web panel was already running before Electron opened, that panel keeps its normal login.
+## Logs and local data
 
-#### 7. View startup logs
-
-For live terminal output while developing, run `npm start` from the app folder in PowerShell. The installed Windows app always writes `aria-desktop.log` under its Electron user-data folder. To find the exact path, search the usual Windows app-data folders:
+When launched from a terminal during development, Electron writes startup and
+backend output to the terminal. It also writes `aria-desktop.log` in its
+Electron user-data directory. Search for the log in PowerShell with:
 
 ```powershell
 Get-ChildItem "$env:APPDATA", "$env:LOCALAPPDATA" -Filter aria-desktop.log -Recurse -ErrorAction SilentlyContinue |
-	Select-Object -First 1 -ExpandProperty FullName
+    Select-Object -First 1 -ExpandProperty FullName
 ```
 
-To follow the log live after finding it, run `Get-Content "FULL_PATH_FROM_PREVIOUS_COMMAND" -Wait`.
-
-The installer bundles the backend and app together. The packaged backend and its runtime data are copied to the user's writable application-data folder, and existing JSON, text, and database state is retained when the app version changes.
-
-#### Common fixes
-
-- If PowerShell says script execution is disabled, run `Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass` in that window and activate `.venv-build` again.
-- If `npm run dist` says Python or PyInstaller is missing, make sure `(.venv-build)` appears in the prompt, then rerun the Python install commands in step 3.
-- If Node, npm, or Python was installed while PowerShell was open, close PowerShell, open it again, and repeat the version checks in step 1.
-
-### Update Aria on an existing Windows PC
-
-Updating the source folder does not update an already-installed `.exe`. First, the new source changes must be committed and pushed to the GitHub branch you use. Then close Aria on the Windows PC and open PowerShell inside your existing Git checkout.
-
-Pull the published changes and enter the app folder if PowerShell opened in the outer repository folder:
+To find and follow the log in one step:
 
 ```powershell
-git pull
-if (-not (Test-Path .\package.json)) {
-	if (Test-Path .\Aria\package.json) {
-		Set-Location .\Aria
-	} else {
-		throw "Open the Aria repository folder containing package.json."
-	}
+$log = Get-ChildItem "$env:APPDATA", "$env:LOCALAPPDATA" -Filter aria-desktop.log -Recurse -ErrorAction SilentlyContinue |
+    Select-Object -First 1 -ExpandProperty FullName
+if ($log) { Get-Content $log -Wait } else { Write-Error "Aria log file was not found." }
+```
+
+Do not paste logs or configuration files publicly without checking them for
+account identifiers, local paths, or other private information. Aria's
+dashboard session-signing key is stored in
+`Aria/.aria_webpanel_secret` and is reused across restarts. Keep this runtime
+file private. A managed key can be supplied through the `ARIA_WEBPANEL_SECRET`
+environment variable.
+
+The packaged backend and its runtime data are kept in the user's writable
+application-data folder. When the packaged app version changes, Aria stages
+the new backend and retains existing supported data files.
+
+## MongoDB backend (optional)
+
+MongoDB can store selected frequently updated runtime state. MongoDB is
+optional; if disabled or unavailable, Aria falls back to its existing JSON
+storage.
+
+Install the driver if it is not already present in the active environment:
+
+```bash
+python -m pip install pymongo
+```
+
+Example configuration:
+
+```json
+{
+  "mongo_enabled": true,
+  "mongo_uri": "mongodb://127.0.0.1:27017",
+  "mongo_database": "aria",
+  "mongo_collection": "app_state",
+  "mongo_timeout_ms": 1500
 }
-Test-Path .\package.json
 ```
 
-The last command must print `True`. Before publishing a desktop update, increase the app version in `package.json` and the root entry in `package-lock.json` (for example, `1.0.0` to `1.0.1`) and push that version change with the source. The packaged backend uses this version to decide whether it must be refreshed. If the branch you pulled already has a higher version, do not bump it again on the PC.
-
-Activate the existing build environment, rebuild, and install the new setup file:
-
-```powershell
-.\.venv-build\Scripts\Activate.ps1
-python -m pip install -r requirements.txt aiohttp curl-cffi colorama pyinstaller
-npm install
-npm run dist
-Get-ChildItem .\release\*.exe
-```
-
-Run the new `Aria Setup <version>.exe` and install it over the existing Aria installation. Use the same Windows account so Aria can retain its saved settings and runtime data. If you only need updated source files and do not need a new installed app, stop after `git pull`.
-
-## Dashboard session key
-
-The web dashboard creates a private 256-bit session-signing key in
-`Aria/.aria_webpanel_secret` on first start and reuses it across restarts. Keep
-this runtime file private and out of backups shared with others. To provide a
-managed key instead, set `ARIA_WEBPANEL_SECRET` in the process environment.
+Mongo-backed datasets currently include `history_data`, `account_stats`,
+`analytics`, `dashboard_users`, and `access_requests`.
 
 ## RPC presets and message logger
 
-Aria supports named activity presets and timed rotations through the existing
-RPC engine:
+RPC presets and timed rotations use the existing command engine. Replace
+`<prefix>` with the command prefix configured for your instance:
 
 ```text
 <prefix>rpc preset save desk
@@ -221,13 +315,43 @@ RPC engine:
 <prefix>rpc rotation stop
 ```
 
-Message logging is disabled by default. Enable it with `<prefix>logger on`, add
-terms with `<prefix>logger add release notes`, and set an optional scope with
-`<prefix>logger scope dms`, `guilds`, `guild <id>`, or `channel <id>`. The
-dashboard can also configure mention, edit, delete, and own-message filtering.
-The live feed is bounded to 400 events and held in memory; only its settings
-are written to `Aria/message_logger.json`.
+Message logging is disabled by default. Enable it with `<prefix>logger on`,
+add terms with `<prefix>logger add release notes`, and optionally scope it
+with `<prefix>logger scope dms`, `guilds`, `guild <id>`, or `channel <id>`.
+The dashboard can configure mention, edit, delete, and own-message filtering.
+The live feed is bounded to 400 in-memory events; only its settings are written
+to `Aria/message_logger.json`.
 
-These RPC profile and logger workflows are inspired by
-[Beyond](https://github.com/kzfq/beyond), which is MIT-licensed. Aria keeps its
-own Discord API and gateway implementation.
+## Updating an installed Windows app
+
+Pulling source changes does not update an already-installed application. To
+publish an update, update the version in `package.json` and the root entry in
+`package-lock.json`, then build and distribute a new installer. The packaged
+backend uses the application version to determine when it should be refreshed.
+
+On the target Windows PC, close Aria and update the source checkout:
+
+```powershell
+git pull
+```
+
+If needed, enter the inner application directory using the folder-detection
+commands from the installer instructions. Then rebuild:
+
+```powershell
+.\.venv-build\Scripts\Activate.ps1
+python -m pip install -r requirements.txt
+python -m pip install pyinstaller
+npm install
+npm run dist
+Get-ChildItem .\release\*.exe
+```
+
+Run the new `Aria Setup <version>.exe` under the same Windows account and
+install it over the existing app to retain that account's application data.
+
+## Credits
+
+The RPC profile and message-logger workflows were informed by the
+[Beyond project](https://github.com/kzfq/beyond), which is MIT-licensed. Aria
+maintains its own implementation.

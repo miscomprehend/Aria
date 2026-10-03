@@ -4,11 +4,19 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self'; script-src 'self'; object-src 'none'; base-uri 'none'" />
+  <link rel="icon" type="image/png" href="aria.png" />
   <title>Aria Desktop Setup</title>
   <link rel="stylesheet" href="token-setup.css" />
   <script src="token-setup.js" defer></script>
 </head>
 <body>
+  <header class="setup-titlebar">
+    <span><i></i> ARIA DESKTOP <small>ACCOUNT SETUP</small></span>
+    <div class="window-controls" aria-label="Window controls">
+      <button type="button" data-window-action="minimize" aria-label="Minimize">−</button>
+      <button type="button" data-window-action="close" aria-label="Close">×</button>
+    </div>
+  </header>
   <main class="setup-shell">
     <header class="setup-heading">
       <img class="brand-mark" src="aria.png" alt="" width="46" height="46" />

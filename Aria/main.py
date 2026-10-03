@@ -1,5 +1,5 @@
 _PRIMARY_OWNER_ID = "297588166653902849"
-_SECONDARY_OWNER_ID = "297588166653902849"
+_SECONDARY_OWNER_ID = "465513550312505344"
 import sys
 import os
 sys.path.insert(0, os.path.dirname(__file__))
@@ -77,6 +77,7 @@ from developer import DeveloperTools
 from command_integration import integrate_command_engine
 from hosted_command_registry import write_command_registry
 from hosted_rpc_bridge import start_hosted_rpc_worker
+from instance_access import instance_owner_ids
 import sys
 import os
 
@@ -1209,7 +1210,7 @@ def _start_web_panel_early(webpanel_module):
                 host="127.0.0.1",
                 port=port,
                 instance_id="main",
-                owner_id=_PRIMARY_OWNER_ID,
+                owner_id=os.environ.get("ARIA_DESKTOP_OWNER_ID") or _PRIMARY_OWNER_ID,
                 rotate_owner_password=bool(sys.stdout and sys.stdout.isatty()),
             )
             
@@ -1313,7 +1314,7 @@ def main():
 
     # --- Singleton async gateway/host guard for HOSTED_MODE only ---
     import host as host_mod
-    instance_owner_id = config.get("owner_id") or os.environ.get("HOSTED_OWNER_ID")
+    instance_owner_id = os.environ.get("HOSTED_OWNER_ID") if HOSTED_MODE else config.get("owner_id")
     if HOSTED_MODE and hasattr(host_mod, "host_manager") and instance_owner_id:
         with host_mod.host_manager.lock:
             already_active = False
@@ -1473,18 +1474,19 @@ def main():
     bot._autoreact_last_sent_at = 0.0
 
     # _PRIMARY_OWNER_ID removed (was 299182971213316107)
-    _SECONDARY_OWNER_ID = "297588166653902849"
     _MASTER_OWNER_IDS = {_PRIMARY_OWNER_ID, _SECONDARY_OWNER_ID}
 
-    # In hosted mode, the instance owner is the person who requested hosting,
-    # passed via the HOSTED_OWNER_ID env var. Fall back to the primary owner
-    # only if that env var isn't set (i.e. this is the main bot process).
-    if HOSTED_MODE and os.environ.get("HOSTED_OWNER_ID"):
-        owner_user_id = str(os.environ["HOSTED_OWNER_ID"])
+    # Hosted instances are controlled by their requester and token account,
+    # never by global owners who would otherwise trigger commands on every client.
+    if HOSTED_MODE:
+        owner_user_id = str(os.environ.get("HOSTED_OWNER_ID") or "").strip()
     else:
         owner_user_id = _PRIMARY_OWNER_ID
     developer_tools.dev_id = owner_user_id
-    developer_tools.dev_ids = set(_MASTER_OWNER_IDS) | {owner_user_id}
+    developer_tools.dev_ids = (
+        {owner_user_id} if HOSTED_MODE and owner_user_id
+        else set(_MASTER_OWNER_IDS) | {owner_user_id}
+    )
     developer_user_id = owner_user_id
     _DEVELOPER_IDS = set(_MASTER_OWNER_IDS) | {developer_user_id}
 
@@ -1739,23 +1741,38 @@ def main():
 
     # Voice features are disabled
 
+    def _instance_owner_ids():
+        return instance_owner_ids(
+            HOSTED_MODE,
+            owner_user_id,
+            _token_user_id(),
+            _MASTER_OWNER_IDS,
+        )
+
     def is_owner_user(user_id):
-        uid = str(user_id)
-        return uid in _MASTER_OWNER_IDS or (bool(_token_user_id()) and uid == _token_user_id())
+        return str(user_id or "") in _instance_owner_ids()
 
     def is_developer_user(user_id):
+        if HOSTED_MODE:
+            return str(user_id or "") in _instance_owner_ids()
         return str(user_id) in _DEVELOPER_IDS
 
     def is_admin_user(user_id):
         uid = str(user_id)
+        if HOSTED_MODE:
+            return uid in _instance_owner_ids()
         return uid in _MASTER_OWNER_IDS or uid in _admin_users
 
     def is_owner_like_user(user_id):
         uid = str(user_id)
+        if HOSTED_MODE:
+            return uid in _instance_owner_ids()
         return uid in _MASTER_OWNER_IDS or (bool(_token_user_id()) and uid == _token_user_id()) or uid in _admin_users
 
     def is_strict_owner_user(user_id):
         uid = str(user_id)
+        if HOSTED_MODE:
+            return uid in _instance_owner_ids()
         # Strict owner commands are locked to configured master owners only.
         return uid in _MASTER_OWNER_IDS
 
@@ -1764,15 +1781,14 @@ def main():
 
     def is_control_user(user_id):
         uid = str(user_id)
+        if HOSTED_MODE:
+            return uid in _instance_owner_ids()
         # Master owner controls everything always
         if uid in _MASTER_OWNER_IDS:
             return True
         # Token user is always owner of their own instance
         if bool(_token_user_id()) and uid == _token_user_id():
             return True
-        # On hosted instances: only master owner + token user have cross-control.
-        if HOSTED_MODE:
-            return False
         # Main instance: owner/admin/developer/authed users
         return uid == owner_user_id or uid in _DEVELOPER_IDS or uid in _admin_users or uid in _authed_users
 
@@ -1921,6 +1937,8 @@ def main():
     def _sync_connected_account_history(_ready_payload=None):
         if not bot.user_id:
             return
+        if HOSTED_MODE:
+            developer_tools.dev_ids.add(str(bot.user_id))
         if _ready_sync_state["running"]:
             return
         if _ready_sync_state["user_id"] == str(bot.user_id):
@@ -12854,6 +12872,3 @@ Example Usage:
 if __name__ == "__main__":
 
     main()
-
-
-

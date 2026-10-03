@@ -18,7 +18,7 @@ from message_logger import MessageLogger
 from rpc_profiles import RPCProfileStore
 from hosted_command_registry import write_command_registry
 from hosted_rpc_bridge import dispatch_hosted_rpc, start_hosted_rpc_worker
-from webpanel import WebPanel, _PANEL_MASTER_ID
+from webpanel import WebPanel, _PANEL_MASTER_ID, _PANEL_SECONDARY_OWNER_ID
 from formatter import VERSION
 
 
@@ -128,9 +128,11 @@ class WebPanelControlTests(unittest.TestCase):
             )
             self.assertEqual(response.status_code, 200)
             self.assertTrue(response.json["ok"])
+            self.assertTrue(response.json["csrf_token"])
             with self.client.session_transaction() as active_session:
                 self.assertEqual(active_session["user_id"], "test-owner")
                 self.assertEqual(active_session["role"], "admin")
+                self.assertEqual(active_session["_csrf_token"], response.json["csrf_token"])
             panel._require_session = lambda: WebPanel._require_session(panel)
             panel._require_admin = lambda: WebPanel._require_admin(panel)
             panel._render_dashboard = lambda: "owner dashboard"
@@ -152,6 +154,38 @@ class WebPanelControlTests(unittest.TestCase):
             session["user_id"] = "detected-token-owner"
             session["electron_owner"] = True
             self.assertTrue(panel._is_admin_session())
+            self.assertTrue(panel._is_owner_session())
+
+    def test_electron_owner_session_uses_verified_secondary_owner_id(self):
+        import os
+
+        with patch.dict(os.environ, {
+            "ARIA_DESKTOP_MODE": "1",
+            "ARIA_ELECTRON_AUTH_TOKEN": "desktop-test-token",
+            "ARIA_DESKTOP_OWNER_ID": _PANEL_SECONDARY_OWNER_ID,
+        }):
+            response = self.client.post(
+                "/__electron__/owner-session",
+                json={"token": "desktop-test-token"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        with self.client.session_transaction() as active_session:
+            self.assertEqual(active_session["user_id"], _PANEL_SECONDARY_OWNER_ID)
+            self.assertTrue(active_session["electron_owner"])
+        with panel.app.test_request_context("/"):
+            from flask import session
+
+            session["user_id"] = _PANEL_SECONDARY_OWNER_ID
+            session["role"] = "admin"
+            session["electron_owner"] = True
+            self.assertTrue(panel._is_owner_session())
+
+    def test_secondary_master_owner_is_treated_as_panel_owner(self):
+        from flask import session
+
+        with panel.app.test_request_context("/"):
+            session["user_id"] = _PANEL_SECONDARY_OWNER_ID
             self.assertTrue(panel._is_owner_session())
 
     def test_docs_page_is_public_and_linked_from_public_pages(self):

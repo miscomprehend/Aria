@@ -2,12 +2,13 @@
   "name": "aria-desktop",
   "version": "1.0.0",
   "private": true,
-  "description": "Electron desktop shell for the Aria dashboard",
+  "description": "Aria desktop app with a native Windows dashboard",
   "main": "electron/main.cjs",
   "scripts": {
-    "start": "electron .",
+    "build:native": "node scripts/build-native.cjs",
+    "start": "npm run build:native && electron .",
     "build:backend": "python -m PyInstaller --noconfirm --clean --distpath build/pyinstaller-dist --workpath build/pyinstaller-work aria.spec",
-    "dist": "npm run build:backend && electron-builder"
+    "dist": "npm run build:backend && npm run build:native && electron-builder"
   },
   "devDependencies": {
     "electron": "^44.5.1",
@@ -27,6 +28,10 @@
       {
         "from": "build/pyinstaller-dist/Aria",
         "to": "aria-backend"
+      },
+      {
+        "from": "build/native",
+        "to": "aria-native"
       }
     ],
     "linux": {
@@ -46,6 +51,11 @@
       ]
     },
     "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Aria",
       "installerIcon": "electron/aria.ico",
       "uninstallerIcon": "electron/aria.ico",
       "installerHeaderIcon": "electron/aria.ico"

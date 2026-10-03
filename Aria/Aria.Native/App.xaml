@@ -1,0 +1,16 @@
+<Application
+    x:Class="Aria.Native.App"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    RequestedTheme="Dark">
+    <Application.Resources>
+        <ResourceDictionary>
+            <Color x:Key="AriaAccentColor">#69B7FF</Color>
+            <SolidColorBrush x:Key="AriaAccentBrush" Color="{StaticResource AriaAccentColor}" />
+            <SolidColorBrush x:Key="AriaSurfaceBrush" Color="#101821" />
+            <SolidColorBrush x:Key="AriaRaisedBrush" Color="#151F2B" />
+            <SolidColorBrush x:Key="AriaBorderBrush" Color="#273341" />
+            <SolidColorBrush x:Key="AriaMutedBrush" Color="#A4B1BF" />
+        </ResourceDictionary>
+    </Application.Resources>
+</Application>

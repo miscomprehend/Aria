@@ -29,7 +29,11 @@ let dashboardUrl = null;
 let mainWindow = null;
 let tokenWindow = null;
 let desktopAuthToken = null;
+let desktopOwnerId = null;
 let logFilePath = null;
+let nativeDashboardProcess = null;
+let nativeControlServer = null;
+let nativeControlToken = null;
 
 if (process.platform === "win32") app.setAppUserModelId(APP_ID);
 
@@ -166,7 +170,7 @@ function runBackendScript(scriptName, args = [], options = {}) {
   });
 }
 
-function startBackend(runtimeToken = null) {
+function startBackend(runtimeToken = null, ownerId = desktopOwnerId) {
   backendStartError = null;
   desktopAuthToken = crypto.randomBytes(32).toString("hex");
   logMessage("INFO", "Starting Aria backend.");
@@ -174,6 +178,7 @@ function startBackend(runtimeToken = null) {
     env: {
       ARIA_TOKEN_STDIN: runtimeToken ? "1" : "0",
       ARIA_ELECTRON_AUTH_TOKEN: desktopAuthToken,
+      ARIA_DESKTOP_OWNER_ID: ownerId || "",
     },
     stdio: ["pipe", "pipe", "pipe"],
   });
@@ -241,6 +246,112 @@ async function authenticateElectronOwner() {
   });
   desktopAuthToken = null;
   logMessage("INFO", "Signed in to the locally launched dashboard as owner.");
+}
+
+async function launchNativeDashboard() {
+  const executable = app.isPackaged
+    ? path.join(process.resourcesPath, "aria-native", "Aria.Native.exe")
+    : path.resolve(__dirname, "..", "build", "native", "Aria.Native.exe");
+  if (!fs.existsSync(executable)) {
+    throw new Error("The native Aria dashboard is missing. Build the Windows app with npm run build:native.");
+  }
+
+  await ensureNativeControlServer();
+  nativeDashboardProcess = spawn(executable, [], {
+    cwd: path.dirname(executable),
+    env: {
+      ...process.env,
+      ARIA_DASHBOARD_URL: dashboardUrl,
+      ARIA_ELECTRON_AUTH_TOKEN: desktopAuthToken || "",
+      ARIA_NEEDS_TOKEN_SETUP: backendProcess && !hasSavedToken() ? "1" : "0",
+      ARIA_NATIVE_CONTROL_URL: `http://${HOST}:${nativeControlServer.address().port}/`,
+      ARIA_NATIVE_CONTROL_TOKEN: nativeControlToken,
+    },
+    stdio: ["ignore", "ignore", "ignore"],
+    windowsHide: false,
+  });
+  desktopAuthToken = null;
+  nativeDashboardProcess.once("error", (error) => {
+    logMessage("ERROR", `Could not start the native dashboard: ${error.message}`);
+    dialog.showErrorBox("Aria could not start", `The native dashboard failed to launch.\n\n${error.message}`);
+    app.quit();
+  });
+  nativeDashboardProcess.once("exit", (code, signal) => {
+    nativeDashboardProcess = null;
+    logMessage(code === 0 ? "INFO" : "ERROR", `Native dashboard exited (${code ?? signal}).`);
+    app.quit();
+  });
+  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.close();
+}
+
+function ensureNativeControlServer() {
+  if (nativeControlServer?.listening) return Promise.resolve();
+  nativeControlToken = crypto.randomBytes(32).toString("hex");
+  nativeControlServer = http.createServer(async (request, response) => {
+    const remoteAddress = request.socket.remoteAddress || "";
+    if (remoteAddress !== "127.0.0.1" && remoteAddress !== "::1" && remoteAddress !== "::ffff:127.0.0.1") {
+      response.writeHead(403).end();
+      return;
+    }
+    if (request.method !== "POST" || request.url !== "/") {
+      response.writeHead(404).end();
+      return;
+    }
+    if (request.headers.authorization !== `Bearer ${nativeControlToken}`) {
+      response.writeHead(403).end();
+      return;
+    }
+
+    let body = "";
+    request.setEncoding("utf8");
+    request.on("data", (chunk) => {
+      body += chunk;
+      if (body.length > 8192) {
+        response.writeHead(413).end(JSON.stringify({ ok: false, error: "Setup request is too large." }));
+        request.destroy();
+      }
+    });
+    request.on("end", async () => {
+      if (response.writableEnded) return;
+      response.setHeader("Content-Type", "application/json");
+      try {
+        const payload = JSON.parse(body);
+        if (payload.action !== "save-token") throw new Error("Unknown desktop setup action.");
+        const token = typeof payload.token === "string" ? payload.token.trim() : "";
+        if (!token || token.length > 4096 || /[\r\n]/.test(token)) {
+          throw new Error("Enter a valid token.");
+        }
+
+        const identity = await saveTokenConfig(token, payload.remember === true);
+        desktopOwnerId = String(identity.id || "");
+        await stopBackend();
+        startBackend(payload.remember === true ? null : token, desktopOwnerId);
+        dashboardUrl = await waitForDashboard();
+        const authToken = desktopAuthToken;
+        desktopAuthToken = null;
+        const result = JSON.stringify({
+          ok: true,
+          dashboardUrl,
+          authToken,
+          ownerUsername: identity.username,
+          ownerId: desktopOwnerId,
+        });
+        response.writeHead(200).end(result);
+        const setupServer = nativeControlServer;
+        nativeControlServer = null;
+        nativeControlToken = null;
+        setupServer?.close();
+      } catch (error) {
+        logMessage("ERROR", `Native token setup failed: ${error.stack || error.message}`);
+        if (!response.headersSent) response.writeHead(400);
+        response.end(JSON.stringify({ ok: false, error: error.message || "Could not configure Aria." }));
+      }
+    });
+  });
+  return new Promise((resolve, reject) => {
+    nativeControlServer.once("error", reject);
+    nativeControlServer.listen(0, HOST, resolve);
+  });
 }
 
 async function waitForDashboard() {
@@ -371,6 +482,8 @@ function createTokenWindow() {
   const options = {
     width: 480,
     height: 470,
+    frame: false,
+    autoHideMenuBar: true,
     resizable: false,
     show: false,
     title: "Aria Desktop Setup",
@@ -411,11 +524,14 @@ function createLoadingWindow() {
     height: 440,
     minWidth: 540,
     minHeight: 390,
+    frame: false,
+    autoHideMenuBar: true,
     resizable: false,
     show: false,
     title: "Aria Desktop",
     icon: path.join(__dirname, "aria.ico"),
     webPreferences: {
+      preload: path.join(__dirname, "preload.cjs"),
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
@@ -447,9 +563,14 @@ ipcMain.handle("setup:save-token", async (event, payload) => {
     logMessage("INFO", "Restarting Aria with the updated token setting.");
     startBackend(remember ? null : token);
     dashboardUrl = await waitForDashboard();
-    await authenticateElectronOwner();
-    if (mainWindow) await mainWindow.loadURL(new URL("/dashboard", dashboardUrl).toString());
-    else createWindow();
+    if (process.platform === "win32") {
+      desktopOwnerId = String(ownerIdentity.id || "");
+      await launchNativeDashboard();
+    } else {
+      await authenticateElectronOwner();
+      if (mainWindow) await mainWindow.loadURL(new URL("/dashboard", dashboardUrl).toString());
+      else createWindow();
+    }
     if (tokenWindow && !tokenWindow.isDestroyed()) tokenWindow.close();
     return { ok: true };
   } catch (error) {
@@ -462,6 +583,53 @@ ipcMain.on("setup:cancel", (event) => {
   if (tokenWindow && event.sender === tokenWindow.webContents) tokenWindow.close();
 });
 
+ipcMain.handle("desktop:action", async (event, action) => {
+  const senderWindow = BrowserWindow.fromWebContents(event.sender);
+  if (!senderWindow || (senderWindow !== mainWindow && senderWindow !== tokenWindow)) {
+    return { ok: false, error: "Aria Desktop window is not available." };
+  }
+
+  switch (action) {
+    case "minimize":
+      senderWindow.minimize();
+      return { ok: true };
+    case "toggle-maximize":
+      if (senderWindow !== mainWindow || !senderWindow.isMaximizable()) {
+        return { ok: false, error: "This window cannot be maximized." };
+      }
+      if (senderWindow.isMaximized()) senderWindow.unmaximize();
+      else senderWindow.maximize();
+      return { ok: true, maximized: senderWindow.isMaximized() };
+    case "close":
+      senderWindow.close();
+      return { ok: true };
+    case "refresh":
+      if (senderWindow !== mainWindow || !isDashboardUrl(senderWindow.webContents.getURL())) {
+        return { ok: false, error: "The dashboard is not ready to refresh." };
+      }
+      senderWindow.webContents.reload();
+      return { ok: true };
+    case "set-token":
+      if (senderWindow !== mainWindow || !backendProcess || !backendContext) {
+        return { ok: false, error: "Token setup is available only for a dashboard started by Aria Desktop." };
+      }
+      createTokenWindow();
+      return { ok: true };
+    case "open-dashboard":
+      if (senderWindow !== mainWindow || !dashboardUrl) {
+        return { ok: false, error: "The dashboard is not available yet." };
+      }
+      await shell.openExternal(new URL("/dashboard", dashboardUrl).toString());
+      return { ok: true };
+    case "quit":
+      if (senderWindow !== mainWindow) return { ok: false, error: "This action is unavailable in setup." };
+      app.quit();
+      return { ok: true };
+    default:
+      return { ok: false, error: "Unknown desktop action." };
+  }
+});
+
 function createWindow() {
   if (!mainWindow || mainWindow.isDestroyed()) {
     mainWindow = new BrowserWindow({
@@ -469,9 +637,12 @@ function createWindow() {
       height: 820,
       minWidth: 760,
       minHeight: 560,
+      frame: false,
+      autoHideMenuBar: true,
       title: "Aria Desktop",
       icon: path.join(__dirname, "aria.ico"),
       webPreferences: {
+        preload: path.join(__dirname, "preload.cjs"),
         contextIsolation: true,
         nodeIntegration: false,
         sandbox: true,
@@ -558,6 +729,7 @@ app.whenReady().then(async () => {
       if (hasSavedToken()) {
         try {
           const ownerIdentity = await identifySavedTokenOwner();
+          desktopOwnerId = String(ownerIdentity.id || "");
           logMessage("INFO", `Verified saved account ${ownerIdentity.username} (${ownerIdentity.id}) as the desktop owner.`);
         } catch (error) {
           logMessage("ERROR", `Could not refresh the saved token owner identity: ${error.message}`);
@@ -566,11 +738,15 @@ app.whenReady().then(async () => {
       startBackend();
       dashboardUrl = await waitForDashboard();
       updateStartupStatus("Signing into your owner dashboard...");
-      await authenticateElectronOwner();
+      if (process.platform !== "win32") await authenticateElectronOwner();
     } else {
       logMessage("INFO", `Using existing panel at ${dashboardUrl}; its normal login remains enabled.`);
     }
     updateStartupStatus("Opening your dashboard...");
+    if (process.platform === "win32") {
+      await launchNativeDashboard();
+      return;
+    }
     createWindow();
     if (backendProcess && !hasSavedToken()) {
       logMessage("INFO", "No saved token found; opening token setup.");
@@ -589,9 +765,12 @@ app.on("activate", () => {
 
 app.on("before-quit", () => {
   logMessage("INFO", "Closing Aria desktop.");
+  nativeControlServer?.close();
+  if (nativeDashboardProcess && nativeDashboardProcess.exitCode === null) nativeDashboardProcess.kill();
   if (backendProcess && backendProcess.exitCode === null) backendProcess.kill();
 });
 
 app.on("window-all-closed", () => {
+  if (nativeDashboardProcess) return;
   if (process.platform !== "darwin") app.quit();
 });

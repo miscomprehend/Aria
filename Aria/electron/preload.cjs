@@ -4,3 +4,7 @@ contextBridge.exposeInMainWorld("ariaSetup", {
   saveToken: (token, remember) => ipcRenderer.invoke("setup:save-token", { token, remember }),
   cancel: () => ipcRenderer.send("setup:cancel"),
 });
+
+contextBridge.exposeInMainWorld("ariaDesktop", {
+  perform: (action) => ipcRenderer.invoke("desktop:action", action),
+});

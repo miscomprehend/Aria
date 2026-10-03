@@ -1,8 +1,8 @@
 :root {
-  color-scheme: light;
+  color-scheme: dark;
   font-family: "Segoe UI", "Noto Sans", sans-serif;
-  color: #172c2a;
-  background: #edf2ed;
+  color: #edf3f9;
+  background: #0a1018;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
 }
@@ -15,9 +15,10 @@ body {
   min-width: 500px;
   min-height: 360px;
   margin: 0;
-  background-color: #edf2ed;
-  background-image: linear-gradient(90deg, rgb(32 76 67 / 3%) 1px, transparent 1px),
-    linear-gradient(rgb(32 76 67 / 3%) 1px, transparent 1px);
+  overflow: hidden;
+  background-color: #0a1018;
+  background-image: linear-gradient(90deg, rgb(177 197 219 / 2%) 1px, transparent 1px),
+    linear-gradient(rgb(177 197 219 / 2%) 1px, transparent 1px);
   background-size: 28px 28px;
 }
 
@@ -36,8 +37,23 @@ body {
 }
 
 .startup-header {
-  border-bottom: 1px solid #d5dfd8;
+  border-bottom: 1px solid rgb(177 197 219 / 12%);
+  -webkit-app-region: drag;
 }
+
+.window-controls { display: flex; height: 100%; align-items: center; gap: 4px; -webkit-app-region: no-drag; }
+.window-controls button {
+  width: 34px;
+  height: 30px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: #a4b1bf;
+  font: 20px/1 "Segoe UI", sans-serif;
+  cursor: pointer;
+}
+.window-controls button:hover { background: #182433; color: #edf3f9; }
+.window-controls button:last-child:hover { background: #a83c48; color: #fff; }
 
 .brand-lockup {
   display: flex;
@@ -71,7 +87,7 @@ body {
 .brand-lockup div span,
 .build-label,
 .eyebrow {
-  color: #5d7770;
+  color: #748394;
 }
 
 .build-label,
@@ -91,15 +107,15 @@ body {
   display: grid;
   place-items: center;
   margin-bottom: 25px;
-  border: 1px solid #bfd2c8;
+  border: 1px solid rgb(105 183 255 / 28%);
   border-radius: 50%;
-  background: #f7faf6;
+  background: #101821;
 }
 
 .status-mark span {
   width: 17px;
   height: 17px;
-  border: 2px solid #167966;
+  border: 2px solid #69b7ff;
   border-right-color: transparent;
   border-radius: 50%;
   animation: spin 900ms linear infinite;
@@ -120,7 +136,7 @@ h1 {
 .startup-status {
   min-height: 22px;
   margin: 12px 0 25px;
-  color: #536b65;
+  color: #a4b1bf;
   font-size: 13px;
   line-height: 1.6;
 }
@@ -128,24 +144,24 @@ h1 {
 .progress-track {
   height: 3px;
   overflow: hidden;
-  background: #d4e0d9;
+  background: #182433;
 }
 
 .progress-track span {
   display: block;
   width: 34%;
   height: 100%;
-  background: #167966;
+  background: #69b7ff;
   animation: progress 1.5s ease-in-out infinite;
 }
 
 .startup-footer {
-  border-top: 1px solid #d5dfd8;
-  color: #647d75;
+  border-top: 1px solid rgb(177 197 219 / 12%);
+  color: #748394;
 }
 
 #runtime-state {
-  color: #167966;
+  color: #69b7ff;
 }
 
 @keyframes spin {

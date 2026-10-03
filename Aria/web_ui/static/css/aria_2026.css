@@ -159,6 +159,16 @@ a { color: var(--a3); }
 .logout-link { color: #d99a9f; }
 .logout-link:hover { border-color: rgba(238,119,125,.35); color: #ffc3c6; background: rgba(238,119,125,.05); }
 .main-content { position: relative; z-index: 1; display: flex; height: 100vh; min-width: 0; flex-direction: column; margin-left: var(--sidebar-w); overflow: auto; scrollbar-color: #273341 transparent; scrollbar-width: thin; }
+.desktop-titlebar { display: flex; height: 38px; min-height: 38px; align-items: center; border-bottom: 1px solid var(--border); background: #0a1018; }
+.desktop-titlebar-brand { display: flex; height: 100%; align-items: center; gap: 8px; padding: 0 12px; color: var(--muted); font: 9px var(--mono); letter-spacing: .06em; -webkit-app-region: no-drag; }
+.desktop-titlebar-brand strong { color: var(--text); font: 600 10px var(--font); letter-spacing: 0; }
+.desktop-titlebar-brand > span:last-child { color: var(--subtle); font-size: 8px; }
+.desktop-titlebar-mark { display: grid; width: 20px; height: 20px; place-items: center; border: 1px solid rgba(105,183,255,.35); border-radius: 5px; background: #101b27; color: var(--a3); font: 700 12px var(--font); }
+.desktop-titlebar-drag { height: 100%; flex: 1; -webkit-app-region: drag; }
+.desktop-window-controls { display: flex; height: 100%; align-items: center; gap: 3px; padding: 0 7px; -webkit-app-region: no-drag; }
+.desktop-window-controls button { width: 34px; height: 28px; border: 0; border-radius: 5px; background: transparent; color: var(--muted); font: 18px/1 var(--font); cursor: pointer; }
+.desktop-window-controls button:hover { background: var(--surface-raised); color: var(--text); }
+.desktop-window-controls button:last-child:hover { background: #a83c48; color: #fff; }
 .topbar {
   position: sticky;
   z-index: 80;
@@ -769,6 +779,10 @@ textarea.setting-input { min-height: 110px; resize: vertical; }
 .owner-reset-request-actions .btn { min-height: 28px; padding: 5px 7px; font-size: 8px; }
 .owner-identity-values { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 13px; color: var(--text); font-size: 10px; }
 .owner-identity-values code { color: var(--a3); font: 9px var(--mono); overflow-wrap: anywhere; }
+.desktop-controls-card { margin-top: 10px; }
+.desktop-controls-body { display: flex; flex-wrap: wrap; gap: 8px; padding: 12px; }
+.desktop-controls-message { min-height: 16px; margin: 0; padding: 0 12px 10px; color: var(--muted); font-size: 9px; }
+.desktop-controls-message[data-state="error"] { color: var(--danger); }
 .owner-reset-overlay, .appearance-overlay { position: fixed; z-index: 700; inset: 0; display: grid; place-items: center; padding: 18px; }
 .owner-reset-overlay { background: rgba(0,0,0,.72); }
 .owner-reset-dialog { width: min(440px,100%); padding: 20px; border: 1px solid var(--border-strong); border-radius: 8px; background: #0d141b; }

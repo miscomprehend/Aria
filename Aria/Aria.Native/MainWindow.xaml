@@ -1,0 +1,110 @@
+<Window
+    x:Class="Aria.Native.MainWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    Title="Aria">
+    <Grid Background="#0A1018">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="42" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+        <Grid x:Name="TitleBar" Grid.Row="0" Background="#0A1018" Margin="16,0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="9" VerticalAlignment="Center">
+                <Border Width="20" Height="20" CornerRadius="5" Background="#101B27" BorderBrush="#596F84" BorderThickness="1">
+                    <TextBlock Text="A" Foreground="#69B7FF" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                </Border>
+                <TextBlock Text="ARIA" FontSize="11" FontWeight="SemiBold" VerticalAlignment="Center" />
+                <TextBlock Text="NATIVE DESKTOP" FontSize="9" Foreground="#748394" VerticalAlignment="Center" />
+            </StackPanel>
+            <TextBlock Grid.Column="2" Text="LOCAL SESSION" FontSize="9" Foreground="#748394" VerticalAlignment="Center" />
+        </Grid>
+
+        <Grid Grid.Row="1">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="220" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+            <Border Grid.Column="0" Background="#0D141B" BorderBrush="#273341" BorderThickness="0,1,1,0">
+                <Grid Margin="16">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+                    <StackPanel Spacing="5" Margin="4,10,4,24">
+                        <TextBlock Text="ARIA" FontSize="23" FontWeight="SemiBold" />
+                        <TextBlock Text="CONTROL WORKSPACE" FontSize="9" Foreground="#748394" />
+                    </StackPanel>
+                    <StackPanel x:Name="Navigation" Grid.Row="1" Spacing="5">
+                        <Button Content="Overview" Tag="overview" Click="Navigation_Click" HorizontalContentAlignment="Left" />
+                        <Button Content="Hosted instances" Tag="hosted" Click="Navigation_Click" HorizontalContentAlignment="Left" />
+                        <Button x:Name="OwnerNavigationButton" Content="Owner tools" Tag="owner" Click="Navigation_Click" HorizontalContentAlignment="Left" Visibility="Collapsed" />
+                    </StackPanel>
+                    <StackPanel Grid.Row="2" Spacing="8" Margin="4,0,4,8">
+                        <TextBlock x:Name="SessionIdentity" Text="Connecting…" FontSize="11" TextTrimming="CharacterEllipsis" />
+                        <TextBlock Text="NATIVE WINDOWS APP" FontSize="8" Foreground="#748394" />
+                    </StackPanel>
+                </Grid>
+            </Border>
+
+            <Grid Grid.Column="1" Margin="28,24">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+                <Grid Grid.Row="0" Margin="0,0,0,18">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <StackPanel>
+                        <TextBlock x:Name="PageTitle" Text="Overview" FontSize="25" FontWeight="SemiBold" />
+                        <TextBlock x:Name="PageSubtitle" Text="Your Aria runtime at a glance" FontSize="12" Foreground="#A4B1BF" Margin="0,5,0,0" />
+                    </StackPanel>
+                    <Button Grid.Column="1" Content="Refresh" Click="Refresh_Click" VerticalAlignment="Center" />
+                </Grid>
+                <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+                    <StackPanel x:Name="PageContent" Spacing="14" />
+                </ScrollViewer>
+            </Grid>
+
+            <Border x:Name="StatusOverlay" Grid.ColumnSpan="2" Background="#E60A1018" Padding="28">
+                <Border Width="420" Padding="24" VerticalAlignment="Center" HorizontalAlignment="Center"
+                        Background="#101821" BorderBrush="#273341" BorderThickness="1" CornerRadius="10">
+                    <StackPanel Spacing="12">
+                        <StackPanel Orientation="Horizontal" Spacing="10">
+                            <Border Width="30" Height="30" CornerRadius="7" Background="#101B27" BorderBrush="#596F84" BorderThickness="1">
+                                <TextBlock Text="A" Foreground="#69B7FF" FontSize="17" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                            </Border>
+                            <StackPanel VerticalAlignment="Center" Spacing="2">
+                                <TextBlock Text="ARIA DESKTOP" FontSize="10" FontWeight="SemiBold" />
+                                <TextBlock Text="PRIVATE LOCAL SETUP" FontSize="8" Foreground="#748394" />
+                            </StackPanel>
+                        </StackPanel>
+                        <TextBlock Text="Connecting to your Aria runtime" FontSize="21" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,8,0,0" />
+                        <TextBlock x:Name="StatusMessage" Text="Signing in to the local dashboard service…" Foreground="#A4B1BF" TextWrapping="Wrap" />
+                        <ProgressRing x:Name="ConnectionProgress" IsActive="True" Width="28" Height="28" HorizontalAlignment="Left" />
+                        <Button x:Name="RetryButton" Content="Retry connection" Click="Retry_Click" Visibility="Collapsed" />
+                        <StackPanel x:Name="LoginPanel" Spacing="10" Visibility="Collapsed">
+                            <TextBox x:Name="LoginUsername" Header="Aria username" />
+                            <PasswordBox x:Name="LoginPassword" Header="Aria password" />
+                            <TextBox x:Name="LoginDiscordId" Header="Discord ID (for regular accounts)" />
+                            <Button Content="Sign in" Click="Login_Click" HorizontalAlignment="Left" />
+                        </StackPanel>
+                        <StackPanel x:Name="TokenSetupPanel" Spacing="10" Visibility="Collapsed">
+                            <PasswordBox x:Name="SetupToken" Header="Discord account token" PasswordRevealMode="Peek" />
+                            <CheckBox x:Name="RememberToken" Content="Remember token on this device" IsChecked="True" />
+                            <TextBlock Text="Remembered tokens are stored in Aria's encrypted local config. Leave this unchecked to use it only for this session." Foreground="#A4B1BF" TextWrapping="Wrap" FontSize="12" />
+                            <Button x:Name="SetupSubmitButton" Content="Verify account and continue" Click="SetupToken_Click" HorizontalAlignment="Left" />
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+            </Border>
+        </Grid>
+    </Grid>
+</Window>

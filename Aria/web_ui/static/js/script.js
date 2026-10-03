@@ -957,6 +957,35 @@ async function loadFriends() {
 
 // live search
 document.addEventListener('DOMContentLoaded', () => {
+    const desktopApi = window.ariaDesktop;
+    if (!desktopApi) return;
+
+    document.getElementById('desktopTitlebar')?.removeAttribute('hidden');
+    document.querySelectorAll('[data-electron-only]').forEach(el => el.removeAttribute('hidden'));
+    document.querySelectorAll('[data-desktop-action]').forEach(button => {
+        button.addEventListener('click', async () => {
+            const message = document.getElementById('desktopControlsMessage');
+            if (message) {
+                message.textContent = '';
+                message.dataset.state = '';
+            }
+            try {
+                const result = await desktopApi.perform(button.dataset.desktopAction);
+                if (!result?.ok && message) {
+                    message.dataset.state = 'error';
+                    message.textContent = result?.error || 'The desktop action could not be completed.';
+                }
+            } catch (error) {
+                if (message) {
+                    message.dataset.state = 'error';
+                    message.textContent = error.message || 'The desktop action could not be completed.';
+                }
+            }
+        });
+    });
+});
+
+document.addEventListener('DOMContentLoaded', () => {
     const searchEl = document.getElementById('cmdSearch');
     if (searchEl) {
         searchEl.addEventListener('input', () => {
