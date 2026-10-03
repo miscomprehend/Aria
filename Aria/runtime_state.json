@@ -1,7 +1,0 @@
-{
-  "auto_delete": {
-    "enabled": true,
-    "delay": 5.0
-  },
-  "client_type": "vr"
-}

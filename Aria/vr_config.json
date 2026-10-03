@@ -1,9 +1,0 @@
-{
-  "vr_enabled": true,
-  "default_status": "online",
-  "rpc_settings": {
-    "show_game": true,
-    "game_name": "AriaBot"
-  },
-  "application_id": "1234567890"
-}
