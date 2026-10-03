@@ -20,6 +20,9 @@ class AsyncDiscordGateway:
         self.session_id: Optional[str] = None
         self.heartbeat_interval: Optional[float] = None
         self.last_heartbeat: float = time.time()
+        self._heartbeat_sent_at: Optional[float] = None
+        self._heartbeat_pending_since: Optional[float] = None
+        self.heartbeat_latency_ms: Optional[float] = None
         self.connected = False
         self.identified = False
 
@@ -147,7 +150,19 @@ class AsyncDiscordGateway:
 
             elif op == 11:  # Heartbeat ACK
                 self.last_heartbeat = time.time()
+                if self._heartbeat_sent_at is not None:
+                    self.heartbeat_latency_ms = max(
+                        0.0,
+                        (time.monotonic() - self._heartbeat_sent_at) * 1000,
+                    )
+                self._heartbeat_sent_at = None
+                self._heartbeat_pending_since = None
                 print("💓 Heartbeat acknowledged")
+
+            elif op == 1:  # Server-requested heartbeat
+                await self.ws.send(json.dumps({"op": 1, "d": self.sequence}))
+                self._heartbeat_sent_at = time.monotonic()
+                self._heartbeat_pending_since = self._heartbeat_sent_at
 
             elif op == 0:  # Dispatch (events)
                 await self._handle_event(event_type, event_data)
@@ -220,6 +235,16 @@ class AsyncDiscordGateway:
 
         while self.connected:
             if self.heartbeat_interval:
+                if self._heartbeat_pending_since is not None:
+                    print("❌ Gateway heartbeat was not acknowledged; closing for reconnect")
+                    websocket = self.ws
+                    if websocket is not None:
+                        try:
+                            await websocket.close(code=4000, reason="Heartbeat ACK timeout")
+                        except Exception as error:
+                            print(f"❌ Could not close gateway after heartbeat timeout: {error}")
+                    return
+
                 heartbeat_payload = {
                     "op": 1,  # Heartbeat
                     "d": self.sequence
@@ -227,11 +252,19 @@ class AsyncDiscordGateway:
 
                 try:
                     await self.ws.send(json.dumps(heartbeat_payload))
+                    self._heartbeat_sent_at = time.monotonic()
+                    self._heartbeat_pending_since = self._heartbeat_sent_at
                     print(f"💓 Sent heartbeat (seq: {self.sequence})")
                     await asyncio.sleep(self.heartbeat_interval)
                 except Exception as e:
                     print(f"❌ Heartbeat error: {e}")
-                    break
+                    websocket = self.ws
+                    if websocket is not None:
+                        try:
+                            await websocket.close(code=4000, reason="Heartbeat send failed")
+                        except Exception:
+                            pass
+                    return
             else:
                 await asyncio.sleep(1)
 

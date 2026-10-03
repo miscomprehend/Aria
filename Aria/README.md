@@ -95,7 +95,9 @@ Current native dashboard sections:
 - **Overview:** runtime connection, account, uptime, command, and hosted-client
   summary.
 - **Hosted instances:** connect, view, restart, and disconnect hosted clients.
-- **Owner tools:** account summary and password-reset request review.
+- **Owner tools:** account summary, the primary and `stackss` owner IDs,
+  one-time owner password resets, and password-reset request review. Passwords
+  are stored as hashes and are shown only once after an explicit reset.
 
 Other sections in the browser dashboard have not yet been ported to WinUI. They
 remain available in the browser dashboard.
@@ -250,8 +252,10 @@ packaged application.
 ## Logs and local data
 
 When launched from a terminal during development, Electron writes startup and
-backend output to the terminal. It also writes `aria-desktop.log` in its
-Electron user-data directory. Search for the log in PowerShell with:
+backend output, including hosted-client output, to the terminal. Hosted-client
+output is also kept in `hosted_logs/hosted_<id>.log`. Electron writes
+`aria-desktop.log` in its user-data directory. Search for the log in PowerShell
+with:
 
 ```powershell
 Get-ChildItem "$env:APPDATA", "$env:LOCALAPPDATA" -Filter aria-desktop.log -Recurse -ErrorAction SilentlyContinue |

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 _PANEL_MASTER_ID = "297588166653902849"
 _PANEL_SECONDARY_OWNER_ID = "465513550312505344"
+_PANEL_SECONDARY_OWNER_USERNAME = "stackss"
 _PANEL_BIG_OWNER_ID = _PANEL_SECONDARY_OWNER_ID
 _PANEL_MASTER_IDS = {_PANEL_MASTER_ID, _PANEL_SECONDARY_OWNER_ID}
 _PANEL_PRIMARY_OWNER_USERNAME = "renny"
@@ -644,9 +645,17 @@ class WebPanel:
             if isinstance(entry, dict):
                 if owner_username and str(entry.get("username", "")).strip() != owner_username:
                     entry["username"] = owner_username
-                if configured_password and not self._password_matches(configured_password, str(entry.get("password_hash", ""))):
+                if (
+                    configured_password
+                    and not entry.get("password_reset_managed")
+                    and not self._password_matches(configured_password, str(entry.get("password_hash", "")))
+                ):
                     entry["password_hash"] = self._hash_pw(configured_password)
-                elif getattr(self, "rotate_owner_password", False) and not configured_password:
+                elif (
+                    getattr(self, "rotate_owner_password", False)
+                    and not configured_password
+                    and not entry.get("password_reset_managed")
+                ):
                     password_to_print = secrets.token_urlsafe(12)
                     entry["password_hash"] = self._hash_pw(password_to_print)
                 if str(entry.get("role", "")).lower() != "admin":
@@ -700,13 +709,21 @@ class WebPanel:
                 configured_master_username = (
                     _PANEL_PRIMARY_OWNER_USERNAME
                     if m_id == _PANEL_MASTER_ID
-                    else owner_cfg.get("owner_username")
+                    else (
+                        _PANEL_SECONDARY_OWNER_USERNAME
+                        if m_id == _PANEL_SECONDARY_OWNER_ID
+                        else owner_cfg.get("owner_username")
+                    )
                 )
                 if configured_master_username and str(existing.get("username", "")).strip() != configured_master_username:
                     existing["username"] = configured_master_username
                     updated = True
                 configured_master_password = owner_cfg.get("owner_password")
-                if configured_master_password and not self._password_matches(configured_master_password, str(existing.get("password_hash", ""))):
+                if (
+                    configured_master_password
+                    and not existing.get("password_reset_managed")
+                    and not self._password_matches(configured_master_password, str(existing.get("password_hash", "")))
+                ):
                     existing["password_hash"] = self._hash_pw(configured_master_password)
                     updated = True
                 users[m_id] = existing
@@ -4016,6 +4033,21 @@ class WebPanel:
                     "timestamp": int(item.get("timestamp", 0) or 0),
                 })
             password_reset_requests.sort(key=lambda item: item["timestamp"], reverse=True)
+            master_owners = []
+            for owner_id in sorted(_PANEL_MASTER_IDS):
+                owner_entry = users.get(owner_id, {}) if isinstance(users, dict) else {}
+                if not isinstance(owner_entry, dict):
+                    owner_entry = {}
+                fallback_username = (
+                    _PANEL_PRIMARY_OWNER_USERNAME
+                    if owner_id == _PANEL_MASTER_ID
+                    else _PANEL_SECONDARY_OWNER_USERNAME
+                )
+                master_owners.append({
+                    "user_id": owner_id,
+                    "username": str(owner_entry.get("username") or fallback_username),
+                    "role": str(owner_entry.get("role") or "admin"),
+                })
             return jsonify({
                 "ok": True,
                 "data": {
@@ -4026,12 +4058,46 @@ class WebPanel:
                     ),
                     "pending_requests": pending_requests,
                     "accounts": accounts,
+                    "master_owners": master_owners,
                     "password_reset_requests": password_reset_requests,
                     "connected": bool(bot_data.get("connected")),
                     "gateway_latency_ms": bot_data.get("gateway_latency_ms"),
                     "username": str(bot_data.get("username") or "—"),
                     "user_id": str(bot_data.get("user_id") or "—"),
                 },
+            })
+
+        @self.app.post("/api/owner/accounts/<owner_id>/password")
+        def api_owner_reset_password(owner_id: str) -> Any:
+            if not self._is_owner_session():
+                return jsonify({"ok": False, "error": "Owner only"}), 403
+            if not self._valid_csrf_token(request.headers.get("X-CSRF-Token", "")):
+                return jsonify({"ok": False, "error": "Session expired"}), 403
+            if owner_id not in _PANEL_MASTER_IDS:
+                return jsonify({"ok": False, "error": "Owner account not found"}), 404
+
+            users = self._load_dashboard_users()
+            owner_entry = users.get(owner_id) if isinstance(users, dict) else None
+            if not isinstance(owner_entry, dict):
+                return jsonify({"ok": False, "error": "Owner account not found"}), 404
+
+            temporary_password = secrets.token_urlsafe(18)
+            owner_entry["password_hash"] = self._hash_pw(temporary_password)
+            owner_entry["password_reset_managed"] = True
+            users[owner_id] = owner_entry
+            self._save_dashboard_users(users)
+            self._record_user_activity(
+                str(session.get("user_id") or ""),
+                "owner_password_reset",
+                f"Rotated password for owner {owner_id}",
+                request.remote_addr or "",
+            )
+            return jsonify({
+                "ok": True,
+                "user_id": owner_id,
+                "username": str(owner_entry.get("username") or owner_id),
+                "password": temporary_password,
+                "password_delivery": "show_once",
             })
 
         @self.app.get("/api/dash/activity")

@@ -330,6 +330,41 @@ public sealed partial class MainWindow : Window
             ("Gateway latency", $"{ReadText(data, "gateway_latency_ms", "—")} ms"),
         }));
 
+        var ownerAccounts = new StackPanel { Spacing = 10 };
+        foreach (var owner in data.GetProperty("master_owners").EnumerateArray())
+        {
+            var ownerId = ReadText(owner, "user_id", "");
+            var ownerName = ReadText(owner, "username", "Owner");
+            var details = new StackPanel { Spacing = 4 };
+            details.Children.Add(new TextBlock
+            {
+                Text = ownerName,
+                FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+            });
+            details.Children.Add(new TextBlock
+            {
+                Text = $"Account ID: {ownerId}",
+                IsTextSelectionEnabled = true,
+                Foreground = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["AriaMutedBrush"],
+                TextWrapping = TextWrapping.Wrap,
+            });
+            var reset = new Button { Content = "Reset password" };
+            reset.Click += async (_, _) => await ResetOwnerPasswordAsync(ownerId, reset);
+            var row = new StackPanel { Spacing = 8 };
+            row.Children.Add(details);
+            row.Children.Add(reset);
+            ownerAccounts.Children.Add(new Border
+            {
+                Background = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["AriaRaisedBrush"],
+                BorderBrush = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["AriaBorderBrush"],
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(6),
+                Padding = new Thickness(12),
+                Child = row,
+            });
+        }
+        PageContent.Children.Add(CreatePanel("Owner accounts", ownerAccounts));
+
         var requests = data.GetProperty("password_reset_requests");
         var queue = new StackPanel { Spacing = 10 };
         if (requests.GetArrayLength() == 0)
@@ -389,6 +424,62 @@ public sealed partial class MainWindow : Window
                 Foreground = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["AriaMutedBrush"],
             });
         PageContent.Children.Add(CreatePanel("Recent accounts", accounts));
+    }
+
+    private async Task ResetOwnerPasswordAsync(string ownerId, Button button)
+    {
+        button.IsEnabled = false;
+        try
+        {
+            using var response = await _client.PostAsync(
+                $"/api/owner/accounts/{Uri.EscapeDataString(ownerId)}/password",
+                new { });
+            var username = ReadText(response.RootElement, "username", ownerId);
+            var password = ReadText(response.RootElement, "password", "");
+            if (password.Length == 0)
+                throw new InvalidOperationException("The server did not return the one-time password.");
+
+            var content = new StackPanel { Spacing = 8 };
+            content.Children.Add(new TextBlock
+            {
+                Text = $"{username} ({ownerId})",
+                TextWrapping = TextWrapping.Wrap,
+            });
+            content.Children.Add(new TextBlock
+            {
+                Text = password,
+                IsTextSelectionEnabled = true,
+                FontFamily = new Microsoft.UI.Xaml.Media.FontFamily("Consolas"),
+                TextWrapping = TextWrapping.Wrap,
+            });
+            content.Children.Add(new TextBlock
+            {
+                Text = "Copy and store this password securely. Aria stores only its hash and will not show the password again.",
+                TextWrapping = TextWrapping.Wrap,
+                Foreground = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["AriaMutedBrush"],
+            });
+            var dialog = new ContentDialog
+            {
+                Title = "New owner password",
+                Content = content,
+                CloseButtonText = "Done",
+                XamlRoot = PageContent.XamlRoot,
+            };
+            await dialog.ShowAsync();
+        }
+        catch (Exception error)
+        {
+            PageContent.Children.Insert(0, new TextBlock
+            {
+                Text = error.Message,
+                Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.Salmon),
+                TextWrapping = TextWrapping.Wrap,
+            });
+        }
+        finally
+        {
+            button.IsEnabled = true;
+        }
     }
 
     private async Task ResolvePasswordResetAsync(string requestId, bool approve)

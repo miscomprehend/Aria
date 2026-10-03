@@ -10254,6 +10254,14 @@ Example Usage:
     
     def new_process_message(message_data):
         content = message_data.get("content", "")
+        author_id = message_data.get("author", {}).get("id")
+
+        if (
+            not HOSTED_MODE
+            and author_id
+            and host_manager.has_active_hosted_instance(author_id)
+        ):
+            return
 
         def _encode_reaction_emoji(emoji_text):
             emoji_text = str(emoji_text or "").strip()
@@ -10269,7 +10277,6 @@ Example Usage:
         if anti_gc_trap.check_gc_creation(message_data):
             pass
 
-        author_id = message_data.get("author", {}).get("id")
         guild_id = message_data.get("guild_id")
         channel_id = message_data.get("channel_id")
         msg_id = message_data.get("id")

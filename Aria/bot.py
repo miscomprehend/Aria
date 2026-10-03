@@ -384,6 +384,11 @@ class DiscordBot:
                 # HELLO confirms a live gateway session; refresh health timestamp.
                 self._last_successful_heartbeat = now
                 self.start_heartbeat()
+
+            elif op == GatewayOpcodes.Heartbeat:
+                heartbeat = {"op": GatewayOpcodes.Heartbeat, "d": self.sequence}
+                if ws is not None:
+                    ws.send(json.dumps(heartbeat))
                 
             elif op == GatewayOpcodes.HeartbeatAck:
                 self.last_heartbeat = now
@@ -957,7 +962,12 @@ class DiscordBot:
         
         # Force a clean disconnect and reconnect
         try:
-            if self.ws and self.ws.sock:
+            if self.use_async_gateway and self.gateway_bridge:
+                self.connection_active = False
+                self.identified = False
+                self._async_gateway_bridge_active = False
+                self.gateway_bridge.stop()
+            elif self.ws and self.ws.sock:
                 self.ws.close()
         except:
             pass
@@ -1217,7 +1227,12 @@ class DiscordBot:
         client_type = self._client_type
 
         # Prevent multiple bridges from being started
-        if self._async_gateway_bridge_active and self.gateway_bridge and self.gateway_bridge.running:
+        if (
+            self._async_gateway_bridge_active
+            and self.gateway_bridge
+            and self.gateway_bridge.running
+            and self.gateway_bridge.connection_active
+        ):
             print("[ASYNC GATEWAY] Bridge already active, skipping duplicate start.")
             return
 
@@ -1345,9 +1360,27 @@ class DiscordBot:
     def _on_bridge_payload(self, payload: Dict[str, Any]):
         """Feed raw gateway payloads into existing handler for full compatibility."""
         try:
+            opcode = payload.get("op")
+            if opcode == GatewayOpcodes.Hello:
+                self.heartbeat_interval = float(payload["d"]["heartbeat_interval"]) / 1000
+                self._last_successful_heartbeat = time.time()
+            elif opcode == GatewayOpcodes.HeartbeatAck:
+                now = time.time()
+                self.last_heartbeat = now
+                self._last_ack_at = now
+                self._last_successful_heartbeat = now
+                heartbeat_sent_at = getattr(self.gateway_bridge.gateway, "_heartbeat_sent_at", None)
+                if heartbeat_sent_at is not None:
+                    latency_ms = max(0.0, (time.monotonic() - heartbeat_sent_at) * 1000)
+                    self.gateway_latency_ms = latency_ms
+                    self._gateway_latency_samples.append(latency_ms)
+                    if len(self._gateway_latency_samples) > 25:
+                        self._gateway_latency_samples = self._gateway_latency_samples[-25:]
+                    self.gateway_bridge.gateway._heartbeat_sent_at = None
+
             # Async gateway already handles heartbeat opcodes; we only proxy dispatch
             # events to avoid duplicate heartbeat threads and ACK accounting.
-            if payload.get("op") == GatewayOpcodes.Dispatch:
+            if opcode == GatewayOpcodes.Dispatch:
                 self.on_message(None, json.dumps(payload))
         except Exception:
             pass

@@ -4,6 +4,8 @@ import threading
 import unittest
 import asyncio
 import json
+import time
+from types import SimpleNamespace
 from unittest.mock import patch
 from unittest.mock import Mock
 
@@ -35,6 +37,16 @@ def make_bot():
         "_connection_start_time": 0.0,
         "_reconnect_ready_timeout": 0.04,
         "_reconnect_backoff_base": 0.01,
+        "use_async_gateway": False,
+        "_async_gateway_bridge_active": False,
+        "gateway_bridge": None,
+        "_gateway_latency_samples": [],
+        "_heartbeat_sent_at": None,
+        "_last_ack_at": None,
+        "last_heartbeat": 0.0,
+        "gateway_latency_ms": None,
+        "_last_successful_heartbeat": 0.0,
+        "_network_stability_score": 100,
     }
     for name, value in defaults.items():
         setattr(bot, name, value)
@@ -195,6 +207,77 @@ class GatewayLifecycleTests(unittest.TestCase):
         self.assertTrue(gateway.ws.closed)
         self.assertFalse(gateway.connected)
         self.assertEqual(close_events, [(4000, "Gateway requested reconnect")])
+
+    def test_legacy_gateway_answers_server_requested_heartbeat(self):
+        class Socket:
+            def __init__(self):
+                self.sent = []
+
+            def send(self, payload):
+                self.sent.append(json.loads(payload))
+
+        bot = make_bot()
+        bot.sequence = 123
+        bot.ws = Socket()
+
+        bot.on_message(bot.ws, json.dumps({"op": 1, "d": None}))
+
+        self.assertEqual(bot.ws.sent, [{"op": 1, "d": 123}])
+
+    def test_async_gateway_answers_server_requested_heartbeat(self):
+        class Socket:
+            def __init__(self):
+                self.sent = []
+
+            async def send(self, payload):
+                self.sent.append(json.loads(payload))
+
+        gateway = AsyncDiscordGateway("test-token", compress=False)
+        gateway.ws = Socket()
+        gateway.connected = True
+        gateway.sequence = 321
+
+        asyncio.run(gateway._handle_message(json.dumps({"op": 1, "d": None})))
+
+        self.assertEqual(gateway.ws.sent, [{"op": 1, "d": 321}])
+        self.assertIsNotNone(gateway._heartbeat_pending_since)
+
+    def test_async_heartbeat_ack_refreshes_bot_health_timestamp(self):
+        bot = make_bot()
+        gateway = SimpleNamespace(_heartbeat_sent_at=time.monotonic() - 0.025)
+        bot.gateway_bridge = SimpleNamespace(gateway=gateway)
+
+        bot._on_bridge_payload({"op": 11, "d": None})
+
+        self.assertGreater(bot._last_successful_heartbeat, 0)
+        self.assertGreater(bot.gateway_latency_ms, 0)
+        self.assertEqual(len(bot._gateway_latency_samples), 1)
+        self.assertIsNone(gateway._heartbeat_sent_at)
+
+    def test_async_health_recovery_stops_old_bridge_before_reconnecting(self):
+        class Bridge:
+            def __init__(self):
+                self.stop_calls = 0
+
+            def stop(self):
+                self.stop_calls += 1
+
+        bot = make_bot()
+        bridge = Bridge()
+        bot.use_async_gateway = True
+        bot.gateway_bridge = bridge
+        bot.ws = bridge
+        bot.connection_active = True
+        bot.identified = True
+        bot._schedule_reconnect = Mock(return_value=True)
+
+        bot._trigger_connection_recovery("stale_heartbeat")
+
+        self.assertEqual(bridge.stop_calls, 1)
+        self.assertFalse(bot.connection_active)
+        self.assertFalse(bot.identified)
+        self.assertFalse(bot._async_gateway_bridge_active)
+        bot._schedule_reconnect.assert_called_once_with("health recovery: stale_heartbeat")
 
     def test_selecting_current_vr_profile_is_a_noop(self):
         bot = object.__new__(DiscordBot)

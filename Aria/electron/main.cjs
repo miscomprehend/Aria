@@ -34,6 +34,7 @@ let logFilePath = null;
 let nativeDashboardProcess = null;
 let nativeControlServer = null;
 let nativeControlToken = null;
+let isQuitting = false;
 
 if (process.platform === "win32") app.setAppUserModelId(APP_ID);
 
@@ -56,17 +57,17 @@ function initializeLogging() {
   logMessage("INFO", `Desktop log: ${logFilePath}`);
 }
 
-function attachBackendOutput(stream, level) {
+function attachProcessOutput(stream, source, level) {
   let pending = "";
   stream.on("data", (chunk) => {
     const lines = `${pending}${chunk.toString()}`.split(/\r?\n/);
     pending = lines.pop() || "";
     for (const line of lines) {
-      if (line.trim()) logMessage(level, `[backend] ${line.trim()}`);
+      if (line.trim()) logMessage(level, `[${source}] ${line.trim()}`);
     }
   });
   stream.on("end", () => {
-    if (pending.trim()) logMessage(level, `[backend] ${pending.trim()}`);
+    if (pending.trim()) logMessage(level, `[${source}] ${pending.trim()}`);
   });
 }
 
@@ -182,8 +183,8 @@ function startBackend(runtimeToken = null, ownerId = desktopOwnerId) {
     },
     stdio: ["pipe", "pipe", "pipe"],
   });
-  attachBackendOutput(backendProcess.stdout, "INFO");
-  attachBackendOutput(backendProcess.stderr, "ERROR");
+  attachProcessOutput(backendProcess.stdout, "backend", "INFO");
+  attachProcessOutput(backendProcess.stderr, "backend", "ERROR");
   backendProcess.stdin.on("error", () => {});
   backendProcess.stdin.end(runtimeToken ? `${runtimeToken}\n` : "");
   backendProcess.once("error", (error) => {
@@ -257,6 +258,7 @@ async function launchNativeDashboard() {
   }
 
   await ensureNativeControlServer();
+  logMessage("INFO", `Launching native dashboard: ${executable}`);
   nativeDashboardProcess = spawn(executable, [], {
     cwd: path.dirname(executable),
     env: {
@@ -267,9 +269,11 @@ async function launchNativeDashboard() {
       ARIA_NATIVE_CONTROL_URL: `http://${HOST}:${nativeControlServer.address().port}/`,
       ARIA_NATIVE_CONTROL_TOKEN: nativeControlToken,
     },
-    stdio: ["ignore", "ignore", "ignore"],
+    stdio: ["ignore", "pipe", "pipe"],
     windowsHide: false,
   });
+  attachProcessOutput(nativeDashboardProcess.stdout, "native dashboard", "INFO");
+  attachProcessOutput(nativeDashboardProcess.stderr, "native dashboard", "ERROR");
   desktopAuthToken = null;
   nativeDashboardProcess.once("error", (error) => {
     logMessage("ERROR", `Could not start the native dashboard: ${error.message}`);
@@ -279,6 +283,12 @@ async function launchNativeDashboard() {
   nativeDashboardProcess.once("exit", (code, signal) => {
     nativeDashboardProcess = null;
     logMessage(code === 0 ? "INFO" : "ERROR", `Native dashboard exited (${code ?? signal}).`);
+    if (code !== 0 && !isQuitting) {
+      dialog.showErrorBox(
+        "Aria dashboard closed unexpectedly",
+        `The native dashboard exited (${code ?? signal}). Check the desktop log for details:\n\n${logFilePath || "Log file unavailable"}`,
+      );
+    }
     app.quit();
   });
   if (mainWindow && !mainWindow.isDestroyed()) mainWindow.close();
@@ -359,6 +369,10 @@ async function waitForDashboard() {
   while (Date.now() < deadline) {
     if (backendStartError) throw backendStartError;
     if (backendProcess.exitCode !== null || backendProcess.signalCode !== null) {
+      if (backendProcess.exitCode === 0 && !hasSavedToken()) {
+        logMessage("INFO", "Backend is ready for first-time token setup; opening the desktop setup screen.");
+        return `http://${HOST}:${PORTS[0]}`;
+      }
       throw new Error(`Aria backend exited with code ${backendProcess.exitCode ?? backendProcess.signalCode}. Check its Python dependencies and config.`);
     }
     const url = await findDashboard();
@@ -764,6 +778,7 @@ app.on("activate", () => {
 });
 
 app.on("before-quit", () => {
+  isQuitting = true;
   logMessage("INFO", "Closing Aria desktop.");
   nativeControlServer?.close();
   if (nativeDashboardProcess && nativeDashboardProcess.exitCode === null) nativeDashboardProcess.kill();

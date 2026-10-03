@@ -122,6 +122,38 @@ class HostManager:
             self.saved_users.pop(token_id, None)
         return len(dup_ids)
 
+    def _remove_duplicate_saved_owners_locked(self):
+        """Keep one saved hosted client per requester, preferring a live client."""
+        entries_by_owner = {}
+        for token_id, data in self.saved_users.items():
+            owner_id = str(data.get("owner") or "").strip()
+            if owner_id:
+                entries_by_owner.setdefault(owner_id, []).append((token_id, data))
+
+        removed = []
+        for entries in entries_by_owner.values():
+            if len(entries) < 2:
+                continue
+
+            def keep_priority(entry):
+                token_id, data = entry
+                process_alive = bool(
+                    data.get("pid")
+                    and _hosted_process_is_alive(data.get("pid"), token_id)
+                )
+                try:
+                    connected_at = int(data.get("connected_at", 0) or 0)
+                except (TypeError, ValueError):
+                    connected_at = 0
+                return process_alive, connected_at, str(token_id)
+
+            keep_token_id, _ = max(entries, key=keep_priority)
+            for token_id, data in entries:
+                if token_id != keep_token_id:
+                    self.saved_users.pop(token_id, None)
+                    removed.append((token_id, data))
+        return removed
+
     def _has_existing_token_locked(self, token):
         token = str(token or "").strip()
         if not token:
@@ -143,6 +175,11 @@ class HostManager:
             if str(data.get("owner") or "") == owner_id:
                 return True
         return False
+
+    def has_active_hosted_instance(self, owner_id):
+        """Return whether the owner currently has a hosted client handling commands."""
+        with self.lock:
+            return self._user_has_active_hosted_locked(owner_id)
 
     def _attach_existing_process(self, token_id, data):
         pid = data.get("pid")
@@ -398,6 +435,7 @@ if existing_pythonpath:
     pythonpath_parts.append(existing_pythonpath)
 env["PYTHONPATH"] = os.pathsep.join(pythonpath_parts)
 env["HOSTED_TOKEN"] = "true"
+env["PYTHONUNBUFFERED"] = "1"
 env["HOSTED_UID"] = {hosted_uid!r}
 env["HOSTED_OWNER_ID"] = {owner_id!r}
 env["HOSTED_USER_ID"] = {user_id!r}
@@ -415,35 +453,64 @@ else:
             with open(runner_file, "w") as f:
                 f.write(runner_code)
 
-            # Each hosted bot writes to its own log — keeps main console clean
+            # Keep the hosted process writing to a file so it survives the parent.
             log_dir = os.path.join(project_root, "hosted_logs")
             os.makedirs(log_dir, exist_ok=True)
             log_path = os.path.join(log_dir, f"hosted_{hosted_uid}.log")
-            log_file = open(log_path, "a")
 
             command = [sys.executable, runner_file]
             if getattr(sys, "frozen", False):
                 command = [sys.executable, "--aria-run-script", runner_file]
-            popen_kwargs = {
-                "args": command,
-                "stdout": log_file,
-                "stderr": log_file,
-                "stdin": subprocess.DEVNULL,
-                "cwd": project_root,
-            }
-            if os.name == "nt":
-                popen_kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
-            else:
-                # Detach hosted instances from controller process group so they survive main shutdown.
-                popen_kwargs["start_new_session"] = True
+            with open(log_path, "ab") as log_file:
+                log_offset = log_file.tell()
+                popen_kwargs = {
+                    "args": command,
+                    "stdout": log_file,
+                    "stderr": subprocess.STDOUT,
+                    "stdin": subprocess.DEVNULL,
+                    "cwd": project_root,
+                }
+                if os.name == "nt":
+                    popen_kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
+                else:
+                    # Detach hosted instances from controller process group so they survive main shutdown.
+                    popen_kwargs["start_new_session"] = True
 
-            process = subprocess.Popen(**popen_kwargs)
-            log_file.close()  # parent closes; child keeps its own fd copy
+                process = subprocess.Popen(**popen_kwargs)
+            self._start_hosted_output_forwarder(log_path, log_offset, process, hosted_uid)
             return process
 
         except Exception as e:
             logger.error("Host start error: %s", e)
             return None
+
+    @staticmethod
+    def _forward_hosted_output(log_path, log_offset, process, hosted_uid):
+        try:
+            with open(log_path, "rb") as log_file:
+                log_file.seek(log_offset)
+                while True:
+                    line = log_file.readline()
+                    if line:
+                        try:
+                            message = line.decode("utf-8", errors="replace").rstrip("\r\n")
+                            print(f"[HOSTED {hosted_uid}] {message}", flush=True)
+                        except BrokenPipeError:
+                            pass
+                    elif process.poll() is not None:
+                        break
+                    else:
+                        time.sleep(0.1)
+        except OSError as error:
+            logger.error("Could not forward hosted instance %s output: %s", hosted_uid, error)
+
+    def _start_hosted_output_forwarder(self, log_path, log_offset, process, hosted_uid):
+        threading.Thread(
+            target=self._forward_hosted_output,
+            args=(log_path, log_offset, process, hosted_uid),
+            daemon=True,
+            name=f"hosted-log-{hosted_uid}",
+        ).start()
 
     def _start_keepalive(self, token_id):
         """Spawn a daemon watchdog that auto-restarts a hosted bot when it crashes."""
@@ -892,6 +959,7 @@ else:
             prefix = data.get("prefix", ";")
             config_file = f"hosted_{token_id}.json"
             process = self._attach_existing_process(token_id, data)
+            attached_existing_process = process is not None
             if process is None:
                 process = self._run_their_bot(
                     config_file,
@@ -930,6 +998,20 @@ else:
                 self._terminate_process(process)
                 return False
 
+            if attached_existing_process:
+                log_path = os.path.join(
+                    os.path.dirname(os.path.abspath(__file__)),
+                    "hosted_logs",
+                    f"hosted_{token_id}.log",
+                )
+                try:
+                    os.makedirs(os.path.dirname(log_path), exist_ok=True)
+                    with open(log_path, "ab") as log_file:
+                        log_offset = log_file.tell()
+                    self._start_hosted_output_forwarder(log_path, log_offset, process, token_id)
+                except OSError as error:
+                    logger.error("Could not follow hosted instance %s output: %s", token_id, error)
+
             self._start_keepalive(token_id)
             return True
 
@@ -942,10 +1024,23 @@ else:
 
         try:
             with self.lock:
-                removed = self._remove_duplicate_saved_tokens_locked()
-                if removed:
+                removed_tokens = self._remove_duplicate_saved_tokens_locked()
+                removed_owners = self._remove_duplicate_saved_owners_locked()
+                if removed_tokens or removed_owners:
                     self._save_users()
                 saved_entries = [(token_id, data.copy()) for token_id, data in self.saved_users.items()]
+
+            for token_id, data in removed_owners:
+                process = self.processes.pop(token_id, None) or self._attach_existing_process(token_id, data)
+                if process is not None:
+                    self._terminate_process(process)
+                self.active_tokens.pop(token_id, None)
+                self._cleanup_hosted_instance_files(token_id)
+            if removed_owners:
+                logger.warning(
+                    "Removed %s duplicate hosted instance(s) for owners that already have one client",
+                    len(removed_owners),
+                )
 
             restored = 0
 

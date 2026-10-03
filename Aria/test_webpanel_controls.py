@@ -711,7 +711,7 @@ class WebPanelControlTests(unittest.TestCase):
         runner_path = project_root / "runner_test-id.py"
         Path("hosted_test.json").write_text(json.dumps({"token": token, "prefix": "$"}), encoding="utf-8")
         try:
-            with patch("host.subprocess.Popen", return_value=Mock()):
+            with patch("host.subprocess.Popen", return_value=Mock(stdout=None)):
                 manager = HostManager.__new__(HostManager)
                 manager._run_their_bot("hosted_test.json", token, hosted_uid="test-id")
 
@@ -824,6 +824,7 @@ class WebPanelControlTests(unittest.TestCase):
         attached_process = Mock(pid=4321)
         manager._attach_existing_process = Mock(return_value=attached_process)
         manager._run_their_bot = Mock()
+        manager._start_hosted_output_forwarder = Mock()
         manager._start_keepalive = Mock()
         manager._save_users = Mock()
 
@@ -833,6 +834,7 @@ class WebPanelControlTests(unittest.TestCase):
         self.assertIs(manager.processes["host-id"], attached_process)
         self.assertEqual(manager.active_tokens["host-id"]["pid"], 4321)
         manager._run_their_bot.assert_not_called()
+        manager._start_hosted_output_forwarder.assert_called_once()
         manager._start_keepalive.assert_called_once_with("host-id")
 
     def test_friend_directory_requires_authentication_and_account_identity(self):
@@ -1009,6 +1011,59 @@ class WebPanelControlTests(unittest.TestCase):
         self.assertNotIn("account-secret-id", str(response.json["data"]["accounts"]))
         self.assertNotIn("password_hash", str(response.json["data"]))
         self.assertEqual(response.json["data"]["password_reset_requests"][0]["username"], "aria-user")
+        owners = response.json["data"]["master_owners"]
+        self.assertEqual({owner["user_id"] for owner in owners}, {_PANEL_MASTER_ID, _PANEL_SECONDARY_OWNER_ID})
+        self.assertNotIn("password", str(owners).lower())
+        secondary_owner = next(owner for owner in owners if owner["user_id"] == _PANEL_SECONDARY_OWNER_ID)
+        self.assertEqual(secondary_owner["username"], "stackss")
+
+    def test_owner_can_rotate_only_master_owner_password_and_retrieve_it_once(self):
+        users = {
+            _PANEL_SECONDARY_OWNER_ID: {
+                "username": "stackss",
+                "password_hash": panel._hash_pw("previous-password"),
+            }
+        }
+        panel._load_dashboard_users = lambda: dict(users)
+        panel._save_dashboard_users = lambda updated: (users.clear(), users.update(updated))
+        panel._record_user_activity = lambda *args: None
+        csrf_headers = {"X-CSRF-Token": "test-csrf-token"}
+
+        with self.client.session_transaction() as active_session:
+            active_session["user_id"] = "delegated-admin"
+        denied = self.client.post(
+            f"/api/owner/accounts/{_PANEL_SECONDARY_OWNER_ID}/password",
+            json={},
+            headers=csrf_headers,
+        )
+        self.assertEqual(denied.status_code, 403)
+
+        with self.client.session_transaction() as active_session:
+            active_session["user_id"] = _PANEL_MASTER_ID
+        missing_csrf = self.client.post(
+            f"/api/owner/accounts/{_PANEL_SECONDARY_OWNER_ID}/password",
+            json={},
+        )
+        self.assertEqual(missing_csrf.status_code, 403)
+
+        response = self.client.post(
+            f"/api/owner/accounts/{_PANEL_SECONDARY_OWNER_ID}/password",
+            json={},
+            headers=csrf_headers,
+        )
+        self.assertEqual(response.status_code, 200)
+        password = response.json["password"]
+        self.assertTrue(panel._password_matches(password, users[_PANEL_SECONDARY_OWNER_ID]["password_hash"]))
+        self.assertTrue(users[_PANEL_SECONDARY_OWNER_ID]["password_reset_managed"])
+        self.assertEqual(response.json["password_delivery"], "show_once")
+        self.assertEqual(
+            self.client.post(
+                "/api/owner/accounts/unrelated-user/password",
+                json={},
+                headers=csrf_headers,
+            ).status_code,
+            404,
+        )
 
     def test_owner_credentials_from_config_are_applied_to_admin_account(self):
         users = {}
@@ -1044,6 +1099,51 @@ class WebPanelControlTests(unittest.TestCase):
 
         self.assertEqual(users[owner_id]["username"], "renny")
         self.assertTrue(panel._password_matches("existing-password", users[owner_id]["password_hash"]))
+
+    def test_secondary_owner_username_is_stackss_on_every_start(self):
+        owner_id = _PANEL_SECONDARY_OWNER_ID
+        users = {
+            owner_id: {
+                "username": "old-owner-name",
+                "password_hash": panel._hash_pw("existing-password"),
+                "instance_id": "main",
+                "role": "admin",
+            }
+        }
+        panel.owner_id = owner_id
+        panel.rotate_owner_password = False
+        panel._load_dashboard_users = lambda: dict(users)
+        panel._save_dashboard_users = lambda updated: (users.clear(), users.update(updated))
+        panel._read_owner_config = lambda: {"owner_username": "different-name"}
+        panel._configured_admin_ids = lambda: {owner_id}
+
+        panel._ensure_admin_account()
+
+        self.assertEqual(users[owner_id]["username"], "stackss")
+        self.assertTrue(panel._password_matches("existing-password", users[owner_id]["password_hash"]))
+
+    def test_manual_owner_password_reset_is_not_overwritten_by_config(self):
+        owner_id = _PANEL_SECONDARY_OWNER_ID
+        reset_password = "one-time-password"
+        users = {
+            owner_id: {
+                "username": "stackss",
+                "password_hash": panel._hash_pw(reset_password),
+                "password_reset_managed": True,
+                "instance_id": "main",
+                "role": "admin",
+            }
+        }
+        panel.owner_id = owner_id
+        panel.rotate_owner_password = True
+        panel._load_dashboard_users = lambda: dict(users)
+        panel._save_dashboard_users = lambda updated: (users.clear(), users.update(updated))
+        panel._read_owner_config = lambda: {"owner_password": "config-password"}
+        panel._configured_admin_ids = lambda: {owner_id}
+
+        panel._ensure_admin_account()
+
+        self.assertTrue(panel._password_matches(reset_password, users[owner_id]["password_hash"]))
 
     def test_generated_owner_password_rotates_and_prints_only_to_terminal(self):
         users = {
