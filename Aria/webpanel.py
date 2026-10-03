@@ -1075,17 +1075,31 @@ class WebPanel:
         }
 
     def _normalize_rpc_asset_key(self, image_value: str, application_id: str = "") -> str:
-        """Convert image URLs to Discord media-proxy keys where possible."""
+        """Convert image URLs to Discord media-proxy keys where possible.
+        
+        Priority:
+        1. Already-normalized mp: assets are passed through
+        2. Discord attachment URLs are converted to mp:attachments/ keys
+        3. External HTTP URLs + valid app_id -> try registering as external asset
+        4. Fallback -> upload via DM to get an mp:attachments/ key
+        5. Last resort -> return raw URL (Discord clients may still render newer URLs)
+        """
         value = str(image_value or "").strip()
         if not value:
             return value
+        
+        # Handle already-normalized mp: keys
         if value.startswith("mp:"):
             while value.startswith("mp:"):
                 value = value[3:]
             if not value.startswith(("http://", "https://")):
                 return f"mp:{value}"
+        
+        # Convert local attachment references to mp: keys
         if value.startswith("attachments/"):
             return f"mp:{value}"
+        
+        # Check if it's already a Discord CDN URL and convert it
         attachment_match = re.match(
             r"https?://(?:cdn\.discordapp\.com|media\.discordapp\.net)/attachments/(\d+)/(\d+)/([^/?#]+)",
             value,
@@ -1094,53 +1108,63 @@ class WebPanel:
         if attachment_match:
             channel_id, attachment_id, filename = attachment_match.groups()
             return f"mp:attachments/{channel_id}/{attachment_id}/{filename}"
+        
+        # If not an HTTP URL, return as-is
         if not value.startswith(("http://", "https://")):
             return value
 
         b = self.bot
         api = (getattr(b, "api", None) if b else None) or self.api
         app_id = str(application_id or "").strip()
-        if not api or not app_id:
+        
+        if not api:
+            # No API available, return the URL as-is
             return value
+        
+        # Try to register as external asset if app_id is available
+        if app_id:
+            try:
+                resp = api.request(
+                    "POST",
+                    f"/applications/{app_id}/external-assets",
+                    data={"urls": [value]},
+                )
+                if resp and resp.status_code in (200, 201):
+                    payload = resp.json()
+                    if isinstance(payload, dict):
+                        payload = payload.get("external_assets") or payload.get("assets") or []
+                    if isinstance(payload, list) and payload:
+                        path = payload[0].get("external_asset_path") or payload[0].get("asset_path")
+                        if path:
+                            path = str(path).strip()
+                            # If the asset path is a URL, extract the attachment part
+                            if path.startswith(("http://", "https://")):
+                                attachment_match = re.match(
+                                    r"https?://(?:cdn\.discordapp\.com|media\.discordapp\.net)/(attachments/\d+/\d+/[^?#]+)",
+                                    path,
+                                    re.IGNORECASE,
+                                )
+                                if attachment_match:
+                                    path = attachment_match.group(1)
+                                else:
+                                    path = ""
+                            if path:
+                                return f"mp:{path}"
+            except Exception as e:
+                # External asset registration failed, continue to fallback
+                pass
 
-        try:
-            resp = api.request(
-                "POST",
-                f"/applications/{app_id}/external-assets",
-                data={"urls": [value]},
-            )
-            if not resp or resp.status_code not in (200, 201):
-                return value
-            payload = resp.json()
-            if isinstance(payload, dict):
-                payload = payload.get("external_assets") or payload.get("assets") or []
-            if isinstance(payload, list) and payload:
-                path = payload[0].get("external_asset_path") or payload[0].get("asset_path")
-                if path:
-                    path = str(path).strip()
-                    if path.startswith(("http://", "https://")):
-                        attachment_match = re.match(
-                            r"https?://(?:cdn\.discordapp\.com|media\.discordapp\.net)/(attachments/\d+/\d+/[^?#]+)",
-                            path,
-                            re.IGNORECASE,
-                        )
-                        if attachment_match:
-                            path = attachment_match.group(1)
-                        else:
-                            path = ""
-                if path:
-                    return f"mp:{path}"
-        except Exception:
-            pass
-
-        # Fallback: upload URL image to self-DM and use attachment media proxy key.
+        # Fallback: upload URL image to self-DM and use attachment media proxy key
         try:
             uploaded = self._upload_rpc_image_to_self_dm(api, value)
             if uploaded:
                 return uploaded
-        except Exception:
+        except Exception as e:
+            # Upload to self-DM failed, continue to last resort
             pass
 
+        # Last resort: return raw URL - newer Discord clients may still render it
+        # Log this so admins know images might not display properly
         return value
 
     @staticmethod
@@ -1211,58 +1235,67 @@ class WebPanel:
         if not image_url or not api:
             return None
 
-        # Download source image
-        resp = api.session.get(image_url, timeout=15)
-        if resp.status_code != 200:
-            return None
-        image_bytes = resp.content
-        content_type = (resp.headers.get("Content-Type") or "application/octet-stream").split(";", 1)[0].strip()
-        ext_map = {
-            "image/png": "png",
-            "image/jpeg": "jpg",
-            "image/jpg": "jpg",
-            "image/webp": "webp",
-            "image/gif": "gif",
-        }
-        ext = ext_map.get(content_type, "png")
-        raw_name = image_url.split("/")[-1].split("?", 1)[0]
-        filename = raw_name if ("." in raw_name and len(raw_name) <= 60) else f"rpc_asset.{ext}"
+        try:
+            # Download source image
+            resp = api.session.get(image_url, timeout=15)
+            if resp.status_code != 200:
+                return None
+            image_bytes = resp.content
+            content_type = (resp.headers.get("Content-Type") or "application/octet-stream").split(";", 1)[0].strip()
+            ext_map = {
+                "image/png": "png",
+                "image/jpeg": "jpg",
+                "image/jpg": "jpg",
+                "image/webp": "webp",
+                "image/gif": "gif",
+            }
+            ext = ext_map.get(content_type, "png")
+            raw_name = image_url.split("/")[-1].split("?", 1)[0]
+            filename = raw_name if ("." in raw_name and len(raw_name) <= 60) else f"rpc_asset.{ext}"
 
-        # Ensure account user id exists
-        if not getattr(api, "user_id", None):
+            # Ensure account user id exists
+            if not getattr(api, "user_id", None):
+                try:
+                    api.get_user_info(force=False)
+                except Exception:
+                    pass
+            user_id = getattr(api, "user_id", None)
+            if not user_id:
+                return None
+
+            dm = api.create_dm(user_id)
+            if not dm or "id" not in dm:
+                return None
+
+            # Get protected headers for API request
             try:
-                api.get_user_info(force=False)
+                headers = api.header_spoofer.get_protected_headers(api.token)
             except Exception:
-                pass
-        user_id = getattr(api, "user_id", None)
-        if not user_id:
-            return None
+                # If header_spoofer is not available, use basic auth header
+                headers = {"Authorization": f"Bearer {api.token}"}
+            
+            files = {"file": (filename, image_bytes, content_type)}
+            msg_resp = api.session.post(
+                f"https://discord.com/api/v9/channels/{dm['id']}/messages",
+                headers=headers,
+                files=files,
+                timeout=20,
+            )
+            if msg_resp.status_code != 200:
+                return None
+            data = msg_resp.json() if hasattr(msg_resp, "json") else {}
+            attachments = data.get("attachments") if isinstance(data, dict) else []
+            if not attachments:
+                return None
 
-        dm = api.create_dm(user_id)
-        if not dm or "id" not in dm:
+            url = attachments[0].get("url", "")
+            m = re.search(r"https?://(?:cdn\.discordapp\.com|media\.discordapp\.net)/attachments/(\d+)/(\d+)/([^?#]+)", url)
+            if not m:
+                return None
+            channel_id, attachment_id, file_name = m.groups()
+            return f"mp:attachments/{channel_id}/{attachment_id}/{file_name}"
+        except Exception as e:
             return None
-
-        headers = api.header_spoofer.get_protected_headers(api.token)
-        files = {"file": (filename, image_bytes, content_type)}
-        msg_resp = api.session.post(
-            f"https://discord.com/api/v9/channels/{dm['id']}/messages",
-            headers=headers,
-            files=files,
-            timeout=20,
-        )
-        if msg_resp.status_code != 200:
-            return None
-        data = msg_resp.json() if hasattr(msg_resp, "json") else {}
-        attachments = data.get("attachments") if isinstance(data, dict) else []
-        if not attachments:
-            return None
-
-        url = attachments[0].get("url", "")
-        m = re.search(r"https?://(?:cdn\.discordapp\.com|media\.discordapp\.net)/attachments/(\d+)/(\d+)/([^?#]+)", url)
-        if not m:
-            return None
-        channel_id, attachment_id, file_name = m.groups()
-        return f"mp:attachments/{channel_id}/{attachment_id}/{file_name}"
 
     def _resolve_afk_system(self):
         """Return a working AFK system instance from bot ref or module fallback."""

@@ -82,6 +82,7 @@ class CommandEngine:
             ("reaction", "Reaction & Emoji Tools"),
             ("interaction", "User Interaction"),
             ("games", "Games & Fun"),
+            ("quest", "Quest status and progress"),
             
             # Nitro & Boosts
             ("nitro", "Nitro Features"),
@@ -334,6 +335,7 @@ def setup_commands_500(engine: CommandEngine) -> None:
     engine.register_command("general", "version", "Show Aria version")
     engine.register_command("general", "customize", "Customize bot settings")
     engine.register_command("general", "restart", "Restart the bot", ["reboot"])
+    engine.register_command("quest", "quest", "List quest status and progress", ["quests"])
     
     # ── SYSTEM & BOT CONTROL (30 commands) ─────────────────────────────
     engine.register_command("system", "help", "Show help menu", ["h", "commands"])

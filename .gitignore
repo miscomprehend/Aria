@@ -64,3 +64,6 @@ hosted_users.json
 runner_*.py
 Aria/build/
 Aria/release/
+
+# Per-token instance locks
+.instance_lock/

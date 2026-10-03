@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="csrf-token" content="__CSRF_TOKEN__">
+    <title>Aria Dashboard Portal 2026</title>
+    <link rel="icon" type="image/png" href="/static/images/aria-favicon.png">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        html, body {
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(135deg, #0a1018 0%, #1e1f22 100%);
+            color: #DBDEE1;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+            overflow: hidden;
+        }
+
+        .portal-container {
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+
+        .portal-header {
+            text-align: center;
+            margin-bottom: 40px;
+            animation: slideDown 0.6s ease-out;
+        }
+
+        .portal-logo {
+            font-size: 64px;
+            margin-bottom: 20px;
+            animation: float 3s ease-in-out infinite;
+        }
+
+        .portal-title {
+            font-size: 32px;
+            font-weight: 700;
+            background: linear-gradient(135deg, #69B7FF 0%, #A5D8FF 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin-bottom: 10px;
+        }
+
+        .portal-subtitle {
+            font-size: 14px;
+            color: #949BA4;
+        }
+
+        .portal-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            max-width: 1200px;
+            width: 100%;
+        }
+
+        .portal-card {
+            background: linear-gradient(135deg, rgba(105, 183, 255, 0.05) 0%, rgba(32, 34, 37, 0.5) 100%);
+            border: 1px solid rgba(32, 34, 37, 0.8);
+            border-radius: 12px;
+            padding: 24px;
+            text-decoration: none;
+            color: #DBDEE1;
+            transition: all 250ms ease-out;
+            cursor: pointer;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            animation: slideUp 0.6s ease-out;
+        }
+
+        .portal-card:hover {
+            border-color: #69B7FF;
+            background: linear-gradient(135deg, rgba(105, 183, 255, 0.15) 0%, rgba(105, 183, 255, 0.05) 100%);
+            transform: translateY(-4px);
+            box-shadow: 0 12px 32px rgba(105, 183, 255, 0.15);
+        }
+
+        .portal-icon {
+            font-size: 32px;
+        }
+
+        .portal-name {
+            font-size: 16px;
+            font-weight: 600;
+            color: #69B7FF;
+        }
+
+        .portal-desc {
+            font-size: 12px;
+            color: #949BA4;
+            line-height: 1.5;
+        }
+
+        .portal-badge {
+            font-size: 11px;
+            background: #62D39A;
+            color: #1e1f22;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-weight: 600;
+            width: fit-content;
+            margin-top: 8px;
+        }
+
+        .portal-badge.pro {
+            background: #E9BD68;
+        }
+
+        @keyframes slideDown {
+            from {
+                opacity: 0;
+                transform: translateY(-30px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        @keyframes slideUp {
+            from {
+                opacity: 0;
+                transform: translateY(30px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        @keyframes float {
+            0%, 100% {
+                transform: translateY(0px);
+            }
+            50% {
+                transform: translateY(-10px);
+            }
+        }
+
+        @media (max-width: 768px) {
+            .portal-grid {
+                grid-template-columns: 1fr;
+            }
+            .portal-title {
+                font-size: 24px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="portal-container">
+        <div class="portal-header">
+            <div class="portal-logo">⚔</div>
+            <h1 class="portal-title">Aria Dashboard 2026</h1>
+            <p class="portal-subtitle">Advanced Discord Control Center</p>
+        </div>
+
+        <div class="portal-grid">
+            <!-- Core Section -->
+            <a href="dashboard-2026.html?page=overview" class="portal-card" data-link="overview">
+                <div class="portal-icon">📊</div>
+                <div class="portal-name">Overview</div>
+                <div class="portal-desc">Main dashboard with stats and quick actions</div>
+            </a>
+
+            <a href="dashboard-2026.html?page=instances" class="portal-card" data-link="instances">
+                <div class="portal-icon">🖥</div>
+                <div class="portal-name">Instances</div>
+                <div class="portal-desc">Manage running Discord instances</div>
+            </a>
+
+            <!-- Workspace Section -->
+            <a href="dashboard-2026.html?page=commands" class="portal-card" data-link="commands">
+                <div class="portal-icon">⌨</div>
+                <div class="portal-name">Commands</div>
+                <div class="portal-desc">Command management and execution</div>
+            </a>
+
+            <a href="dashboard-2026.html?page=feed" class="portal-card" data-link="feed">
+                <div class="portal-icon">📰</div>
+                <div class="portal-name">Feed</div>
+                <div class="portal-desc">Activity log and notifications</div>
+            </a>
+
+            <a href="dashboard-2026.html?page=analytics" class="portal-card" data-link="analytics">
+                <div class="portal-icon">📈</div>
+                <div class="portal-name">Analytics</div>
+                <div class="portal-desc">Statistics and telemetry</div>
+                <div class="portal-badge pro">PRO</div>
+            </a>
+
+            <!-- Presence Section -->
+            <a href="dashboard-2026.html?page=presence-studio" class="portal-card" data-link="presence">
+                <div class="portal-icon">🎨</div>
+                <div class="portal-name">Presence Studio</div>
+                <div class="portal-desc">Custom presence creator</div>
+            </a>
+
+            <a href="dashboard-2026.html?page=status" class="portal-card" data-link="status">
+                <div class="portal-icon">🟢</div>
+                <div class="portal-name">Status</div>
+                <div class="portal-desc">Online status management</div>
+            </a>
+
+            <a href="dashboard-2026.html?page=nitro" class="portal-card" data-link="nitro">
+                <div class="portal-icon">⭐</div>
+                <div class="portal-name">Nitro</div>
+                <div class="portal-desc">Nitro and boost management</div>
+            </a>
+
+            <!-- Engagement Section -->
+            <a href="dashboard-2026.html?page=quests-overview" class="portal-card" data-link="quests">
+                <div class="portal-icon">🗺</div>
+                <div class="portal-name">Quests</div>
+                <div class="portal-desc">Quest system and rewards</div>
+            </a>
+
+            <a href="dashboard-2026.html?page=active-quests" class="portal-card" data-link="active">
+                <div class="portal-icon">⚡</div>
+                <div class="portal-name">Active Quests</div>
+                <div class="portal-desc">In-progress quest management</div>
+            </a>
+
+            <a href="dashboard-2026.html?page=completed" class="portal-card" data-link="completed">
+                <div class="portal-icon">✅</div>
+                <div class="portal-name">Completed</div>
+                <div class="portal-desc">Completed quests history</div>
+            </a>
+
+            <a href="dashboard-2026.html?page=available-quests" class="portal-card" data-link="available">
+                <div class="portal-icon">🎯</div>
+                <div class="portal-name">Available</div>
+                <div class="portal-desc">Quests to enroll in</div>
+            </a>
+
+            <!-- Account Section -->
+            <a href="dashboard-2026.html?page=profile" class="portal-card" data-link="profile">
+                <div class="portal-icon">👤</div>
+                <div class="portal-name">Profile</div>
+                <div class="portal-desc">User profile and statistics</div>
+            </a>
+
+            <a href="dashboard-2026.html?page=friends" class="portal-card" data-link="friends">
+                <div class="portal-icon">👥</div>
+                <div class="portal-name">Friends</div>
+                <div class="portal-desc">Friends list management</div>
+            </a>
+
+            <a href="dashboard-2026.html?page=settings" class="portal-card" data-link="settings">
+                <div class="portal-icon">⚙</div>
+                <div class="portal-name">Settings</div>
+                <div class="portal-desc">Dashboard preferences</div>
+            </a>
+
+            <!-- Additional Pages -->
+            <a href="dashboard-2026.html?page=notifications" class="portal-card" data-link="notifications">
+                <div class="portal-icon">🔔</div>
+                <div class="portal-name">Notifications</div>
+                <div class="portal-desc">Message and event alerts</div>
+            </a>
+
+            <a href="dashboard-2026.html?page=integrations" class="portal-card" data-link="integrations">
+                <div class="portal-icon">🔗</div>
+                <div class="portal-name">Integrations</div>
+                <div class="portal-desc">Third-party integrations</div>
+            </a>
+        </div>
+    </div>
+
+    <script>
+        // Handle direct navigation clicks
+        document.querySelectorAll('.portal-card').forEach(card => {
+            card.addEventListener('click', (e) => {
+                const link = card.getAttribute('data-link');
+                localStorage.setItem('aria-dashboard-tab', link);
+            });
+        });
+
+        // URL parameter handling
+        const params = new URLSearchParams(window.location.search);
+        if (params.has('page')) {
+            localStorage.setItem('aria-dashboard-tab', params.get('page'));
+        }
+    </script>
+</body>
+</html>

@@ -1,0 +1,455 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="csrf-token" content="__CSRF_TOKEN__">
+    <title>Aria Quest Dashboard</title>
+    <link rel="icon" type="image/png" href="/static/images/aria-favicon.png">
+    <link rel="stylesheet" href="/static/css/quests/quest-dashboard.css">
+    <link rel="stylesheet" href="/static/css/aria_2026.css">
+</head>
+<body class="quest-dashboard">
+    <div id="globalLoader" role="status" aria-live="polite">
+        <div class="loader-console">
+            <div class="loader-brand-row">
+                <span class="loader-brand-mark" aria-hidden="true">⚔</span>
+                <div class="loader-brand-copy"><strong>Aria Quest</strong><span>engagement system</span></div>
+                <span class="loader-live-tag"><i></i> initializing</span>
+            </div>
+            <div class="loader-progress-row"><div class="loader-ring"></div><div><div class="loader-text">Loading quest data</div><div class="loader-subtext">Syncing with Discord API</div></div></div>
+            <div class="loader-log">
+                <div><span class="loader-log-dot"></span><span>QUEST / MANIFEST LOADED</span></div>
+                <div><span class="loader-log-dot"></span><span>ACCOUNT / VERIFIED</span></div>
+                <div><span class="loader-log-dot"></span><span id="loaderStatus">QUESTS / FETCHING</span></div>
+            </div>
+        </div>
+    </div>
+
+    <div id="questToastHost"></div>
+
+    <!-- Navigation Sidebar -->
+    <nav class="quest-sidebar">
+        <div class="sidebar-header">
+            <div class="sidebar-logo">
+                <span class="logo-icon">⚔</span>
+                <div class="logo-text">
+                    <span class="logo-title">Aria Quest</span>
+                    <span class="logo-subtitle">Manager</span>
+                </div>
+            </div>
+        </div>
+
+        <ul class="quest-nav">
+            <!-- Core Section -->
+            <li class="nav-section-label">Core</li>
+            <li class="nav-item active" data-page="overview">
+                <svg class="nav-icon" viewBox="0 0 20 20"><rect x="3" y="3" width="6" height="6"/><rect x="11" y="3" width="6" height="6"/><rect x="3" y="11" width="6" height="6"/><rect x="11" y="11" width="6" height="6"/></svg>
+                <span>Overview</span>
+            </li>
+            <li class="nav-item" data-page="active-quests">
+                <svg class="nav-icon" viewBox="0 0 20 20"><path d="M3 7h14M3 11h14M3 15h10"/></svg>
+                <span>Active Quests</span>
+                <span class="badge" id="active-count">0</span>
+            </li>
+            <li class="nav-item" data-page="completed">
+                <svg class="nav-icon" viewBox="0 0 20 20"><path d="M17 6l-9 9-4-4" stroke="currentColor" stroke-width="1.5" fill="none"/></svg>
+                <span>Completed</span>
+                <span class="badge" id="completed-count">0</span>
+            </li>
+
+            <!-- Quest Management -->
+            <li class="nav-section-label">Management</li>
+            <li class="nav-item" data-page="available">
+                <svg class="nav-icon" viewBox="0 0 20 20"><circle cx="10" cy="10" r="7" stroke="currentColor" stroke-width="1.5" fill="none"/><path d="M10 7v6M7 10h6"/></svg>
+                <span>Available</span>
+                <span class="badge" id="available-count">0</span>
+            </li>
+            <li class="nav-item" data-page="enroll">
+                <svg class="nav-icon" viewBox="0 0 20 20"><path d="M5 8l4 4 6-8"/></svg>
+                <span>Enroll Multiple</span>
+            </li>
+            <li class="nav-item" data-page="claim-rewards">
+                <svg class="nav-icon" viewBox="0 0 20 20"><path d="M10 2l3 5 5 1-4 3 1 5-5-3-5 3 1-5-4-3 5-1 3-5z" fill="currentColor"/></svg>
+                <span>Claim Rewards</span>
+                <span class="badge reward" id="claimable-count">0</span>
+            </li>
+
+            <!-- Analytics -->
+            <li class="nav-section-label">Analytics</li>
+            <li class="nav-item" data-page="statistics">
+                <svg class="nav-icon" viewBox="0 0 20 20"><path d="M3 17V9m4 8V5m4 8v-3m4 3V7"/></svg>
+                <span>Statistics</span>
+            </li>
+            <li class="nav-item" data-page="progress">
+                <svg class="nav-icon" viewBox="0 0 20 20"><rect x="3" y="10" width="14" height="7" rx="1"/><path d="M3 10v-2a2 2 0 012-2h12a2 2 0 012 2v2"/></svg>
+                <span>Progress</span>
+            </li>
+            <li class="nav-item" data-page="history">
+                <svg class="nav-icon" viewBox="0 0 20 20"><circle cx="10" cy="10" r="7.5" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M10 6v4l3 2" stroke="currentColor" stroke-width="1.5" fill="none"/></svg>
+                <span>History</span>
+            </li>
+
+            <!-- Automation -->
+            <li class="nav-section-label">Automation</li>
+            <li class="nav-item" data-page="auto-complete">
+                <svg class="nav-icon" viewBox="0 0 20 20"><rect x="2" y="4" width="16" height="4" rx="1"/><rect x="2" y="10" width="16" height="4" rx="1"/></svg>
+                <span>Auto-Complete</span>
+                <span class="badge status" id="auto-status">off</span>
+            </li>
+            <li class="nav-item" data-page="settings">
+                <svg class="nav-icon" viewBox="0 0 20 20"><circle cx="10" cy="10" r="5" fill="none" stroke="currentColor" stroke-width="1.5"/><circle cx="10" cy="10" r="2" fill="currentColor"/></svg>
+                <span>Settings</span>
+            </li>
+
+            <!-- Advanced -->
+            <li class="nav-section-label">Advanced</li>
+            <li class="nav-item" data-page="batch-operations">
+                <svg class="nav-icon" viewBox="0 0 20 20"><path d="M3 7h14M3 10h14M3 13h10" stroke="currentColor" stroke-width="1.5"/></svg>
+                <span>Batch Ops</span>
+            </li>
+            <li class="nav-item" data-page="rewards-catalog">
+                <svg class="nav-icon" viewBox="0 0 20 20"><rect x="3" y="5" width="14" height="10" rx="1.5"/><path d="M10 5v10M6 8h8"/></svg>
+                <span>Rewards</span>
+            </li>
+            <li class="nav-item" data-page="logs">
+                <svg class="nav-icon" viewBox="0 0 20 20"><path d="M3 4h14v2H3zM3 7h14v2H3zM3 10h14v2H3zM3 13h10v2H3z"/></svg>
+                <span>Logs & Debug</span>
+            </li>
+        </ul>
+
+        <div class="sidebar-footer">
+            <div class="user-profile">
+                <img id="user-avatar" src="" alt="User" class="avatar">
+                <div class="user-info">
+                    <span class="username" id="username">Loading...</span>
+                    <span class="status online">Online</span>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Main Content -->
+    <main class="quest-main">
+        <!-- Top Bar -->
+        <div class="quest-topbar">
+            <div class="topbar-left">
+                <h1 class="page-title" id="pageTitle">Overview</h1>
+                <p class="page-subtitle" id="pageSubtitle">Quest engagement overview</p>
+            </div>
+            <div class="topbar-right">
+                <button class="btn btn-icon" id="refreshBtn" title="Refresh">
+                    <svg viewBox="0 0 20 20"><path d="M4 10a6 6 0 0111.9.9M16 10a6 6 0 01-11.9.9" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+                </button>
+                <button class="btn btn-icon" id="settingsBtn" title="Settings">
+                    <svg viewBox="0 0 20 20"><circle cx="10" cy="10" r="5" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
+                </button>
+                <button class="btn btn-icon" id="notificationsBtn" title="Notifications">
+                    <svg viewBox="0 0 20 20"><path d="M15.5 10c0-3-2.5-5.5-5.5-5.5S4.5 7 4.5 10v5L3 16h14l-1.5-1V10z" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
+                    <span class="notification-dot" id="notifDot" style="display: none;"></span>
+                </button>
+            </div>
+        </div>
+
+        <!-- Page Content -->
+        <div class="quest-content">
+            <!-- Overview Page -->
+            <div class="page-container" id="overview-page" data-page="overview">
+                <div class="page-grid">
+                    <!-- Stats Grid -->
+                    <div class="stats-grid">
+                        <div class="stat-card">
+                            <div class="stat-header">
+                                <span class="stat-label">Active Quests</span>
+                                <svg class="stat-icon" viewBox="0 0 20 20"><rect x="3" y="3" width="6" height="6"/><rect x="11" y="3" width="6" height="6"/><rect x="3" y="11" width="6" height="6"/><rect x="11" y="11" width="6" height="6"/></svg>
+                            </div>
+                            <div class="stat-value" id="stat-active">0</div>
+                            <div class="stat-footer">In progress</div>
+                        </div>
+
+                        <div class="stat-card">
+                            <div class="stat-header">
+                                <span class="stat-label">Available</span>
+                                <svg class="stat-icon" viewBox="0 0 20 20"><circle cx="10" cy="10" r="7"/></svg>
+                            </div>
+                            <div class="stat-value" id="stat-available">0</div>
+                            <div class="stat-footer">Ready to enroll</div>
+                        </div>
+
+                        <div class="stat-card">
+                            <div class="stat-header">
+                                <span class="stat-label">Completed</span>
+                                <svg class="stat-icon" viewBox="0 0 20 20"><path d="M17 6l-9 9-4-4" stroke="currentColor" stroke-width="2" fill="none"/></svg>
+                            </div>
+                            <div class="stat-value" id="stat-completed">0</div>
+                            <div class="stat-footer">Total finished</div>
+                        </div>
+
+                        <div class="stat-card accent">
+                            <div class="stat-header">
+                                <span class="stat-label">Claimable</span>
+                                <svg class="stat-icon" viewBox="0 0 20 20"><path d="M10 2l3 5 5 1-4 3 1 5-5-3-5 3 1-5-4-3 5-1 3-5z" fill="currentColor"/></svg>
+                            </div>
+                            <div class="stat-value reward" id="stat-claimable">0</div>
+                            <div class="stat-footer">Rewards waiting</div>
+                        </div>
+                    </div>
+
+                    <!-- Quick Actions -->
+                    <div class="quick-actions">
+                        <h2 class="section-title">Quick Actions</h2>
+                        <div class="action-grid">
+                            <button class="action-card" id="autoCompleteToggle">
+                                <div class="action-icon on">▶</div>
+                                <span class="action-text">Start Auto-Complete</span>
+                            </button>
+                            <button class="action-card" id="enrollAllBtn">
+                                <div class="action-icon">+</div>
+                                <span class="action-text">Enroll All</span>
+                            </button>
+                            <button class="action-card" id="claimAllBtn">
+                                <div class="action-icon">⭐</div>
+                                <span class="action-text">Claim All</span>
+                            </button>
+                            <button class="action-card" id="refreshAllBtn">
+                                <div class="action-icon">↻</div>
+                                <span class="action-text">Refresh Data</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Recent Activity -->
+                    <div class="recent-activity">
+                        <h2 class="section-title">Recent Activity</h2>
+                        <div class="activity-list" id="activityList">
+                            <div class="activity-item empty">
+                                <span>No recent activity</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Featured Quest -->
+                    <div class="featured-quest">
+                        <h2 class="section-title">Featured Quest</h2>
+                        <div class="quest-card featured" id="featuredQuest">
+                            <div class="quest-loading">Loading featured quest...</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Active Quests Page -->
+            <div class="page-container hidden" id="active-quests-page" data-page="active-quests">
+                <div class="quests-list" id="activeQuestsList">
+                    <div class="empty-state">
+                        <div class="empty-icon">📋</div>
+                        <h3>No Active Quests</h3>
+                        <p>You don't have any quests in progress.</p>
+                        <button class="btn btn-primary" onclick="navigateTo('available')">Browse Available</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Completed Quests Page -->
+            <div class="page-container hidden" id="completed-page" data-page="completed">
+                <div class="quests-list" id="completedQuestsList">
+                    <div class="empty-state">
+                        <div class="empty-icon">✨</div>
+                        <h3>No Completed Quests</h3>
+                        <p>Complete quests to see them here.</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Available Quests Page -->
+            <div class="page-container hidden" id="available-page" data-page="available">
+                <div class="quests-list" id="availableQuestsList">
+                    <div class="empty-state">
+                        <div class="empty-icon">🔍</div>
+                        <h3>Loading Available Quests</h3>
+                        <p>Fetching quests from Discord API...</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Claim Rewards Page -->
+            <div class="page-container hidden" id="claim-rewards-page" data-page="claim-rewards">
+                <div class="quests-list" id="claimableQuestsList">
+                    <div class="empty-state">
+                        <div class="empty-icon">🎁</div>
+                        <h3>No Rewards to Claim</h3>
+                        <p>Complete quests to claim their rewards.</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Enroll Multiple Page -->
+            <div class="page-container hidden" id="enroll-page" data-page="enroll">
+                <div class="enroll-container">
+                    <div class="enroll-header">
+                        <h2>Bulk Enroll Quests</h2>
+                        <p>Select quests to enroll in multiple at once</p>
+                    </div>
+                    <div class="enroll-controls">
+                        <button class="btn btn-secondary" id="selectAllBtn">Select All Available</button>
+                        <button class="btn btn-ghost" id="deselectAllBtn">Deselect All</button>
+                    </div>
+                    <div class="enroll-list" id="enrollList"></div>
+                    <div class="enroll-actions">
+                        <button class="btn btn-ghost" onclick="navigateTo('overview')">Cancel</button>
+                        <button class="btn btn-primary" id="confirmEnrollBtn">Enroll Selected</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Statistics Page -->
+            <div class="page-container hidden" id="statistics-page" data-page="statistics">
+                <div class="stats-container">
+                    <h2 class="section-title">Quest Statistics</h2>
+                    <div class="chart-grid">
+                        <div class="chart-card">
+                            <h3>Completion Rate</h3>
+                            <div class="chart-placeholder" id="completionChart"></div>
+                        </div>
+                        <div class="chart-card">
+                            <h3>Quest Distribution</h3>
+                            <div class="chart-placeholder" id="distributionChart"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Progress Page -->
+            <div class="page-container hidden" id="progress-page" data-page="progress">
+                <div class="progress-container">
+                    <h2 class="section-title">Quest Progress</h2>
+                    <div class="progress-list" id="progressList"></div>
+                </div>
+            </div>
+
+            <!-- History Page -->
+            <div class="page-container hidden" id="history-page" data-page="history">
+                <div class="history-container">
+                    <h2 class="section-title">Quest History</h2>
+                    <div class="history-list" id="historyList"></div>
+                </div>
+            </div>
+
+            <!-- Auto-Complete Page -->
+            <div class="page-container hidden" id="auto-complete-page" data-page="auto-complete">
+                <div class="auto-complete-container">
+                    <div class="auto-settings">
+                        <h2>Auto-Complete Settings</h2>
+                        <div class="setting-group">
+                            <label class="toggle">
+                                <input type="checkbox" id="autoToggle">
+                                <span class="toggle-slider"></span>
+                                <span class="toggle-label">Enable Auto-Complete</span>
+                            </label>
+                        </div>
+                        <div class="setting-group">
+                            <label for="refreshInterval">Refresh Interval (seconds)</label>
+                            <input type="number" id="refreshInterval" value="300" min="30" max="3600">
+                        </div>
+                        <div class="setting-group">
+                            <label for="priorityMode">Priority Mode</label>
+                            <select id="priorityMode">
+                                <option value="worthy">Worthy Rewards First</option>
+                                <option value="expiring">Expiring First</option>
+                                <option value="all">All Equally</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="auto-monitor">
+                        <h2>Live Monitor</h2>
+                        <div class="monitor-log" id="monitorLog">
+                            <div class="log-entry">Auto-complete monitor ready</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Settings Page -->
+            <div class="page-container hidden" id="settings-page" data-page="settings">
+                <div class="settings-container">
+                    <h2>Dashboard Settings</h2>
+                    <div class="settings-group">
+                        <h3>Display</h3>
+                        <label class="toggle">
+                            <input type="checkbox" id="darkMode" checked>
+                            <span class="toggle-slider"></span>
+                            <span class="toggle-label">Dark Mode</span>
+                        </label>
+                        <label class="toggle">
+                            <input type="checkbox" id="compactView">
+                            <span class="toggle-slider"></span>
+                            <span class="toggle-label">Compact View</span>
+                        </label>
+                    </div>
+                    <div class="settings-group">
+                        <h3>Notifications</h3>
+                        <label class="toggle">
+                            <input type="checkbox" id="notifyCompletion" checked>
+                            <span class="toggle-slider"></span>
+                            <span class="toggle-label">Quest Completion</span>
+                        </label>
+                        <label class="toggle">
+                            <input type="checkbox" id="notifyRewards" checked>
+                            <span class="toggle-slider"></span>
+                            <span class="toggle-label">Rewards Available</span>
+                        </label>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Batch Operations Page -->
+            <div class="page-container hidden" id="batch-operations-page" data-page="batch-operations">
+                <div class="batch-container">
+                    <h2>Batch Operations</h2>
+                    <div class="batch-grid">
+                        <div class="batch-card">
+                            <h3>Enroll All Available</h3>
+                            <p>Quickly enroll in all available quests</p>
+                            <button class="btn btn-secondary" id="batchEnrollBtn">Execute</button>
+                        </div>
+                        <div class="batch-card">
+                            <h3>Claim All Rewards</h3>
+                            <p>Claim rewards from all completed quests</p>
+                            <button class="btn btn-secondary" id="batchClaimBtn">Execute</button>
+                        </div>
+                        <div class="batch-card">
+                            <h3>Refresh All Data</h3>
+                            <p>Sync all quest data from Discord API</p>
+                            <button class="btn btn-secondary" id="batchRefreshBtn">Execute</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Rewards Catalog Page -->
+            <div class="page-container hidden" id="rewards-catalog-page" data-page="rewards-catalog">
+                <div class="rewards-container">
+                    <h2>Rewards Catalog</h2>
+                    <div class="rewards-grid" id="rewardsGrid"></div>
+                </div>
+            </div>
+
+            <!-- Logs & Debug Page -->
+            <div class="page-container hidden" id="logs-page" data-page="logs">
+                <div class="logs-container">
+                    <h2>System Logs & Debug</h2>
+                    <div class="log-controls">
+                        <button class="btn btn-secondary" id="clearLogsBtn">Clear Logs</button>
+                        <button class="btn btn-secondary" id="downloadLogsBtn">Download</button>
+                    </div>
+                    <div class="debug-log" id="debugLog">
+                        <div class="log-line info">[INFO] Dashboard initialized</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script src="/static/js/quests/quest-dashboard.js"></script>
+</body>
+</html>

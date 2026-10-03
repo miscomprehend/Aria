@@ -1,0 +1,747 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Aria Advanced Selfbot Dashboard</title>
+    <link rel="stylesheet" href="/static/css/discord-dashboard.css">
+</head>
+<body>
+    <div class="dashboard-container">
+        <!-- SIDEBAR NAVIGATION -->
+        <div class="dashboard-sidebar">
+            <div class="sidebar-header">
+                <div class="sidebar-title">Navigation</div>
+            </div>
+
+            <!-- Dashboard Section -->
+            <div class="sidebar-section">
+                <div class="sidebar-section-title">Dashboard</div>
+                <div class="sidebar-item active" data-section="overview">
+                    <div class="sidebar-item-icon">📊</div>
+                    <div class="sidebar-item-label">Overview</div>
+                </div>
+                <div class="sidebar-item" data-section="guilds">
+                    <div class="sidebar-item-icon">🏢</div>
+                    <div class="sidebar-item-label">Servers</div>
+                </div>
+                <div class="sidebar-item" data-section="commands">
+                    <div class="sidebar-item-icon">⚙️</div>
+                    <div class="sidebar-item-label">Commands</div>
+                </div>
+            </div>
+
+            <!-- User Management Section -->
+            <div class="sidebar-section">
+                <div class="sidebar-section-title">Management</div>
+                <div class="sidebar-item" data-section="users">
+                    <div class="sidebar-item-icon">👥</div>
+                    <div class="sidebar-item-label">Users</div>
+                </div>
+                <div class="sidebar-item" data-section="roles">
+                    <div class="sidebar-item-icon">🎭</div>
+                    <div class="sidebar-item-label">Roles</div>
+                </div>
+                <div class="sidebar-item" data-section="channels">
+                    <div class="sidebar-item-icon">💬</div>
+                    <div class="sidebar-item-label">Channels</div>
+                </div>
+            </div>
+
+            <!-- Account Section -->
+            <div class="sidebar-section">
+                <div class="sidebar-section-title">Account</div>
+                <div class="sidebar-item" data-section="account">
+                    <div class="sidebar-item-icon">👤</div>
+                    <div class="sidebar-item-label">Profile</div>
+                </div>
+            </div>
+
+            <!-- Bot Section -->
+            <div class="sidebar-section">
+                <div class="sidebar-section-title">Bot Tools</div>
+                <div class="sidebar-item" data-section="automation">
+                    <svg class="sidebar-item-icon" viewBox="0 0 20 20" fill="currentColor"><path d="M10.5 1h-1v2h1V1zm0 14h-1v2h1v-2zm3.5-5.5h2v-1h-2v1zm-8 0h2v-1h-2v1zm4.5-6C7.43 3.5 5.5 5.43 5.5 8s1.93 4.5 4.5 4.5 4.5-1.93 4.5-4.5-1.93-4.5-4.5-4.5z"/></svg>
+                    <div class="sidebar-item-label">Automation</div>
+                </div>
+                <div class="sidebar-item" data-section="stats">
+                    <svg class="sidebar-item-icon" viewBox="0 0 20 20" fill="currentColor"><path d="M3 17V10m4 7V7m4 7V5m4 7V3"/></svg>
+                    <div class="sidebar-item-label">Statistics</div>
+                </div>
+                <div class="sidebar-item" data-section="settings">
+                    <svg class="sidebar-item-icon" viewBox="0 0 20 20" fill="currentColor"><path d="M10 2c-.65 0-1.28.3-1.68.83L5.83 6.23 3.54 7.4c-.65.46-1.05 1.28-1.05 2.1s.4 1.64 1.05 2.1l2.29 1.17 2.49 3.4c.4.53 1.03.83 1.68.83.65 0 1.28-.3 1.68-.83l2.49-3.4 2.29-1.17c.65-.46 1.05-1.28 1.05-2.1s-.4-1.64-1.05-2.1l-2.29-1.17-2.49-3.4c-.4-.53-1.03-.83-1.68-.83z"/></svg>
+                    <div class="sidebar-item-label">Settings</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- MAIN CONTENT AREA -->
+        <div class="dashboard-main">
+            <!-- HEADER -->
+            <div class="dashboard-header">
+                <div class="header-left">
+                    <div class="header-brand">
+                        <div class="header-brand-icon">A</div>
+                        <div>
+                            <div>Aria Selfbot</div>
+                            <div style="font-size: 11px; color: var(--aria-text-muted); margin-top: 2px;">Advanced Control Center</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="header-right">
+                    <div style="display: flex; align-items: center; gap: 8px; font-size: 12px;">
+                        <span style="color: var(--aria-text-muted);">Status:</span>
+                        <span class="status-indicator"></span>
+                        <span style="color: var(--aria-success);">Connected</span>
+                    </div>
+                    <div class="user-profile" id="userProfile">
+                        <div class="user-avatar" id="userAvatar">A</div>
+                        <div class="user-info">
+                            <div class="user-name" id="userName">Loading...</div>
+                            <div class="user-status">
+                                <div class="user-status-dot"></div>
+                                <span id="userStatus">Online</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- CONTENT AREA -->
+            <div class="dashboard-content">
+                <!-- ===== OVERVIEW SECTION ===== -->
+                <div class="content-section active" id="overview">
+                    <div class="section-header">
+                        <div>
+                            <div class="section-title">Dashboard Overview</div>
+                            <div class="section-subtitle">Your bot's real-time statistics and activity</div>
+                        </div>
+                        <div class="section-actions">
+                            <button class="btn btn-primary btn-sm">🔄 Refresh</button>
+                        </div>
+                    </div>
+
+                    <!-- STATS GRID -->
+                    <div class="stats-grid">
+                        <div class="stat-card">
+                            <div class="stat-label">Total Servers</div>
+                            <div class="stat-value" id="statServers">0</div>
+                            <div class="stat-change">↑ <span id="statServersChange">0</span> this week</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-label">Total Users</div>
+                            <div class="stat-value" id="statUsers">0</div>
+                            <div class="stat-change">↑ <span id="statUsersChange">0</span> this month</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-label">Commands Used</div>
+                            <div class="stat-value" id="statCommands">0</div>
+                            <div class="stat-change">↑ <span id="statCommandsChange">0</span> today</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-label">Uptime</div>
+                            <div class="stat-value" id="statUptime">99.9%</div>
+                            <div class="stat-change">Last updated: <span id="statLastUpdate">now</span></div>
+                        </div>
+                    </div>
+
+                    <!-- RECENT ACTIVITY -->
+                    <h2 style="font-size: 20px; margin: var(--spacing-xl) 0 var(--spacing-lg) 0; color: var(--aria-text);">Recent Activity</h2>
+                    <div class="table-container">
+                        <table class="table">
+                            <thead class="table-header">
+                                <tr>
+                                    <th>Time</th>
+                                    <th>Event</th>
+                                    <th>Server</th>
+                                    <th>User</th>
+                                    <th>Status</th>
+                                </tr>
+                            </thead>
+                            <tbody class="table-body" id="activityTable">
+                                <tr>
+                                    <td>Just now</td>
+                                    <td><span class="badge">Command</span></td>
+                                    <td>General</td>
+                                    <td>User#1234</td>
+                                    <td><span class="badge badge-success">Success</span></td>
+                                </tr>
+                                <tr>
+                                    <td>2 minutes ago</td>
+                                    <td><span class="badge badge-warning">Warning</span></td>
+                                    <td>Moderators</td>
+                                    <td>Admin#5678</td>
+                                    <td><span class="badge badge-warning">Pending</span></td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- ===== GUILDS/SERVERS SECTION ===== -->
+                <div class="content-section" id="guilds">
+                    <div class="section-header">
+                        <div>
+                            <div class="section-title">Connected Servers</div>
+                            <div class="section-subtitle">Manage your bot across all Discord servers</div>
+                        </div>
+                        <div class="section-actions">
+                            <div class="dropdown">
+                                <button class="dropdown-toggle">
+                                    ⬇️ Filter
+                                    <span class="dropdown-arrow">▼</span>
+                                </button>
+                                <div class="dropdown-menu">
+                                    <button class="dropdown-item">
+                                        <div class="dropdown-item-icon">✅</div>
+                                        <div>
+                                            <div class="dropdown-item-label">All Servers</div>
+                                            <div class="dropdown-item-desc">Show all connected servers</div>
+                                        </div>
+                                    </button>
+                                    <button class="dropdown-item">
+                                        <div class="dropdown-item-icon">⭐</div>
+                                        <div>
+                                            <div class="dropdown-item-label">Favorites</div>
+                                            <div class="dropdown-item-desc">Only bookmarked servers</div>
+                                        </div>
+                                    </button>
+                                    <button class="dropdown-item">
+                                        <div class="dropdown-item-icon">👑</div>
+                                        <div>
+                                            <div class="dropdown-item-label">Owner Only</div>
+                                            <div class="dropdown-item-desc">Servers you own</div>
+                                        </div>
+                                    </button>
+                                    <button class="dropdown-item">
+                                        <div class="dropdown-item-icon">🔧</div>
+                                        <div>
+                                            <div class="dropdown-item-label">Configured</div>
+                                            <div class="dropdown-item-desc">Servers with custom settings</div>
+                                        </div>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- GUILD GRID -->
+                    <div class="guild-grid" id="guildGrid">
+                        <!-- Guilds will be dynamically inserted here -->
+                        <div class="guild-card">
+                            <div class="guild-icon-container">
+                                <div class="guild-icon-placeholder">🎮</div>
+                            </div>
+                            <div class="guild-info">
+                                <div class="guild-name">Gaming Central</div>
+                                <div class="guild-meta">
+                                    <div class="guild-members">
+                                        <div class="guild-online"></div>
+                                        <span>2.4K members</span>
+                                    </div>
+                                </div>
+                                <div style="display: flex; gap: 4px; margin-top: 8px; flex-wrap: wrap;">
+                                    <span class="guild-badge">
+                                        <span>✓</span> Owner
+                                    </span>
+                                    <span class="guild-badge" style="background: rgba(98, 211, 154, 0.2); border-color: rgba(98, 211, 154, 0.3); color: var(--aria-success);">
+                                        <span>⚙️</span> Configured
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="guild-card">
+                            <div class="guild-icon-container">
+                                <div class="guild-icon-placeholder">💬</div>
+                            </div>
+                            <div class="guild-info">
+                                <div class="guild-name">Community Hub</div>
+                                <div class="guild-meta">
+                                    <div class="guild-members">
+                                        <div class="guild-online"></div>
+                                        <span>1.8K members</span>
+                                    </div>
+                                </div>
+                                <div style="display: flex; gap: 4px; margin-top: 8px; flex-wrap: wrap;">
+                                    <span class="guild-badge" style="background: rgba(0, 176, 244, 0.15); border-color: rgba(0, 176, 244, 0.3); color: var(--aria-text-link);">
+                                        <span>✔</span> Verified
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="guild-card">
+                            <div class="guild-icon-container">
+                                <div class="guild-icon-placeholder">🎨</div>
+                            </div>
+                            <div class="guild-info">
+                                <div class="guild-name">Creative Space</div>
+                                <div class="guild-meta">
+                                    <div class="guild-members">
+                                        <div class="guild-online"></div>
+                                        <span>956 members</span>
+                                    </div>
+                                </div>
+                                <div style="display: flex; gap: 4px; margin-top: 8px; flex-wrap: wrap;">
+                                    <span class="badge badge-bot">Bot Admin</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ===== COMMANDS SECTION ===== -->
+                <div class="content-section" id="commands">
+                    <div class="section-header">
+                        <div>
+                            <div class="section-title">Command Management</div>
+                            <div class="section-subtitle">View and configure bot commands</div>
+                        </div>
+                        <div class="section-actions">
+                            <div class="dropdown">
+                                <button class="dropdown-toggle">
+                                    Category
+                                    <span class="dropdown-arrow">▼</span>
+                                </button>
+                                <div class="dropdown-menu">
+                                    <button class="dropdown-item">
+                                        <svg class="dropdown-item-icon" viewBox="0 0 20 20" fill="currentColor"><path d="M10 2L12.4 8.4H19L13.8 12.2L16.2 18.6L10 14.8L3.8 18.6L6.2 12.2L1 8.4H8.6L10 2Z"/></svg>
+                                        <div>
+                                            <div class="dropdown-item-label">All Commands</div>
+                                        </div>
+                                    </button>
+                                    <button class="dropdown-item">
+                                        <div class="dropdown-item-icon">🎮</div>
+                                        <div>
+                                            <div class="dropdown-item-label">Fun</div>
+                                        </div>
+                                    </button>
+                                    <button class="dropdown-item">
+                                        <div class="dropdown-item-icon">🛡️</div>
+                                        <div>
+                                            <div class="dropdown-item-label">Moderation</div>
+                                        </div>
+                                    </button>
+                                    <button class="dropdown-item">
+                                        <div class="dropdown-item-icon">⚙️</div>
+                                        <div>
+                                            <div class="dropdown-item-label">Utility</div>
+                                        </div>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- SEARCH & FILTER -->
+                    <div class="input-group" style="max-width: 400px; margin-bottom: var(--spacing-xl);">
+                        <input type="text" class="input-field" placeholder="Search commands... (e.g., ban, kick, mute)">
+                        <div class="input-description">Type command name to quickly find what you need</div>
+                    </div>
+
+                    <!-- COMMANDS TABLE -->
+                    <div class="table-container">
+                        <table class="table">
+                            <thead class="table-header">
+                                <tr>
+                                    <th>Command</th>
+                                    <th>Category</th>
+                                    <th>Usage</th>
+                                    <th>Status</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody class="table-body">
+                                <tr>
+                                    <td><code style="background: var(--aria-bg-secondary); padding: 2px 6px; border-radius: 4px;">!ban</code></td>
+                                    <td><span class="badge">Moderation</span></td>
+                                    <td>234 times</td>
+                                    <td><span class="badge badge-success">Enabled</span></td>
+                                    <td><button class="btn btn-sm">⚙️ Config</button></td>
+                                </tr>
+                                <tr>
+                                    <td><code style="background: var(--aria-bg-secondary); padding: 2px 6px; border-radius: 4px;">!kick</code></td>
+                                    <td><span class="badge">Moderation</span></td>
+                                    <td>156 times</td>
+                                    <td><span class="badge badge-success">Enabled</span></td>
+                                    <td><button class="btn btn-sm">⚙️ Config</button></td>
+                                </tr>
+                                <tr>
+                                    <td><code style="background: var(--aria-bg-secondary); padding: 2px 6px; border-radius: 4px;">!say</code></td>
+                                    <td><span class="badge">Utility</span></td>
+                                    <td>89 times</td>
+                                    <td><span class="badge badge-warning">Disabled</span></td>
+                                    <td><button class="btn btn-sm">⚙️ Config</button></td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- ===== USERS SECTION ===== -->
+                <div class="content-section" id="users">
+                    <div class="section-header">
+                        <div>
+                            <div class="section-title">User Management</div>
+                            <div class="section-subtitle">Manage and track users across your servers</div>
+                        </div>
+                        <div class="section-actions">
+                            <button class="btn btn-primary btn-sm">➕ Add User</button>
+                        </div>
+                    </div>
+
+                    <div class="input-group" style="max-width: 400px; margin-bottom: var(--spacing-xl);">
+                        <input type="text" class="input-field" placeholder="Search users by name or ID...">
+                    </div>
+
+                    <div class="table-container">
+                        <table class="table">
+                            <thead class="table-header">
+                                <tr>
+                                    <th>User</th>
+                                    <th>ID</th>
+                                    <th>Servers</th>
+                                    <th>Warnings</th>
+                                    <th>Status</th>
+                                </tr>
+                            </thead>
+                            <tbody class="table-body">
+                                <tr>
+                                    <td>
+                                        <div style="display: flex; gap: 8px; align-items: center;">
+                                            <div class="user-avatar" style="width: 32px; height: 32px; font-size: 12px;">A</div>
+                                            <div>
+                                                <div style="font-weight: 600;">Admin User</div>
+                                                <div style="font-size: 12px; color: var(--aria-text-muted);">Owner</div>
+                                            </div>
+                                        </div>
+                                    </td>
+                                    <td><code style="background: var(--aria-bg-secondary); padding: 2px 6px;">123456789</code></td>
+                                    <td>12 servers</td>
+                                    <td><span class="badge badge-success">0</span></td>
+                                    <td><span class="badge badge-success">Active</span></td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- ===== ROLES SECTION ===== -->
+                <div class="content-section" id="roles">
+                    <div class="section-header">
+                        <div>
+                            <div class="section-title">Role Management</div>
+                            <div class="section-subtitle">Configure roles and permissions</div>
+                        </div>
+                        <div class="section-actions">
+                            <button class="btn btn-primary btn-sm">➕ Create Role</button>
+                        </div>
+                    </div>
+
+                    <div class="card">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--spacing-lg);">
+                            <div style="font-weight: 600;">Moderator</div>
+                            <div style="display: flex; gap: 8px;">
+                                <button class="btn btn-sm">✏️ Edit</button>
+                                <button class="btn btn-sm btn-danger">🗑️ Delete</button>
+                            </div>
+                        </div>
+                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: var(--spacing-lg);">
+                            <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                                <input type="checkbox" checked style="width: 18px; height: 18px;">
+                                <span>Ban Members</span>
+                            </label>
+                            <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                                <input type="checkbox" checked style="width: 18px; height: 18px;">
+                                <span>Kick Members</span>
+                            </label>
+                            <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                                <input type="checkbox" style="width: 18px; height: 18px;">
+                                <span>Manage Messages</span>
+                            </label>
+                            <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                                <input type="checkbox" checked style="width: 18px; height: 18px;">
+                                <span>Mute Members</span>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ===== CHANNELS SECTION ===== -->
+                <div class="content-section" id="channels">
+                    <div class="section-header">
+                        <div>
+                            <div class="section-title">Channel Management</div>
+                            <div class="section-subtitle">Configure channel permissions and settings</div>
+                        </div>
+                        <div class="section-actions">
+                            <button class="btn btn-primary btn-sm">➕ New Channel</button>
+                        </div>
+                    </div>
+
+                    <div class="card">
+                        <div style="display: flex; gap: var(--spacing-md); align-items: center; margin-bottom: var(--spacing-lg);">
+                            <div style="font-size: 24px;">💬</div>
+                            <div>
+                                <div style="font-weight: 600;">general</div>
+                                <div style="font-size: 12px; color: var(--aria-text-muted);">Main discussion channel</div>
+                            </div>
+                        </div>
+                        <div class="input-group">
+                            <label class="input-label">Channel Prefix</label>
+                            <input type="text" class="input-field" value="!">
+                            <div class="input-description">Commands in this channel use this prefix</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ===== AUTOMATION SECTION ===== -->
+                <div class="content-section" id="automation">
+                    <div class="section-header">
+                        <div>
+                            <div class="section-title">Automation Rules</div>
+                            <div class="section-subtitle">Create automated actions and responses</div>
+                        </div>
+                        <div class="section-actions">
+                            <button class="btn btn-primary btn-sm">➕ New Rule</button>
+                        </div>
+                    </div>
+
+                    <div class="card">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--spacing-lg);">
+                            <div>
+                                <div style="font-weight: 600;">Auto-Welcome</div>
+                                <div style="font-size: 12px; color: var(--aria-text-muted);">Send welcome message to new members</div>
+                            </div>
+                            <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                                <input type="checkbox" checked style="width: 20px; height: 20px;">
+                                <span>Enabled</span>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ===== STATISTICS SECTION ===== -->
+                <div class="content-section" id="stats">
+                    <div class="section-header">
+                        <div>
+                            <div class="section-title">Bot Statistics</div>
+                            <div class="section-subtitle">Detailed analytics and metrics</div>
+                        </div>
+                    </div>
+
+                    <div class="stats-grid">
+                        <div class="stat-card">
+                            <div class="stat-label">Commands Today</div>
+                            <div class="stat-value">1,234</div>
+                            <div class="stat-change">↑ 15% from yesterday</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-label">Average Response Time</div>
+                            <div class="stat-value">45ms</div>
+                            <div class="stat-change">Excellent performance</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-label">Error Rate</div>
+                            <div class="stat-value">0.02%</div>
+                            <div class="stat-change negative">↓ No errors this week</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ===== ACCOUNT SECTION ===== -->
+                <div class="content-section" id="account">
+                    <div class="section-header">
+                        <div>
+                            <div class="section-title">Account Settings</div>
+                            <div class="section-subtitle">Manage your Discord profile and account preferences</div>
+                        </div>
+                        <div class="section-actions">
+                            <button class="btn btn-success btn-sm" id="saveProfileBtn">💾 Save Changes</button>
+                        </div>
+                    </div>
+
+                    <!-- Profile Card -->
+                    <div class="card" style="margin-bottom: var(--spacing-xl);">
+                        <div style="display: flex; gap: var(--spacing-xl); align-items: flex-start; margin-bottom: var(--spacing-xl);">
+                            <div style="position: relative;">
+                                <div id="profileAvatarPreview" style="width: 120px; height: 120px; border-radius: 50%; background: var(--aria-bg-secondary); display: flex; align-items: center; justify-content: center; font-size: 48px; border: 3px solid var(--aria-primary); cursor: pointer; overflow: hidden;">
+                                    <img id="avatarImg" src="https://cdn.discordapp.com/embed/avatars/0.png" alt="Profile Avatar" style="width: 100%; height: 100%; object-fit: cover;">
+                                </div>
+                                <label for="avatarUpload" style="position: absolute; bottom: 0; right: 0; background: var(--aria-primary); border-radius: 50%; width: 36px; height: 36px; display: flex; align-items: center; justify-content: center; cursor: pointer; border: 2px solid var(--aria-bg-primary);">
+                                    📷
+                                </label>
+                                <input type="file" id="avatarUpload" accept="image/*" style="display: none;">
+                            </div>
+                            <div style="flex: 1;">
+                                <div class="input-group">
+                                    <label class="input-label">Username</label>
+                                    <input type="text" class="input-field" id="discordUsername" placeholder="Enter username" value="">
+                                    <div class="input-description">Your Discord username</div>
+                                </div>
+                                <div class="input-group" style="margin-top: var(--spacing-lg);">
+                                    <label class="input-label">Display Name</label>
+                                    <input type="text" class="input-field" id="discordDisplayName" placeholder="Enter display name" value="">
+                                    <div class="input-description">How your name appears to others (optional)</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div style="border-top: 1px solid var(--aria-border); padding-top: var(--spacing-xl); margin-top: var(--spacing-xl);">
+                            <div class="input-group">
+                                <label class="input-label">Bio / About Me</label>
+                                <textarea class="input-field" id="discordBio" placeholder="Tell us about yourself..." style="resize: vertical; min-height: 100px; font-family: inherit;">
+                                </textarea>
+                                <div class="input-description">Maximum 190 characters</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Account Privacy & Security -->
+                    <div class="card" style="margin-bottom: var(--spacing-xl);">
+                        <div class="card-title" style="margin-bottom: var(--spacing-lg);">
+                            <svg style="width: 20px; height: 20px; display: inline; margin-right: 8px; vertical-align: middle;" viewBox="0 0 20 20" fill="currentColor">
+                                <path fill-rule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clip-rule="evenodd"/>
+                            </svg>
+                            Account Privacy & Security
+                        </div>
+
+                        <div style="margin-bottom: var(--spacing-lg);">
+                            <label style="display: flex; align-items: center; gap: 12px; cursor: pointer; padding: 12px; background: var(--aria-bg-secondary); border-radius: 8px;">
+                                <input type="checkbox" id="privateProfile" style="width: 20px; height: 20px;">
+                                <div>
+                                    <div style="font-weight: 600;">Private Profile</div>
+                                    <div style="font-size: 12px; color: var(--aria-text-muted); margin-top: 2px;">Hide profile from non-friends</div>
+                                </div>
+                            </label>
+                        </div>
+
+                        <div style="margin-bottom: var(--spacing-lg);">
+                            <label style="display: flex; align-items: center; gap: 12px; cursor: pointer; padding: 12px; background: var(--aria-bg-secondary); border-radius: 8px;">
+                                <input type="checkbox" id="allowDMS" checked style="width: 20px; height: 20px;">
+                                <div>
+                                    <div style="font-weight: 600;">Allow Direct Messages</div>
+                                    <div style="font-size: 12px; color: var(--aria-text-muted); margin-top: 2px;">Allow others to send you messages</div>
+                                </div>
+                            </label>
+                        </div>
+
+                        <div>
+                            <label style="display: flex; align-items: center; gap: 12px; cursor: pointer; padding: 12px; background: var(--aria-bg-secondary); border-radius: 8px;">
+                                <input type="checkbox" id="onlineStatus" checked style="width: 20px; height: 20px;">
+                                <div>
+                                    <div style="font-weight: 600;">Show Online Status</div>
+                                    <div style="font-size: 12px; color: var(--aria-text-muted); margin-top: 2px;">Let others see when you're online</div>
+                                </div>
+                            </label>
+                        </div>
+                    </div>
+
+                    <!-- Profile Customization -->
+                    <div class="card" style="margin-bottom: var(--spacing-xl);">
+                        <div class="card-title" style="margin-bottom: var(--spacing-lg);">
+                            <svg style="width: 20px; height: 20px; display: inline; margin-right: 8px; vertical-align: middle;" viewBox="0 0 20 20" fill="currentColor">
+                                <path d="M5 3a2 2 0 00-2 2v6h4V5a2 2 0 00-2-2zm0 8a2 2 0 00-2 2v4a2 2 0 002 2h6v-4a2 2 0 00-2-2H5zm6-8a2 2 0 00-2 2v6h4V5a2 2 0 00-2-2zm0 8a2 2 0 00-2 2v4a2 2 0 002 2h6v-4a2 2 0 00-2-2h-2z"/>
+                            </svg>
+                            Customization
+                        </div>
+
+                        <div class="input-group">
+                            <label class="input-label">Banner Color</label>
+                            <input type="color" class="input-field" id="bannerColor" value="#69B7FF" style="height: 50px; cursor: pointer;">
+                            <div class="input-description">Choose your profile banner color (Aria Blue recommended)</div>
+                        </div>
+
+                        <div style="margin-top: var(--spacing-lg);">
+                            <label class="input-label">Status</label>
+                            <select class="input-field" id="userStatus">
+                                <option value="online">🟢 Online</option>
+                                <option value="idle">🟡 Idle</option>
+                                <option value="dnd">🔴 Do Not Disturb</option>
+                                <option value="offline">⚫ Offline</option>
+                            </select>
+                        </div>
+
+                        <div style="margin-top: var(--spacing-lg);">
+                            <label class="input-label">Status Message</label>
+                            <input type="text" class="input-field" id="statusMessage" placeholder="What's on your mind?" value="" maxlength="128">
+                            <div class="input-description">Your custom status (optional)</div>
+                        </div>
+                    </div>
+
+                    <!-- Account Actions -->
+                    <div class="card" style="border-color: var(--aria-danger); border: 1px solid var(--aria-danger);">
+                        <div class="card-title" style="margin-bottom: var(--spacing-lg); color: var(--aria-danger);">
+                            ⚠️ Danger Zone
+                        </div>
+
+                        <div style="display: flex; gap: var(--spacing-lg); flex-wrap: wrap;">
+                            <button class="btn btn-danger btn-sm" id="changePasswordBtn">🔑 Change Password</button>
+                            <button class="btn btn-danger btn-sm" id="logoutAllBtn">🚪 Logout All Devices</button>
+                            <button class="btn btn-danger btn-sm" id="deleteAccountBtn">🗑️ Delete Account</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ===== SETTINGS SECTION ===== -->
+                <div class="content-section" id="settings">
+                    <div class="section-header">
+                        <div>
+                            <div class="section-title">Bot Settings</div>
+                            <div class="section-subtitle">Configure bot behavior and features</div>
+                        </div>
+                        <div class="section-actions">
+                            <button class="btn btn-success btn-sm">💾 Save Changes</button>
+                        </div>
+                    </div>
+
+                    <div class="card">
+                        <div style="margin-bottom: var(--spacing-xl);">
+                            <div class="input-group">
+                                <label class="input-label">Bot Prefix</label>
+                                <input type="text" class="input-field" value="!" placeholder="Enter prefix">
+                                <div class="input-description">Character(s) that trigger commands</div>
+                            </div>
+                        </div>
+
+                        <div style="margin-bottom: var(--spacing-xl);">
+                            <div class="input-group">
+                                <label class="input-label">Default Language</label>
+                                <select class="input-field">
+                                    <option>English (US)</option>
+                                    <option>English (UK)</option>
+                                    <option>Spanish</option>
+                                    <option>French</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <div style="margin-bottom: var(--spacing-xl);">
+                            <label style="display: flex; align-items: center; gap: 12px; cursor: pointer; padding: 12px; background: var(--aria-bg-secondary); border-radius: 8px;">
+                                <input type="checkbox" checked style="width: 20px; height: 20px;">
+                                <div>
+                                    <div style="font-weight: 600;">Enable Command Logging</div>
+                                    <div style="font-size: 12px; color: var(--aria-text-muted); margin-top: 2px;">Log all commands executed</div>
+                                </div>
+                            </label>
+                        </div>
+
+                        <div>
+                            <label style="display: flex; align-items: center; gap: 12px; cursor: pointer; padding: 12px; background: var(--aria-bg-secondary); border-radius: 8px;">
+                                <input type="checkbox" style="width: 20px; height: 20px;">
+                                <div>
+                                    <div style="font-weight: 600;">Maintenance Mode</div>
+                                    <div style="font-size: 12px; color: var(--aria-text-muted); margin-top: 2px;">Disable bot for maintenance</div>
+                                </div>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/js/discord-dashboard.js"></script>
+</body>
+</html>

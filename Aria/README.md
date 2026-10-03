@@ -11,6 +11,7 @@ analytics, and message logging.
 
 ## Contents
 
+- [Download & Run](#download--run)
 - [What is included](#what-is-included)
 - [Requirements](#requirements)
 - [Quick start: desktop app](#quick-start-desktop-app)
@@ -23,8 +24,45 @@ analytics, and message logging.
 - [Feature walkthroughs](#feature-walkthroughs)
 - [Update the source checkout](#update-the-source-checkout)
 - [Update an installed Windows app](#update-an-installed-windows-app)
+- [Clean old files or uninstall Aria](#clean-old-files-or-uninstall-aria)
 - [Troubleshooting](#troubleshooting)
 - [Project layout](#project-layout)
+
+## Download & Run
+
+Download the latest build from
+[GitHub Releases](https://github.com/misconsiderations/Aria/releases/latest).
+
+| Platform | Release file | Instructions |
+| --- | --- | --- |
+| Windows x64 Installer | `Aria-Windows-x64-Setup-<version>.exe` | Run the installer and follow the prompts. It creates Start menu and desktop shortcuts. |
+| Windows x64 Portable | `Aria-Windows-x64-Portable-<version>.exe` | Download and run the file. No installation is needed. |
+| macOS Apple Silicon | `Aria-MacOS-arm64-<version>.dmg` | Open the DMG and drag Aria to Applications. If macOS blocks it, run the quarantine-removal command below. |
+| Linux x86_64 Installer | `Aria-Linux-x86_64-<version>.deb` | Install the Debian package with the command below. |
+| Linux x86_64 Portable | `Aria-Linux-x86_64-<version>.AppImage` | Make the AppImage executable and run it with the commands below. |
+
+On macOS, remove the quarantine attribute if needed:
+
+```bash
+xattr -dr com.apple.quarantine /Applications/Aria.app
+```
+
+On Debian/Ubuntu, install the package:
+
+```bash
+sudo apt install ./Aria-Linux-x86_64-<version>.deb
+```
+
+On any other Linux x86_64 distribution, run the AppImage:
+
+```bash
+chmod +x Aria-Linux-x86_64-<version>.AppImage
+./Aria-Linux-x86_64-<version>.AppImage
+```
+
+On first launch, enter your account token in Aria's setup window. Releases are
+built by [`release.yml`](../.github/workflows/release.yml) when a `v*` tag is
+pushed.
 
 ## What is included
 
@@ -508,6 +546,23 @@ Mongo-backed datasets currently include `history_data`, `account_stats`,
 
 ## Feature walkthroughs
 
+### Quest status
+
+Aria can fetch and display the quest state and progress returned by the
+service. These commands are read-only: they do not enroll, simulate activity,
+claim rewards, or send progress updates.
+
+```text
+<prefix>quest list
+<prefix>quest status
+<prefix>quest info <id or name>
+<prefix>quest refresh
+```
+
+`quest` and `quests` are equivalent. The list shows up to eight quests;
+use `quest info` to inspect a matching quest. Quest availability and returned
+progress depend on the connected account and the service response.
+
 ### RPC presets and rotation
 
 Replace `<prefix>` with the command prefix configured for the active instance.
@@ -636,6 +691,179 @@ bundled backend.
 5. Install the new `Aria Setup <version>.exe` under the same Windows user
    account. This allows the app to continue using that user's application
    data.
+
+## Clean old files or uninstall Aria
+
+First decide what you want to remove:
+
+- To clear old build files only, follow **A**.
+- To reinstall development dependencies too, follow **A** and **B**.
+- To remove an installed desktop app, follow **C**.
+- To erase saved settings and account data as well, follow **C** and **D**.
+
+Close Aria before starting. Steps **A** and **B** are for a source checkout,
+not an installed app. They preserve your source and configuration.
+
+### A. Remove generated build files from a source checkout
+
+1. Open PowerShell (Windows) or a terminal (Linux/macOS).
+2. Change directory to Aria's inner application directory, the one
+   containing `package.json`. For a checkout in `C:\Projects\Aria`, for
+   example:
+
+   ```powershell
+   cd C:\Projects\Aria\Aria
+   ```
+
+   On Linux/macOS, use the corresponding path, for example:
+
+   ```bash
+   cd ~/Projects/Aria/Aria
+   ```
+
+3. Confirm you are in the right place before deleting anything:
+
+   PowerShell:
+
+   ```powershell
+   Get-Location
+   if (-not (Test-Path -LiteralPath .\package.json)) {
+       throw "Stop: package.json was not found. Change to Aria's inner application directory."
+   }
+   ```
+
+   Linux/macOS:
+
+   ```bash
+   pwd
+   test -f package.json || { echo "Stop: package.json was not found. Change to Aria's inner application directory." >&2; exit 1; }
+   ```
+
+4. Remove generated build output. This does not remove source code,
+   configuration, or saved runtime data:
+
+   PowerShell:
+
+   ```powershell
+   @("build", "dist", "release", "Aria.Native\bin", "Aria.Native\obj") |
+       ForEach-Object {
+           if (Test-Path -LiteralPath $_) {
+               Remove-Item -LiteralPath $_ -Recurse -Force
+           }
+       }
+   ```
+
+   Linux/macOS:
+
+   ```bash
+   rm -rf build dist release Aria.Native/bin Aria.Native/obj
+   ```
+
+5. Start Aria again or rebuild it. The build folders will be recreated as
+   needed.
+
+### B. Reinstall development dependencies from scratch
+
+Do this only if you also want to remove and reinstall Python/npm dependencies.
+Complete steps 1–3 in **A** first, so you are in the inner application
+directory and have verified that `package.json` exists.
+
+1. Remove the local virtual environment and npm dependency directory:
+
+   PowerShell:
+
+   ```powershell
+   @(".venv", "node_modules") | ForEach-Object {
+       if (Test-Path -LiteralPath $_) {
+           Remove-Item -LiteralPath $_ -Recurse -Force
+       }
+   }
+   ```
+
+   Linux/macOS:
+
+   ```bash
+   rm -rf .venv node_modules
+   ```
+
+2. Recreate the dependencies by following the setup steps in
+   [Quick start: desktop app](#quick-start-desktop-app), or run the relevant
+   commands from the application directory:
+
+   Windows PowerShell:
+
+   ```powershell
+   py -3.11 -m venv .venv
+   .\.venv\Scripts\python.exe -m pip install --upgrade pip
+   .\.venv\Scripts\python.exe -m pip install -r requirements.txt
+   npm ci
+   ```
+
+   Linux/macOS:
+
+   ```bash
+   python3 -m venv .venv
+   .venv/bin/python -m pip install --upgrade pip
+   .venv/bin/python -m pip install -r requirements.txt
+   npm ci
+   ```
+
+`npm ci` reads `package-lock.json` to install the locked npm dependencies. Do
+not delete `package-lock.json`.
+
+### C. Uninstall the installed desktop app
+
+1. Quit Aria.
+2. Uninstall or remove it for your operating system:
+   - **Windows:** Open **Settings > Apps > Installed apps**. Find **Aria**,
+     select the menu beside it, choose **Uninstall**, and follow the prompts.
+     If Aria is not listed, open its installation folder and run its
+     uninstaller. Delete any leftover shortcuts separately if desired.
+   - **macOS:** Open **Applications** in Finder, drag **Aria** to the Trash,
+     then empty the Trash if you want to permanently remove the app.
+   - **Linux AppImage:** Delete the downloaded Aria `.AppImage` file. Also
+     remove any shortcut you created.
+3. If you only want to uninstall the app, stop here. Continue to **D** only
+   if you also want to erase saved data.
+
+Uninstalling the app does not necessarily remove its per-user data. Keeping
+that data allows settings to remain if you reinstall Aria later.
+
+### D. Optionally erase saved Aria data
+
+This step is optional and irreversible. It can remove `config.json` (which
+may contain your account token), session secrets, settings, runtime state,
+databases, hosted-instance data, and logs. Back up anything you want to keep.
+
+1. Quit Aria.
+2. Find the data directory:
+   - **Source checkout:** Local files such as `config.json`,
+     `message_logger.json`, `.aria_webpanel_secret`, `hosted_logs`, and
+     runtime databases are inside the application directory. Do not treat
+     the application directory itself as the data directory.
+   - **Windows installed app:** Find `aria-desktop.log` by following
+     [Desktop logs](#desktop-logs). Its parent folder is `logs`; the parent
+     of `logs` is the Electron user-data directory.
+   - **macOS:** Look in `~/Library/Application Support` for Aria's
+     application-data directory.
+   - **Linux:** Look in `~/.config` or `~/.local/share` for Aria's
+     application-data directory.
+3. Open the identified directory in File Explorer or your file manager.
+   Confirm it belongs to Aria and back up any files you want to keep.
+4. Delete saved data:
+   - **Source checkout:** In the application directory, remove only the
+     Aria data files and folders you have chosen to erase, such as
+     `config.json`, `.aria_webpanel_secret`, `message_logger.json`, or
+     `hosted_logs`. Do not delete the application directory or source code.
+   - **Installed app:** Delete only the Aria Electron user-data directory
+     identified above if you want to erase all saved data for that user. Do
+     not delete the entire `Application Support`, `.config`, or
+     `.local/share` directory.
+5. If Aria is still installed, uninstall it using **C**. If it is already
+   uninstalled, the cleanup is complete.
+
+Do not delete application data to fix a build problem. Use **A** or **B**
+instead.
 
 ## Troubleshooting
 

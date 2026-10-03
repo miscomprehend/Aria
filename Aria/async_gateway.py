@@ -67,7 +67,10 @@ class AsyncDiscordGateway:
                     print("🔌 Gateway connection closed")
                     if self.connected and self.on_close:
                         try:
-                            self.on_close(int(getattr(e, "code", 1000) or 1000), str(getattr(e, "reason", "")))
+                            rcvd = getattr(e, "rcvd", None)
+                            code = getattr(rcvd, "code", None) or getattr(e, "code", None) or 1006
+                            reason = getattr(rcvd, "reason", None) or getattr(e, "reason", "") or ""
+                            self.on_close(int(code), str(reason))
                         except Exception:
                             pass
                 finally:

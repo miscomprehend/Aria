@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="csrf-token" content="__CSRF_TOKEN__">
+    <title>Aria Dashboard 2026 - Web Panel</title>
+    <link rel="icon" type="image/png" href="/static/images/aria-favicon.png">
+    <!-- MODERN 2026 DESIGN SYSTEM ONLY -->
+    <link rel="stylesheet" href="/static/css/modern-dashboard-2026.css">
+    <link rel="stylesheet" href="/static/css/dashboard-pages.css">
+</head>
+<body>
+    <div class="dashboard-wrapper">
+        <!-- SIDEBAR NAVIGATION -->
+        <aside class="dashboard-sidebar">
+            <div class="sidebar-header">
+                <a href="/" class="sidebar-logo">
+                    <div class="logo-icon">⚔</div>
+                    <div class="logo-text">
+                        <span class="logo-title">Aria</span>
+                        <span class="logo-subtitle">Web Panel</span>
+                    </div>
+                </a>
+            </div>
+            
+            <ul class="sidebar-nav">
+                <!-- CORE SECTION -->
+                <li class="nav-section-label">Core</li>
+                <li class="nav-item active" data-page="overview">
+                    <svg class="nav-icon" viewBox="0 0 20 20"><rect x="3" y="3" width="6" height="6"/><rect x="11" y="3" width="6" height="6"/><rect x="3" y="11" width="6" height="6"/><rect x="11" y="11" width="6" height="6"/></svg>
+                    <span>Overview</span>
+                </li>
+                <li class="nav-item" data-page="instances">
+                    <svg class="nav-icon" viewBox="0 0 20 20"><rect x="2" y="3" width="16" height="5" rx="1"/><rect x="2" y="10" width="16" height="5" rx="1"/><circle cx="17" cy="5.5" r="1" fill="currentColor"/><circle cx="17" cy="12.5" r="1" fill="currentColor"/></svg>
+                    <span>Instances</span>
+                </li>
+
+                <!-- WORKSPACE SECTION -->
+                <li class="nav-section-label">Workspace</li>
+                <li class="nav-item" data-page="commands">
+                    <svg class="nav-icon" viewBox="0 0 20 20"><path d="M7 5.5L3 10l4 4.5M13 5.5L17 10l-4 4.5" stroke="currentColor" stroke-width="1.5" fill="none"/></svg>
+                    <span>Commands</span>
+                </li>
+                <li class="nav-item" data-page="feed">
+                    <svg class="nav-icon" viewBox="0 0 20 20"><path d="M3 5h14M3 9h14M3 13h10" stroke="currentColor" stroke-width="1.5" fill="none"/></svg>
+                    <span>Feed</span>
+                </li>
+                <li class="nav-item" data-page="analytics">
+                    <svg class="nav-icon" viewBox="0 0 20 20"><path d="M3 17V10m4 7V7m4 7V5m4 7V3" stroke="currentColor" stroke-width="1.5" fill="none"/></svg>
+                    <span>Analytics</span>
+                </li>
+
+                <!-- PRESENCE SECTION -->
+                <li class="nav-section-label">Presence</li>
+                <li class="nav-item" data-page="presence-studio">
+                    <svg class="nav-icon" viewBox="0 0 20 20"><path d="M2 10h2l2-4 2 8 2-6 2 3 2-1h2" stroke="currentColor" stroke-width="1.5" fill="none"/></svg>
+                    <span>Presence Studio</span>
+                </li>
+                <li class="nav-item" data-page="status">
+                    <svg class="nav-icon" viewBox="0 0 20 20"><circle cx="10" cy="13" r="1.5" fill="currentColor"/><path d="M6.5 10.5a5 5 0 017 0M3.5 7.5a9.5 9.5 0 0113 0" stroke="currentColor" stroke-width="1.5" fill="none"/></svg>
+                    <span>Status</span>
+                </li>
+                <li class="nav-item" data-page="nitro">
+                    <svg class="nav-icon" viewBox="0 0 20 20"><path d="M10 2l1.8 5.5H17L12.6 11l1.7 5.5L10 13l-4.3 3.5L7.4 11 3 7.5h5.2L10 2z" fill="currentColor"/></svg>
+                    <span>Nitro</span>
+                </li>
+
+                <!-- QUESTS SECTION -->
+                <li class="nav-section-label">Engagement</li>
+                <li class="nav-item" data-page="quests-overview">
+                    <svg class="nav-icon" viewBox="0 0 20 20"><path d="M10 2l1.5 4h4.2l-3.4 2.4 1.3 4.2-3.6-2.6-3.6 2.6 1.3-4.2-3.4-2.4h4.2L10 2z" fill="currentColor"/></svg>
+                    <span>Quests</span>
+                    <span class="badge reward">5</span>
+                </li>
+                <li class="nav-item" data-page="active-quests">
+                    <svg class="nav-icon" viewBox="0 0 20 20"><path d="M3 7h14M3 11h14M3 15h10" stroke="currentColor" stroke-width="1.5" fill="none"/></svg>
+                    <span>Active</span>
+                </li>
+                <li class="nav-item" data-page="completed">
+                    <svg class="nav-icon" viewBox="0 0 20 20"><path d="M17 6l-9 9-4-4" stroke="currentColor" stroke-width="1.5" fill="none"/></svg>
+                    <span>Completed</span>
+                </li>
+
+                <!-- ACCOUNT SECTION -->
+                <li class="nav-section-label">Account</li>
+                <li class="nav-item" data-page="profile">
+                    <svg class="nav-icon" viewBox="0 0 20 20"><circle cx="10" cy="6.5" r="3" stroke="currentColor" stroke-width="1.5" fill="none"/><path d="M3.5 17c.6-3.2 2.7-4.8 6.5-4.8s5.9 1.6 6.5 4.8" stroke="currentColor" stroke-width="1.5" fill="none"/></svg>
+                    <span>Profile</span>
+                </li>
+                <li class="nav-item" data-page="settings">
+                    <svg class="nav-icon" viewBox="0 0 20 20"><path d="M10 3v2m0 10v2M3 10h2m10 0h2M5.2 5.2l1.4 1.4m8.8 0l1.4-1.4M5.2 14.8l1.4-1.4m8.8 0l1.4 1.4" stroke="currentColor" stroke-width="1.5" fill="none"/></svg>
+                    <span>Settings</span>
+                </li>
+            </ul>
+        </aside>
+
+        <!-- MAIN CONTENT -->
+        <div class="dashboard-main">
+            <!-- HEADER -->
+            <header class="dashboard-header">
+                <h1 class="header-title">Aria Web Panel 2026</h1>
+                <div class="header-actions">
+                    <button class="btn btn-secondary btn-small" onclick="dashboard.startVoiceCommands()">🎤 Voice</button>
+                    <button class="btn btn-secondary btn-small" onclick="dashboard.launchARPreview()">🔮 AR</button>
+                    <button class="btn btn-secondary btn-small" onclick="location.reload()">↻ Refresh</button>
+                </div>
+            </header>
+
+            <!-- CONTENT AREA -->
+            <main class="dashboard-content">
+                
+                <!-- PLACEHOLDER FOR CONTENT -->
+                <section class="page-section active" data-page="overview">
+                    <div class="grid-cols-2 mb-lg">
+                        <div class="stat-card">
+                            <div class="stat-label">Real-time Status</div>
+                            <div class="stat-value">🟢 Connected</div>
+                            <div class="stat-change">WebSocket active</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-label">Session Status</div>
+                            <div class="stat-value">Active</div>
+                            <div class="stat-change">Live updates enabled</div>
+                        </div>
+                    </div>
+
+                    <div class="card mb-lg">
+                        <div class="card-title">Web Panel Features</div>
+                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-top: 16px;">
+                            <div style="padding: 16px; background: rgba(105, 183, 255, 0.05); border-radius: 8px; border: 1px solid var(--aria-border);">
+                                <div style="font-weight: 600; margin-bottom: 8px;">⚡ Real-time Updates</div>
+                                <div style="font-size: 13px; color: var(--aria-text-muted);">WebSocket connection for instant updates</div>
+                            </div>
+                            <div style="padding: 16px; background: rgba(105, 183, 255, 0.05); border-radius: 8px; border: 1px solid var(--aria-border);">
+                                <div style="font-weight: 600; margin-bottom: 8px;">🎤 Voice Commands</div>
+                                <div style="font-size: 13px; color: var(--aria-text-muted);">Control dashboard with your voice</div>
+                            </div>
+                            <div style="padding: 16px; background: rgba(105, 183, 255, 0.05); border-radius: 8px; border: 1px solid var(--aria-border);">
+                                <div style="font-weight: 600; margin-bottom: 8px;">📊 Advanced Analytics</div>
+                                <div style="font-size: 13px; color: var(--aria-text-muted);">Detailed charts and statistics</div>
+                            </div>
+                            <div style="padding: 16px; background: rgba(105, 183, 255, 0.05); border-radius: 8px; border: 1px solid var(--aria-border);">
+                                <div style="font-weight: 600; margin-bottom: 8px;">🤝 Multiplayer Mode</div>
+                                <div style="font-size: 13px; color: var(--aria-text-muted);">Collaborate with team members</div>
+                            </div>
+                            <div style="padding: 16px; background: rgba(105, 183, 255, 0.05); border-radius: 8px; border: 1px solid var(--aria-border);">
+                                <div style="font-weight: 600; margin-bottom: 8px;">🔮 AR Preview</div>
+                                <div style="font-size: 13px; color: var(--aria-text-muted);">Augmented reality dashboard preview</div>
+                            </div>
+                            <div style="padding: 16px; background: rgba(105, 183, 255, 0.05); border-radius: 8px; border: 1px solid var(--aria-border);">
+                                <div style="font-weight: 600; margin-bottom: 8px;">🌗 Theme Builder</div>
+                                <div style="font-size: 13px; color: var(--aria-text-muted);">Custom themes and dark/light mode</div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+            </main>
+        </div>
+    </div>
+
+    <!-- TOAST NOTIFICATIONS -->
+    <div class="toast-container" id="toastContainer"></div>
+
+    <!-- MODERN 2026 DASHBOARD ONLY -->
+    <script src="/static/js/dashboard-2026.js"></script>
+</body>
+</html>

@@ -1,0 +1,93 @@
+<svg xmlns="http://www.w3.org/2000/svg" style="display:none;">
+
+  <!-- Dashboard Icon -->
+  <symbol id="icon-dashboard" viewBox="0 0 24 24">
+    <rect x="3" y="3" width="8" height="8" fill="currentColor" opacity="0.3"/>
+    <rect x="13" y="3" width="8" height="8" fill="currentColor" opacity="0.3"/>
+    <rect x="3" y="13" width="8" height="8" fill="currentColor" opacity="0.3"/>
+    <rect x="13" y="13" width="8" height="8" fill="currentColor" opacity="0.3"/>
+  </symbol>
+
+  <!-- Server/Instances Icon -->
+  <symbol id="icon-instances" viewBox="0 0 24 24">
+    <rect x="2" y="3" width="20" height="5" rx="1" fill="none" stroke="currentColor" stroke-width="2"/>
+    <circle cx="22" cy="5.5" r="1" fill="currentColor"/>
+    <rect x="2" y="11" width="20" height="5" rx="1" fill="none" stroke="currentColor" stroke-width="2"/>
+    <circle cx="22" cy="13.5" r="1" fill="currentColor"/>
+  </symbol>
+
+  <!-- Commands Icon -->
+  <symbol id="icon-commands" viewBox="0 0 24 24">
+    <path d="M7 7L3 12L7 17M17 7L21 12L17 17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+  </symbol>
+
+  <!-- Feed Icon -->
+  <symbol id="icon-feed" viewBox="0 0 24 24">
+    <path d="M3 5H21M3 10H21M3 15H15" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+  </symbol>
+
+  <!-- Analytics Icon -->
+  <symbol id="icon-analytics" viewBox="0 0 24 24">
+    <path d="M3 21V7M3 7L10 13M10 13L17 8M17 8L21 11M21 11V3" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+  </symbol>
+
+  <!-- Presence Icon -->
+  <symbol id="icon-presence" viewBox="0 0 24 24">
+    <path d="M2 12C2 6.48 6.48 2 12 2s10 4.48 10 10-4.48 10-10 10S2 17.52 2 12zm8-3h4v6h-4v-6z" fill="currentColor"/>
+  </symbol>
+
+  <!-- Status Icon -->
+  <symbol id="icon-status" viewBox="0 0 24 24">
+    <circle cx="12" cy="12" r="10" fill="none" stroke="currentColor" stroke-width="2"/>
+    <circle cx="12" cy="8" r="1.5" fill="currentColor"/>
+    <path d="M12 10C13.1046 10 14 9.10457 14 8C14 6.89543 13.1046 6 12 6" stroke="currentColor" stroke-width="2"/>
+  </symbol>
+
+  <!-- Star Icon -->
+  <symbol id="icon-star" viewBox="0 0 24 24">
+    <path d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z" fill="currentColor"/>
+  </symbol>
+
+  <!-- Quest Icon -->
+  <symbol id="icon-quest" viewBox="0 0 24 24">
+    <path d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z" fill="currentColor"/>
+  </symbol>
+
+  <!-- Checkmark Icon -->
+  <symbol id="icon-checkmark" viewBox="0 0 24 24">
+    <path d="M9 16.17L4.83 12L3.41 13.41L9 19L21 7L19.59 5.59L9 16.17Z" fill="currentColor"/>
+  </symbol>
+
+  <!-- Plus Icon -->
+  <symbol id="icon-plus" viewBox="0 0 24 24">
+    <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+  </symbol>
+
+  <!-- Profile Icon -->
+  <symbol id="icon-profile" viewBox="0 0 24 24">
+    <circle cx="12" cy="8" r="4" fill="currentColor" opacity="0.3"/>
+    <path d="M4 20c0-3.31 3.58-6 8-6s8 2.69 8 6" fill="currentColor" opacity="0.3"/>
+  </symbol>
+
+  <!-- Settings Icon -->
+  <symbol id="icon-settings" viewBox="0 0 24 24">
+    <circle cx="12" cy="12" r="2" fill="currentColor"/>
+    <path d="M12 1V3M12 21V23M4.22 4.22L5.64 5.64M18.36 18.36L19.78 19.78M1 12H3M21 12H23M4.22 19.78L5.64 18.36M19.78 4.22L18.36 5.64" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+  </symbol>
+
+  <!-- Bell/Notification Icon -->
+  <symbol id="icon-notification" viewBox="0 0 24 24">
+    <path d="M12 22C13.1 22 14 21.1 14 20H10C10 21.1 10.89 22 12 22ZM18 16V11C18 7.93 16.36 5.36 13.5 4.68V4C13.5 3.17 12.83 2.5 12 2.5S10.5 3.17 10.5 4V4.68C7.64 5.36 6 7.92 6 11V16L4 18V19H20V18L18 16Z" fill="currentColor"/>
+  </symbol>
+
+  <!-- Friends Icon -->
+  <symbol id="icon-friends" viewBox="0 0 24 24">
+    <path d="M16 11C17.66 11 18.99 9.66 18.99 8S17.66 5 16 5S14 6.34 14 8S15.34 11 16 11ZM8 11C9.66 11 10.99 9.66 10.99 8S9.66 5 8 5S6 6.34 6 8S7.34 11 8 11ZM8 13C5.67 13 1 14.17 1 16.5V19H15V16.5C15 14.17 10.33 13 8 13ZM16 13C15.71 13 15.38 13.02 15.03 13.05C16.19 14.89 17 17.11 17 19V22H23V19.5C23 17.17 18.33 13 16 13Z" fill="currentColor"/>
+  </symbol>
+
+  <!-- Link Icon -->
+  <symbol id="icon-link" viewBox="0 0 24 24">
+    <path d="M10 6L8.59 7.41L13.17 12L8.59 16.59L10 18L16 12L10 6ZM4 6H2V18C2 19.1 2.9 20 4 20H16V18H4V6Z" fill="currentColor"/>
+  </symbol>
+
+</svg>

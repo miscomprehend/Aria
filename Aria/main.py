@@ -1446,7 +1446,10 @@ def main():
     
     # Setup boost commands
     from boost_manager import BoostManager
+    from quest import QuestSystem
+
     boost_manager = BoostManager(bot.api)
+    quest_manager = QuestSystem(bot.api)
     history_manager = HistoryManager(bot.api)
     account_data_manager = AccountDataManager(bot.api)
     badge_scraper = BadgeScraper(bot.api, history_manager)
@@ -1457,6 +1460,7 @@ def main():
     bot.guild_rotator = guild_rotator
     bot.voice_manager = voice_manager
     bot.boost_manager = boost_manager
+    bot.quest_manager = quest_manager
     bot.history_manager = history_manager
     bot.account_data_manager = account_data_manager
     bot.badge_scraper = badge_scraper
@@ -2116,6 +2120,96 @@ def main():
                 ctx["channel_id"],
                 fmt.nitro_status(status, stats["claimed"], stats["cached"], stats.get("last_claimed")),
             )
+
+    @bot.command(name="quest", aliases=["quests"])
+    def quest_cmd(ctx, args):
+        manager = ctx["bot"].quest_manager
+        subcommand = str(args[0]).strip().lower() if args else "list"
+        channel_id = ctx["channel_id"]
+
+        if subcommand not in {"list", "status", "info", "refresh"}:
+            ctx["api"].send_message(
+                channel_id,
+                f"Quest commands (read-only):\n"
+                f"`{bot.prefix}quest list` — list current quests and reported progress\n"
+                f"`{bot.prefix}quest status` — show quest counts by state\n"
+                f"`{bot.prefix}quest info <id or name>` — show one quest\n"
+                f"`{bot.prefix}quest refresh` — fetch the latest quest data",
+            )
+            return
+
+        success, message = manager.fetch_quests()
+        if not success:
+            ctx["api"].send_message(channel_id, f"> Could not fetch quests: {message}")
+            return
+
+        def display(value, limit=100):
+            text = str(value or "").replace("@", "@\u200b").replace("`", "'")
+            text = " ".join(text.split())
+            return text[:limit]
+
+        quests = list(manager.quests.values())
+        if subcommand == "status":
+            counts = {}
+            for quest in quests:
+                state = manager.get_quest_state(quest)
+                counts[state] = counts.get(state, 0) + 1
+            lines = [f"**{state}:** {count}" for state, count in counts.items()]
+            body = "\n".join(lines) if lines else "No current quests were returned."
+            ctx["api"].send_message(channel_id, f"**Quest status** · {len(quests)} total\n{body}")
+            return
+
+        if subcommand == "info":
+            query = " ".join(str(part) for part in args[1:]).strip().casefold()
+            if not query:
+                ctx["api"].send_message(channel_id, f"Usage: `{bot.prefix}quest info <id or name>`")
+                return
+            matches = [
+                quest for quest in quests
+                if query in str(quest.get("id", "")).casefold()
+                or query in manager._quest_name(quest).casefold()
+            ]
+            if not matches:
+                ctx["api"].send_message(channel_id, "> No matching quest was found.")
+                return
+
+            quest = matches[0]
+            event, done, total = manager._get_progress(quest)
+            rewards = manager._reward_names(quest)
+            lines = [
+                f"**State:** {manager.get_quest_state(quest)}",
+                f"**Progress:** {done}/{total} · {display(event, 60)}",
+                f"**ID:** `{display(quest.get('id'), 80)}`",
+            ]
+            if rewards:
+                lines.append(f"**Listed rewards:** {display(', '.join(rewards), 180)}")
+            expires_at = (quest.get("config") or {}).get("expires_at")
+            if expires_at:
+                lines.append(f"**Expires:** {display(expires_at, 50)}")
+            ctx["api"].send_message(
+                channel_id,
+                f"**{display(manager._quest_name(quest), 100)}**\n" + "\n".join(lines),
+            )
+            return
+
+        if not quests:
+            ctx["api"].send_message(channel_id, "> No current quests were returned.")
+            return
+
+        lines = []
+        for quest in quests[:8]:
+            event, done, total = manager._get_progress(quest)
+            percent = min(100, round(done * 100 / max(1, total)))
+            lines.append(
+                f"• **{display(manager._quest_name(quest), 70)}** — "
+                f"{manager.get_quest_state(quest)} · {percent}%"
+            )
+        if len(quests) > 8:
+            lines.append(f"_Showing 8 of {len(quests)} quests. Use `{bot.prefix}quest info <id or name>` for details._")
+        ctx["api"].send_message(
+            channel_id,
+            f"**Current quests** · {len(quests)} total\n" + "\n".join(lines),
+        )
 
     @bot.command(name="logger", aliases=["msglog"])
     def logger_cmd(ctx, args):

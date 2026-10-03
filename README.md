@@ -2,6 +2,42 @@
 
 A Discord selfbot with advanced features including activity control, analytics, and automation.
 
+## Download & Run
+
+Download the latest build from
+[GitHub Releases](https://github.com/misconsiderations/Aria/releases/latest).
+
+| Platform | Release file | Instructions |
+| --- | --- | --- |
+| Windows x64 Installer | `Aria-Windows-x64-Setup-<version>.exe` | Run the installer and follow the prompts. It creates Start menu and desktop shortcuts. |
+| Windows x64 Portable | `Aria-Windows-x64-Portable-<version>.exe` | Download and run the file. No installation is needed. |
+| macOS Apple Silicon | `Aria-MacOS-arm64-<version>.dmg` | Open the DMG and drag Aria to Applications. If macOS blocks it, run the quarantine-removal command below. |
+| Linux x86_64 Installer | `Aria-Linux-x86_64-<version>.deb` | Install the Debian package with the command below. |
+| Linux x86_64 Portable | `Aria-Linux-x86_64-<version>.AppImage` | Make the AppImage executable and run it with the commands below. |
+
+On macOS, remove the quarantine attribute if needed:
+
+```bash
+xattr -dr com.apple.quarantine /Applications/Aria.app
+```
+
+On Debian/Ubuntu, install the package:
+
+```bash
+sudo apt install ./Aria-Linux-x86_64-<version>.deb
+```
+
+On any other Linux x86_64 distribution, run the AppImage:
+
+```bash
+chmod +x Aria-Linux-x86_64-<version>.AppImage
+./Aria-Linux-x86_64-<version>.AppImage
+```
+
+On first launch, enter your account token in Aria's setup window. Releases are
+built by [`release.yml`](.github/workflows/release.yml) when a `v*` tag is
+pushed.
+
 ## Features
 
 - **Activity Control**: Set custom Discord activities, VR presence, and more

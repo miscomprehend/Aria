@@ -1,77 +1,29 @@
-"""Enhanced Quest System - Integrating Auto-Quest TypeScript features with Aria's Python implementation."""
-
 import time
 import random
 import threading
-import logging
 from datetime import datetime, timezone
-from typing import Dict, Optional, Tuple, List, Any
-
-# Import new quest system modules
-from .quest_system import (
-    QuestManager,
-    Quest as EnhancedQuest,
-    AllQuestsResponse,
-    Utils as QuestUtils,
-    Constants,
-)
-
-# Logger
-logger = logging.getLogger(__name__)
 
 QUESTS_BASE = "https://discord.com/api/v9"
 
 
 class QuestSystem:
-    """Enhanced quest system combining legacy Aria implementation with Auto-Quest features."""
-
     def __init__(self, api_client):
         self.api = api_client
-        self.quests = {}  # quest_id (str) -> raw quest dict from API
-        self.excluded = set()  # quest_ids to skip
+        self.quests = {}          # quest_id (str) -> raw quest dict from API
+        self.excluded = set()     # quest_ids to skip
         self.auto_complete = False
         self._task_thread = None
         self.last_fetch = 0
         self.refresh_interval = 5 * 60  # 5 minutes for quicker real-time pickup
-        
-        # New quest system manager
-        self.quest_manager: Optional[QuestManager] = None
-        self.user_id = getattr(api_client, 'user_id', '')
 
-    # =====================================================================
-    # Enhanced Header Management (from Auto-Quest)
-    # =====================================================================
+    # ------------------------------------------------------------------
+    # Internal helpers
+    # ------------------------------------------------------------------
 
-    def _headers(self, is_android: bool = False) -> Dict[str, str]:
-        """Get enhanced headers with Auto-Quest features.
-        
-        Args:
-            is_android: Whether to use Android headers
-            
-        Returns:
-            Headers dictionary
-        """
-        token = self.api.token
-        if token.startswith('Bot '):
-            token = token[4:]
-        
-        base_headers = self.api.header_spoofer.get_protected_headers(token) if hasattr(
-            self.api, 'header_spoofer'
-        ) else {}
-        
-        return QuestUtils.make_headers(
-            token,
-            base_headers=base_headers,
-            is_android=is_android,
-            with_origin=True,
-        )
-
-    # =====================================================================
-    # Internal helpers (maintaining legacy compatibility)
-    # =====================================================================
+    def _headers(self):
+        return self.api.header_spoofer.get_protected_headers(self.api.token)
 
     def _expired(self, iso) -> bool:
-        """Check if date is expired."""
         if not iso:
             return False
         try:
@@ -82,11 +34,10 @@ class QuestSystem:
             return False
 
     def _tasks_map(self, q: dict) -> dict:
-        """Extract tasks map from quest."""
         config = q.get("config", {}) or {}
         if not isinstance(config, dict):
             return {}
-        
+        # Discord may return snake_case or camelCase for task config keys.
         for key in ("task_config_v2", "taskConfigV2", "task_config", "taskConfig"):
             tc = config.get(key, {})
             if not isinstance(tc, dict):
@@ -96,6 +47,7 @@ class QuestSystem:
             if isinstance(tasks, dict) and tasks:
                 return tasks
 
+            # Some payloads store tasks directly at this level.
             looks_like_tasks = False
             for _, tv in tc.items():
                 if isinstance(tv, dict) and (
@@ -110,7 +62,7 @@ class QuestSystem:
         return {}
 
     def _task_names(self, q: dict) -> list:
-        """Collect all task/event identifiers."""
+        """Collect all task/event identifiers in normalized lowercase form."""
         tasks = self._tasks_map(q)
         names = [str(k).lower() for k in tasks.keys()]
         for _, tv in tasks.items():
@@ -139,12 +91,37 @@ class QuestSystem:
         return platforms
 
     def _task_type(self, q: dict) -> str:
-        """Determine quest task type."""
-        return QuestUtils.get_task_type(q)
+        names = self._task_names(q)
+        if any(("watch" in n) or ("video" in n) for n in names):
+            return "watch"
+        if any(("play" in n) or ("gaming" in n) for n in names):
+            return "play"
+        if any("stream" in n for n in names):
+            return "stream"
+        return "unknown"
 
     def _quest_name(self, q: dict) -> str:
-        """Get human-readable quest name."""
-        return QuestUtils.get_quest_display_name(q)
+        config = q.get("config", {}) or {}
+        if not isinstance(config, dict):
+            config = {}
+        msgs = config.get("messages", {}) or {}
+        if not isinstance(msgs, dict):
+            msgs = {}
+        application = config.get("application", {}) or {}
+        if not isinstance(application, dict):
+            application = {}
+        app = application.get("name", "Unknown")
+        if self._task_type(q) == "watch":
+            vm = config.get("video_metadata", {}) or {}
+            if not isinstance(vm, dict):
+                vm = {}
+            video_messages = vm.get("messages", {}) or {}
+            if not isinstance(video_messages, dict):
+                video_messages = {}
+            title = video_messages.get("video_title")
+            if title:
+                return str(title)
+        return str(msgs.get("quest_name") or msgs.get("game_title") or f"Quest by {app}")
 
     def _get_progress(self, q: dict):
         """Returns (event_name, done, total)."""
@@ -209,12 +186,10 @@ class QuestSystem:
         return "Available"
 
     def _is_enrollable(self, q: dict) -> bool:
-        """Check if quest can be enrolled."""
         config = q.get("config", {}) or {}
         return not q.get("user_status") and not self._expired(config.get("expires_at"))
 
     def _is_completeable(self, q: dict) -> bool:
-        """Check if quest can be completed."""
         config = q.get("config", {}) or {}
         status = q.get("user_status") or {}
         return bool(
@@ -225,7 +200,6 @@ class QuestSystem:
         )
 
     def _is_claimable(self, q: dict) -> bool:
-        """Check if quest rewards can be claimed."""
         config = q.get("config", {}) or {}
         rewards_cfg = config.get("rewards_config", {}) or {}
         status = q.get("user_status") or {}
@@ -239,66 +213,94 @@ class QuestSystem:
         )
 
     def _is_worthy(self, q: dict) -> bool:
-        """Check if quest is worth completing (has good rewards)."""
         config = q.get("config", {}) or {}
-        rewards_cfg = config.get("rewards_config", {}) or {}
-        
-        if not isinstance(rewards_cfg, dict):
+        if self._expired(config.get("expires_at")):
             return False
-        
-        rewards = rewards_cfg.get("rewards", [])
-        if not rewards:
-            return False
-        
-        for reward in rewards:
-            if isinstance(reward, dict):
-                reward_type = reward.get("reward_type", "").lower()
-                if "nitro" in reward_type or "boost" in reward_type or "cosmetic" in reward_type:
-                    return True
-        
-        return len(rewards) > 0
+        rewards = (config.get("rewards_config", {}) or {}).get("rewards", []) or []
+        return any(isinstance(r, dict) and r.get("type") in (3, 4) for r in rewards)
 
-    # =====================================================================
-    # API Methods
-    # =====================================================================
+    def _reward_names(self, q: dict) -> list:
+        rewards = ((q.get("config", {}) or {}).get("rewards_config", {}) or {}).get("rewards", []) or []
+        names = []
+        for r in rewards:
+            if not isinstance(r, dict):
+                continue
+            label = ((r.get("messages", {}) or {}).get("name_with_article") or "").strip()
+            if label:
+                names.append(label.title())
+        return names
 
-    def fetch_quests(self, force: bool = False) -> bool:
-        """Fetch quests from Discord API."""
-        now = time.time()
-        if not force and now - self.last_fetch < 30:
-            return False
-        
-        try:
-            resp = self.api.request("GET", "/quests/@me")
-            if resp and resp.status_code == 200:
-                data = resp.json()
-                
-                # Update legacy storage
-                self.quests = {}
-                if isinstance(data.get("quests"), list):
-                    for q in data["quests"]:
-                        if isinstance(q, dict) and q.get("id"):
-                            self.quests[q["id"]] = q
-                
-                # Update new quest manager
-                try:
-                    response = AllQuestsResponse.from_dict(data, self.user_id)
-                    self.quest_manager = QuestManager.from_response(response, self.user_id, False)
-                except (ValueError, KeyError) as e:
-                    logger.warning(f"Failed to parse quests with new system: {e}")
-                
-                self.last_fetch = now
-                return True
-        except Exception as e:
-            logger.error(f"Failed to fetch quests: {e}")
-        
+    def _is_user_quest(self, q: dict) -> bool:
+        """Identify if quest is explicitly user-made; avoid aggressive filtering."""
+        config = q.get("config", {}) or {}
+        grant_type = str(config.get("grant_type") or config.get("grantType") or "").upper()
+        if grant_type == "USER_MADE":
+            return True
+        if bool(config.get("user_created") or config.get("userCreated")):
+            return True
         return False
 
+    # ------------------------------------------------------------------
+    # API calls
+    # ------------------------------------------------------------------
+
+    def fetch_quests(self):
+        """Fetch and cache quests, excluding user-owned quests. Returns (success, message)."""
+        try:
+            resp = self.api.request("GET", "/quests/@me")
+            if not resp or resp.status_code != 200:
+                return False, f"HTTP {resp.status_code if resp else 'No response'}"
+
+            data = resp.json()
+            blocked_until = None
+            if isinstance(data, dict):
+                blocked_until = data.get("quest_enrollment_blocked_until") or data.get("questEnrollmentBlockedUntil")
+            if blocked_until:
+                return False, f"Blocked until {blocked_until}"
+
+            raw = []
+            if isinstance(data, dict):
+                raw = data.get("quests", []) or []
+                for eq in (data.get("excluded_quests", []) or data.get("excludedQuests", []) or []):
+                    if not isinstance(eq, dict):
+                        continue
+                    eid = eq.get("id")
+                    if eid:
+                        self.excluded.add(str(eid))
+            elif isinstance(data, list):
+                raw = data
+
+            self.quests = {}
+            user_quests_skipped = 0
+            
+            for qd in raw:
+                if not isinstance(qd, dict):
+                    continue
+                
+                qid = str(qd.get("id", ""))
+                if not qid or qid in self.excluded:
+                    continue
+                
+                # Skip user-owned quests
+                if self._is_user_quest(qd):
+                    user_quests_skipped += 1
+                    self.excluded.add(qid)
+                    continue
+                
+                self.quests[qid] = qd
+
+            self.last_fetch = time.time()
+            msg = f"Fetched {len(self.quests)} quests"
+            if user_quests_skipped > 0:
+                msg += f" (skipped {user_quests_skipped} user-owned quests)"
+            return True, msg
+        except Exception as e:
+            return False, str(e)
+
     def enroll(self, q: dict):
-        """Enroll in a single quest."""
+        """Enroll in a single quest. Returns updated user_status dict or None."""
         if not self._is_enrollable(q):
             return None
-        
         qid = q.get("id")
         try:
             resp = self.api.request(
@@ -313,23 +315,19 @@ class QuestSystem:
                 return q.get("user_status") or {}
             if resp and resp.status_code == 204:
                 return q.get("user_status") or {"enrolled_at": datetime.now(timezone.utc).isoformat()}
-        except Exception as e:
-            logger.error(f"Failed to enroll in quest {qid}: {e}")
-        
+        except Exception:
+            pass
         return None
 
     def claim(self, q: dict) -> bool:
-        """Claim quest rewards."""
         qid = str(q.get("id", ""))
         if not qid or not self._is_claimable(q):
             return False
-        
         endpoints = (
             f"/quests/{qid}/claim-reward",
             f"/quests/{qid}/claim_reward",
             f"/quests/{qid}/claim",
         )
-        
         for ep in endpoints:
             try:
                 resp = self.api.request("POST", ep, data={})
@@ -340,11 +338,10 @@ class QuestSystem:
                     return True
             except Exception:
                 continue
-        
         return False
 
     def _send_progress(self, q: dict):
-        """Send one progress tick."""
+        """Send one progress tick. Returns (success, completed, done, total)."""
         qid = str(q.get("id", ""))
         qtype = self._task_type(q)
         platforms = self._task_platforms(q)
@@ -395,6 +392,7 @@ class QuestSystem:
                 if app_id:
                     base_payload["application_id"] = app_id
 
+                # Try desktop-first for PC quests, then broad fallbacks for other platforms.
                 terminal_candidates = [False, True]
                 if "desktop" in platforms:
                     terminal_candidates = [True, False]
@@ -457,16 +455,14 @@ class QuestSystem:
                     pass
 
             return True, False, done, total
-        except Exception as e:
-            logger.error(f"Failed to send progress for quest {qid}: {e}")
+        except Exception:
             return False, False, done, total
 
-    # =====================================================================
+    # ------------------------------------------------------------------
     # Background runner
-    # =====================================================================
+    # ------------------------------------------------------------------
 
     def _run_auto_complete(self):
-        """Background thread for auto-completing quests."""
         # Auto-enroll first
         for q in list(self.quests.values()):
             if not self.auto_complete:
@@ -501,15 +497,14 @@ class QuestSystem:
                         time.sleep(0.6)
 
                 time.sleep(random.randint(45, 60))
-            except Exception as e:
-                logger.error(f"Error in auto-complete loop: {e}")
+            except Exception:
                 time.sleep(30)
 
     def start(self):
-        """Start auto-complete."""
         if self.auto_complete:
             return False, "Already running"
         self.auto_complete = True
+        # Fresh fetch so enroll loop has quests to work with immediately
         if not self.quests:
             self.fetch_quests()
         self._task_thread = threading.Thread(target=self._run_auto_complete, daemon=True)
@@ -517,19 +512,17 @@ class QuestSystem:
         return True, "Started"
 
     def stop(self):
-        """Stop auto-complete."""
         if not self.auto_complete:
             return False, "Not running"
         self.auto_complete = False
         self._task_thread = None
         return True, "Stopped"
 
-    # =====================================================================
+    # ------------------------------------------------------------------
     # Summary
-    # =====================================================================
+    # ------------------------------------------------------------------
 
     def get_summary(self):
-        """Get summary of quests."""
         enrollable, completeable, claimable, completed, expired = [], [], [], [], []
         for q in self.quests.values():
             config = q.get("config", {}) or {}
@@ -553,38 +546,3 @@ class QuestSystem:
             "expired": expired,
             "last_fetch": self.last_fetch,
         }
-
-    # =====================================================================
-    # New Enhanced Methods (from Auto-Quest)
-    # =====================================================================
-
-    def get_quest_by_id(self, quest_id: str) -> Optional[EnhancedQuest]:
-        """Get enhanced quest object by ID.
-        
-        Args:
-            quest_id: Quest ID
-            
-        Returns:
-            Enhanced Quest object or None
-        """
-        if self.quest_manager:
-            return self.quest_manager.get(quest_id)
-        return None
-
-    def get_available_quests(self) -> List[EnhancedQuest]:
-        """Get all quests available for enrollment."""
-        if self.quest_manager:
-            return self.quest_manager.get_available()
-        return []
-
-    def get_active_quests(self) -> List[EnhancedQuest]:
-        """Get all active (non-expired) quests."""
-        if self.quest_manager:
-            return self.quest_manager.get_active()
-        return []
-
-    def get_claimable_quests(self) -> List[EnhancedQuest]:
-        """Get all quests with claimable rewards."""
-        if self.quest_manager:
-            return self.quest_manager.get_claimable()
-        return []

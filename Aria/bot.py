@@ -23,6 +23,13 @@ import websocket
 # Defining missing functions
 from core.client.platform import client_identify, state_identify, build_identify_payload
 
+try:
+    from connection_health_monitor import ConnectionHealthMonitor, CommandOutputGuarantee, InstanceSingletonManager
+except ImportError:
+    ConnectionHealthMonitor = None
+    CommandOutputGuarantee = None
+    InstanceSingletonManager = None
+
 class Command:
     def __init__(self, func: Callable, name: str, aliases: Optional[List[str]] = None):
         self.func = func
@@ -130,6 +137,26 @@ class DiscordBot:
         self.use_async_gateway = self.config.get("use_async_gateway", False)
         self.gateway_bridge = None
         self._async_gateway_bridge_active = False
+
+        # Initialize health monitors and reliability features
+        if ConnectionHealthMonitor:
+            self.health_monitor = ConnectionHealthMonitor(bot=self)
+            self.health_monitor.on_account_disabled = self._handle_account_disabled
+            self.health_monitor.on_duplicate_instance = self._handle_duplicate_instance
+            # Wire health monitor to API client for error reporting
+            self.api.health_monitor = self.health_monitor
+        else:
+            self.health_monitor = None
+        
+        if CommandOutputGuarantee:
+            self.output_guarantee = CommandOutputGuarantee(api=self.api)
+        else:
+            self.output_guarantee = None
+        
+        if InstanceSingletonManager:
+            self.instance_manager = InstanceSingletonManager()
+        else:
+            self.instance_manager = None
 
         # Load persisted per-user prefixes
         self.user_prefixes_file = os.path.join(
@@ -402,6 +429,9 @@ class DiscordBot:
                     if len(self._gateway_latency_samples) > 25:
                         self._gateway_latency_samples = self._gateway_latency_samples[-25:]
                     self._heartbeat_sent_at = None
+                # Record successful heartbeat with health monitor
+                if self.health_monitor:
+                    self.health_monitor.record_heartbeat_ack()
                 
             elif op == GatewayOpcodes.Reconnect:  # op 7 — must reconnect immediately
                 print("\033[1;33m[GATEWAY]\033[0m op 7 RECONNECT — closing for immediate resume")
@@ -739,15 +769,39 @@ class DiscordBot:
         if self.heartbeat_thread and self.heartbeat_thread.is_alive():
             self.heartbeat_thread = None
 
-        if close_status_code == 4007:
-            print(f"\033[1;33m[GATEWAY]\033[0m Invalid sequence - resetting session")
-            self.session_id = None
-            self.can_resume = False
-        elif close_status_code in [4004, 4010, 4011]:
-            print(f"\033[1;31m[GATEWAY]\033[0m Permanent disconnect ({close_status_code}) - stopping retries")
+        # Discord gateway close codes that must not be retried
+        fatal_codes = {
+            4004: "authentication failed (invalid token)",
+            4010: "invalid shard",
+            4011: "sharding required",
+            4012: "invalid API version",
+            4013: "invalid intents",
+            4014: "disallowed intents",
+        }
+        if close_status_code in fatal_codes:
+            print(f"\033[1;31m[GATEWAY]\033[0m Permanent disconnect ({close_status_code}): {fatal_codes[close_status_code]} - stopping retries")
+            if close_status_code == 4004 and self.health_monitor:
+                try:
+                    self.health_monitor.record_auth_error({"source": "gateway", "code": 4004})
+                except Exception:
+                    pass
             self.running = False
             self._reconnect_stop.set()
             return
+
+        if close_status_code in (4007, 4009):
+            # Invalid sequence / session timed out: the session can't be resumed
+            print(f"\033[1;33m[GATEWAY]\033[0m Session not resumable ({close_status_code}) - starting a fresh session")
+            self.session_id = None
+            self.resume_gateway_url = None
+            self.can_resume = False
+        elif close_status_code in (4003, 4005):
+            self.session_id = None
+            self.resume_gateway_url = None
+            self.can_resume = False
+        elif close_status_code in (4008, 4002):
+            # Gateway rate limited / decode error: back off before reconnecting
+            self._consecutive_failures = max(self._consecutive_failures, 3)
 
         if self.running:
             self._schedule_reconnect(f"gateway closed {close_reason}")
@@ -1791,35 +1845,82 @@ class DiscordBot:
         the gateway connection is still alive. If the connection has died, it triggers a
         reconnect so the bot wakes back up automatically.
         """
-        self._schedule_reconnect("startup")
-        while self.running:
-            try:
-                time.sleep(15)
-                # Watchdog: restart gateway if connection died silently
-                connection_alive = False
+        # Refuse to open a second gateway session for the same token.
+        if self.instance_manager and not self.config.get("allow_duplicate_instances", False):
+            if not self.instance_manager.acquire(self.token):
+                holder = self.instance_manager.holder or {}
+                pid = holder.get("pid", "unknown")
+                print(f"\033[1;31m[INSTANCE]\033[0m Another Aria instance is already running for this token (PID {pid}).")
+                print("    Stop it first, or set \"allow_duplicate_instances\": true in the config to override.")
+                self.running = False
+                return
 
-                if self.use_async_gateway:
-                    # Check async gateway bridge
-                    connection_alive = (
-                        self.gateway_bridge and
-                        self.gateway_bridge.running and
-                        self.gateway_bridge.connection_active
-                    )
-                else:
-                    # Check legacy websocket thread
-                    connection_alive = (
-                        self.ws_thread and
-                        self.ws_thread.is_alive() and
-                        self.connection_active and
-                        self.identified
-                    )
+        # Start health monitoring
+        if self.health_monitor:
+            self.health_monitor.start()
 
-                reconnecting = bool(self._reconnect_thread and self._reconnect_thread.is_alive())
-                if self.running and not connection_alive and not reconnecting:
-                    print("\033[1;33m[WATCHDOG]\033[0m Gateway connection dead — reconnecting…")
-                    self.identified = False
-                    self.connection_active = False
-                    self._schedule_reconnect("watchdog detected dead connection")
-            except KeyboardInterrupt:
-                self.stop()
-                break
+        # Start command output guarantee
+        if self.output_guarantee:
+            self.output_guarantee.start()
+
+        try:
+            self._schedule_reconnect("startup")
+            while self.running:
+                try:
+                    time.sleep(15)
+                    # Watchdog: restart gateway if connection died silently
+                    connection_alive = False
+
+                    if self.use_async_gateway:
+                        # Check async gateway bridge
+                        connection_alive = (
+                            self.gateway_bridge and
+                            self.gateway_bridge.running and
+                            self.gateway_bridge.connection_active
+                        )
+                    else:
+                        # Check legacy websocket thread
+                        connection_alive = (
+                            self.ws_thread and
+                            self.ws_thread.is_alive() and
+                            self.connection_active and
+                            self.identified
+                        )
+
+                    reconnecting = bool(self._reconnect_thread and self._reconnect_thread.is_alive())
+                    if self.running and not connection_alive and not reconnecting:
+                        print("\033[1;33m[WATCHDOG]\033[0m Gateway connection dead — reconnecting…")
+                        self.identified = False
+                        self.connection_active = False
+                        self._schedule_reconnect("watchdog detected dead connection")
+                except KeyboardInterrupt:
+                    self.stop()
+                    break
+        finally:
+            # Stop health monitoring
+            if self.health_monitor:
+                self.health_monitor.stop()
+            
+            # Stop output guarantee
+            if self.output_guarantee:
+                self.output_guarantee.stop()
+            
+            # Release instance lock
+            if self.instance_manager:
+                self.instance_manager.release()
+
+    def _handle_account_disabled(self, reason: str = "account_disabled") -> None:
+        """Handle account disabled detection from health monitor."""
+        print(f"🚨 CRITICAL: Account disabled detected! Reason: {reason}")
+        self.identified = False
+        self.connection_active = False
+        self.running = False
+        self._connection_quality_score = 0
+        # Don't auto-reconnect; account needs manual intervention
+        print("⚠️  Please check your Discord account status and re-authenticate.")
+
+    def _handle_duplicate_instance(self, other_pid: int, token_hash: str) -> None:
+        """Handle duplicate instance detection from health monitor."""
+        print(f"⚠️  WARNING: Duplicate instance detected (PID: {other_pid}, Token: {token_hash[:8]}...)")
+        print("    This instance will continue running but conflicts with other instance.")
+        print("    Only one instance per token should run simultaneously.")

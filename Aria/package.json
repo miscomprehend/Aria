@@ -36,18 +36,50 @@
     ],
     "linux": {
       "target": [
-        "AppImage"
-      ]
+        {
+          "target": "AppImage",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "deb",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "category": "Network",
+      "icon": "electron/aria.png",
+      "maintainer": "Misconsideration <noreply@github.com>"
     },
     "mac": {
       "target": [
-        "dmg"
-      ]
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64"
+          ]
+        }
+      ],
+      "category": "public.app-category.social-networking",
+      "icon": "electron/aria.png"
     },
     "win": {
       "icon": "electron/aria.ico",
       "target": [
-        "nsis"
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
       ]
     },
     "nsis": {
@@ -58,11 +90,29 @@
       "shortcutName": "Aria",
       "installerIcon": "electron/aria.ico",
       "uninstallerIcon": "electron/aria.ico",
-      "installerHeaderIcon": "electron/aria.ico"
+      "installerHeaderIcon": "electron/aria.ico",
+      "artifactName": "Aria-Windows-x64-Setup-${version}.exe"
+    },
+    "appImage": {
+      "artifactName": "Aria-Linux-x86_64-${version}.AppImage"
+    },
+    "deb": {
+      "artifactName": "Aria-Linux-x86_64-${version}.deb"
+    },
+    "dmg": {
+      "artifactName": "Aria-MacOS-arm64-${version}.dmg"
+    },
+    "portable": {
+      "artifactName": "Aria-Windows-x64-Portable-${version}.exe"
     }
   },
   "allowScripts": {
     "electron@44.5.1": true,
     "electron-winstaller@5.4.0": true
-  }
+  },
+  "author": {
+    "name": "Misconsideration",
+    "email": "noreply@github.com"
+  },
+  "homepage": "https://github.com/misconsiderations/Aria"
 }

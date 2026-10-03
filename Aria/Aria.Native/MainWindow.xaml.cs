@@ -24,6 +24,7 @@ public sealed partial class MainWindow : Window
         var brandIconPath = Path.Combine(AppContext.BaseDirectory, "aria.png");
         var brandIcon = new BitmapImage(new Uri(brandIconPath, UriKind.Absolute));
         TitleBrandIcon.Source = brandIcon;
+        SidebarBrandIcon.Source = brandIcon;
         SetupBrandIcon.Source = brandIcon;
         ExtendsContentIntoTitleBar = true;
         SetTitleBar(TitleBar);
@@ -55,6 +56,7 @@ public sealed partial class MainWindow : Window
             if (_needsTokenSetup)
             {
                 ConnectionProgress.IsActive = false;
+                SetSessionState("SETUP REQUIRED", 224, 180, 102);
                 StatusMessage.Text = "Connect the account Aria should run as.";
                 TokenSetupPanel.Visibility = Visibility.Visible;
                 return;
@@ -66,6 +68,7 @@ public sealed partial class MainWindow : Window
             {
                 _client.SetBaseAddress(_baseUrl);
                 ConnectionProgress.IsActive = false;
+                SetSessionState("SIGN IN REQUIRED", 224, 180, 102);
                 StatusMessage.Text = "Sign in to the local Aria service.";
                 LoginPanel.Visibility = Visibility.Visible;
                 return;
@@ -79,6 +82,7 @@ public sealed partial class MainWindow : Window
         catch (Exception error)
         {
             ConnectionProgress.IsActive = false;
+            SetSessionState("CONNECTION ISSUE", 255, 126, 135);
             StatusMessage.Text = error.Message;
             RetryButton.Visibility = Visibility.Visible;
         }
@@ -164,15 +168,27 @@ public sealed partial class MainWindow : Window
         foreach (var button in Navigation.Children.OfType<Button>())
         {
             var isSelected = string.Equals(button.Tag?.ToString(), page, StringComparison.Ordinal);
+            var foreground = isSelected
+                ? (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["AriaAccentBrush"]
+                : new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.ColorHelper.FromArgb(255, 190, 201, 212));
             button.Background = isSelected
                 ? (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["AriaNavActiveBrush"]
                 : new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.Transparent);
             button.BorderBrush = isSelected
                 ? (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["AriaAccentBrush"]
                 : new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.Transparent);
-            button.Foreground = isSelected
-                ? (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["AriaAccentBrush"]
-                : new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.White);
+            button.BorderThickness = isSelected ? new Thickness(3, 0, 0, 0) : new Thickness(1);
+            button.Foreground = foreground;
+            if (button.Content is StackPanel content)
+            {
+                foreach (var element in content.Children)
+                {
+                    if (element is FontIcon icon)
+                        icon.Foreground = foreground;
+                    else if (element is TextBlock label)
+                        label.Foreground = foreground;
+                }
+            }
         }
 
         try
@@ -892,9 +908,19 @@ public sealed partial class MainWindow : Window
         using var response = await _client.GetAsync("/api/dash/me");
         var profile = response.RootElement.GetProperty("profile");
         SessionIdentity.Text = ReadText(profile, "username", "Signed in");
+        SetSessionState("SIGNED IN", 103, 214, 160);
         OwnerNavigationButton.Visibility = ReadBoolean(profile, "is_owner")
             ? Visibility.Visible
             : Visibility.Collapsed;
+    }
+
+    private void SetSessionState(string status, byte red, byte green, byte blue)
+    {
+        var brush = new Microsoft.UI.Xaml.Media.SolidColorBrush(
+            Microsoft.UI.ColorHelper.FromArgb(255, red, green, blue));
+        SessionStatusText.Text = status;
+        SessionStatusText.Foreground = brush;
+        SessionStatusDot.Fill = brush;
     }
 
     private async Task LoadOverviewAsync()
@@ -1254,18 +1280,44 @@ public sealed partial class MainWindow : Window
                 Background = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["AriaSurfaceBrush"],
                 BorderBrush = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["AriaBorderBrush"],
                 BorderThickness = new Thickness(1),
-                CornerRadius = new CornerRadius(8),
-                Padding = new Thickness(16),
-                Child = new StackPanel
+                CornerRadius = new CornerRadius(11),
+                Padding = new Thickness(18),
+                Child = new Grid
                 {
-                    Spacing = 8,
-                    Children =
+                    RowDefinitions =
                     {
-                        new TextBlock { Text = metrics[index].Label, FontSize = 11, Foreground = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["AriaMutedBrush"] },
-                        new TextBlock { Text = metrics[index].Value, FontSize = 20, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, TextTrimming = TextTrimming.CharacterEllipsis },
+                        new RowDefinition { Height = GridLength.Auto },
+                        new RowDefinition { Height = GridLength.Auto },
                     },
                 },
             };
+            var metricContent = (Grid)card.Child;
+            metricContent.RowSpacing = 9;
+            metricContent.Children.Add(new Border
+            {
+                Width = 26,
+                Height = 3,
+                HorizontalAlignment = HorizontalAlignment.Left,
+                Background = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["AriaAccentBrush"],
+                CornerRadius = new CornerRadius(2),
+            });
+            var metricValue = new StackPanel { Spacing = 5 };
+            metricValue.Children.Add(new TextBlock
+            {
+                Text = metrics[index].Label,
+                FontSize = 11,
+                FontWeight = Microsoft.UI.Text.FontWeights.Medium,
+                Foreground = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["AriaMutedBrush"],
+            });
+            metricValue.Children.Add(new TextBlock
+            {
+                Text = metrics[index].Value,
+                FontSize = 21,
+                FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+                TextTrimming = TextTrimming.CharacterEllipsis,
+            });
+            Grid.SetRow(metricValue, 1);
+            metricContent.Children.Add(metricValue);
             Grid.SetColumn(card, index);
             grid.Children.Add(card);
         }
@@ -1275,7 +1327,6 @@ public sealed partial class MainWindow : Window
     private static Border CreateCard(string title, IEnumerable<(string Label, string Value)> values)
     {
         var content = new StackPanel { Spacing = 9 };
-        content.Children.Add(new TextBlock { Text = title, FontSize = 15, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold });
         foreach (var (label, value) in values)
         {
             var row = new Grid();
@@ -1293,15 +1344,31 @@ public sealed partial class MainWindow : Window
     private static Border CreatePanel(string title, UIElement child)
     {
         var content = new StackPanel { Spacing = 12 };
-        content.Children.Add(new TextBlock { Text = title, FontSize = 15, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold });
+        var heading = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10 };
+        heading.Children.Add(new Border
+        {
+            Width = 3,
+            Height = 17,
+            CornerRadius = new CornerRadius(2),
+            Background = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["AriaAccentBrush"],
+            VerticalAlignment = VerticalAlignment.Center,
+        });
+        heading.Children.Add(new TextBlock
+        {
+            Text = title,
+            FontSize = 15,
+            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+            VerticalAlignment = VerticalAlignment.Center,
+        });
+        content.Children.Add(heading);
         content.Children.Add(child);
         return new Border
         {
             Background = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["AriaSurfaceBrush"],
             BorderBrush = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["AriaBorderBrush"],
             BorderThickness = new Thickness(1),
-            CornerRadius = new CornerRadius(8),
-            Padding = new Thickness(16),
+            CornerRadius = new CornerRadius(11),
+            Padding = new Thickness(18),
             Child = content,
         };
     }

@@ -58,6 +58,8 @@ class DiscordAPIClient:
         self.circuit_breaker_hits = 0
         self.last_circuit_reset = time.time()
         self.circuit_open = False
+        # Health monitor reference (set by bot after initialization)
+        self.health_monitor = None
 
     def _check_circuit_breaker(self) -> bool:
         """Check if circuit breaker should open due to excessive rate limiting."""
@@ -295,6 +297,13 @@ class DiscordAPIClient:
                 if not self.auth_failed:
                     print(f"[AUTH-ERROR] 401 on {endpoint} - token is invalid or expired. Halting requests.")
                     self.auth_failed = True
+                    # Record auth error with health monitor
+                    if self.health_monitor:
+                        self.health_monitor.record_auth_error({
+                            'status_code': 401,
+                            'endpoint': endpoint,
+                            'message': 'Token is invalid or expired'
+                        })
                 return response
 
             response_data = {}
@@ -333,6 +342,9 @@ class DiscordAPIClient:
             # Store the complete cooldown and return the failed request without replaying it.
             if response.status_code == 429:
                 self._record_rate_limit_hit()  # Record for circuit breaker
+                # Record rate limit error with health monitor
+                if self.health_monitor:
+                    self.health_monitor.record_rate_limit_error()
                 retry_after = self.rate_limiter.handle_429(
                     dict(response.headers),
                     endpoint,

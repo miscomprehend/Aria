@@ -364,5 +364,61 @@ class GatewayLifecycleTests(unittest.TestCase):
         self.assertIsNone(bot._voice_client)
 
 
+class CloseCodeTests(unittest.TestCase):
+    def _close(self, code):
+        bot = make_bot()
+        bot._total_uptime = 0.0
+        bot._last_uptime_check = time.time()
+        bot.heartbeat_thread = None
+        bot.health_monitor = None
+        bot.session_id = "abc"
+        bot.resume_gateway_url = "wss://resume"
+        bot.can_resume = True
+        scheduled = []
+        bot._schedule_reconnect = lambda reason="": scheduled.append(reason) or True
+        bot.on_close(None, code, "")
+        return bot, scheduled
+
+    def test_fatal_codes_stop_retrying(self):
+        for code in (4004, 4012, 4013, 4014):
+            bot, scheduled = self._close(code)
+            self.assertFalse(bot.running, code)
+            self.assertEqual(scheduled, [], code)
+
+    def test_session_timeout_drops_resume_state_and_reconnects(self):
+        for code in (4007, 4009):
+            bot, scheduled = self._close(code)
+            self.assertTrue(bot.running)
+            self.assertFalse(bot.can_resume)
+            self.assertIsNone(bot.session_id)
+            self.assertEqual(len(scheduled), 1)
+
+    def test_transient_close_keeps_resume_state(self):
+        bot, scheduled = self._close(1006)
+        self.assertTrue(bot.can_resume)
+        self.assertEqual(bot.session_id, "abc")
+        self.assertEqual(len(scheduled), 1)
+
+    def test_rate_limited_close_forces_backoff(self):
+        bot, _ = self._close(4008)
+        self.assertGreaterEqual(bot._consecutive_failures, 3)
+
+
+class InstanceLockTests(unittest.TestCase):
+    def test_second_instance_blocked_until_release(self):
+        import tempfile
+        from connection_health_monitor import InstanceSingletonManager
+
+        with tempfile.TemporaryDirectory() as tmp:
+            first, second = InstanceSingletonManager(tmp), InstanceSingletonManager(tmp)
+            self.assertTrue(first.acquire("token-a"))
+            self.assertFalse(second.acquire("token-a"))
+            self.assertEqual(second.holder.get("pid"), os.getpid())
+            self.assertTrue(InstanceSingletonManager(tmp).acquire("token-b"))
+            first.release()
+            self.assertTrue(second.acquire("token-a"))
+            second.release()
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -1,0 +1,543 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="csrf-token" content="__CSRF_TOKEN__">
+    <title>Aria Dashboard 2026</title>
+    <link rel="icon" type="image/png" href="/static/images/aria-favicon.png">
+    <link rel="stylesheet" href="/static/css/modern-dashboard-2026.css">
+</head>
+<body>
+    <div class="dashboard-wrapper">
+        <!-- SIDEBAR NAVIGATION -->
+        <aside class="dashboard-sidebar">
+            <div class="sidebar-header">
+                <a href="/" class="sidebar-logo">
+                    <div class="logo-icon">⚔</div>
+                    <div class="logo-text">
+                        <span class="logo-title">Aria</span>
+                        <span class="logo-subtitle">Dashboard</span>
+                    </div>
+                </a>
+            </div>
+            
+            <ul class="sidebar-nav">
+                <!-- CORE SECTION -->
+                <li class="nav-section-label">Core</li>
+                <li class="nav-item active" data-page="overview">
+                    <svg class="nav-icon" viewBox="0 0 20 20"><rect x="3" y="3" width="6" height="6"/><rect x="11" y="3" width="6" height="6"/><rect x="3" y="11" width="6" height="6"/><rect x="11" y="11" width="6" height="6"/></svg>
+                    <span>Overview</span>
+                </li>
+                <li class="nav-item" data-page="instances">
+                    <svg class="nav-icon" viewBox="0 0 20 20"><rect x="2" y="3" width="16" height="5" rx="1"/><rect x="2" y="10" width="16" height="5" rx="1"/><circle cx="17" cy="5.5" r="1" fill="currentColor"/><circle cx="17" cy="12.5" r="1" fill="currentColor"/></svg>
+                    <span>Instances</span>
+                </li>
+
+                <!-- WORKSPACE SECTION -->
+                <li class="nav-section-label">Workspace</li>
+                <li class="nav-item" data-page="commands">
+                    <svg class="nav-icon" viewBox="0 0 20 20"><path d="M7 5.5L3 10l4 4.5M13 5.5L17 10l-4 4.5" stroke="currentColor" stroke-width="1.5" fill="none"/></svg>
+                    <span>Commands</span>
+                </li>
+                <li class="nav-item" data-page="feed">
+                    <svg class="nav-icon" viewBox="0 0 20 20"><path d="M3 5h14M3 9h14M3 13h10" stroke="currentColor" stroke-width="1.5" fill="none"/></svg>
+                    <span>Feed</span>
+                </li>
+                <li class="nav-item" data-page="analytics">
+                    <svg class="nav-icon" viewBox="0 0 20 20"><path d="M3 17V10m4 7V7m4 7V5m4 7V3" stroke="currentColor" stroke-width="1.5" fill="none"/></svg>
+                    <span>Analytics</span>
+                    <span class="badge">PRO</span>
+                </li>
+
+                <!-- PRESENCE SECTION -->
+                <li class="nav-section-label">Presence</li>
+                <li class="nav-item" data-page="presence-studio">
+                    <svg class="nav-icon" viewBox="0 0 20 20"><path d="M2 10h2l2-4 2 8 2-6 2 3 2-1h2" stroke="currentColor" stroke-width="1.5" fill="none"/></svg>
+                    <span>Presence Studio</span>
+                </li>
+                <li class="nav-item" data-page="status">
+                    <svg class="nav-icon" viewBox="0 0 20 20"><circle cx="10" cy="13" r="1.5" fill="currentColor"/><path d="M6.5 10.5a5 5 0 017 0M3.5 7.5a9.5 9.5 0 0113 0" stroke="currentColor" stroke-width="1.5" fill="none"/></svg>
+                    <span>Status</span>
+                </li>
+                <li class="nav-item" data-page="nitro">
+                    <svg class="nav-icon" viewBox="0 0 20 20"><path d="M10 2l1.8 5.5H17L12.6 11l1.7 5.5L10 13l-4.3 3.5L7.4 11 3 7.5h5.2L10 2z" fill="currentColor"/></svg>
+                    <span>Nitro</span>
+                </li>
+
+                <!-- QUESTS SECTION -->
+                <li class="nav-section-label">Engagement</li>
+                <li class="nav-item" data-page="quests-overview">
+                    <svg class="nav-icon" viewBox="0 0 20 20"><path d="M10 2l1.5 4h4.2l-3.4 2.4 1.3 4.2-3.6-2.6-3.6 2.6 1.3-4.2-3.4-2.4h4.2L10 2z" fill="currentColor"/></svg>
+                    <span>Quests</span>
+                    <span class="badge reward">5</span>
+                </li>
+                <li class="nav-item" data-page="active-quests">
+                    <svg class="nav-icon" viewBox="0 0 20 20"><path d="M3 7h14M3 11h14M3 15h10" stroke="currentColor" stroke-width="1.5" fill="none"/></svg>
+                    <span>Active</span>
+                </li>
+                <li class="nav-item" data-page="completed">
+                    <svg class="nav-icon" viewBox="0 0 20 20"><path d="M17 6l-9 9-4-4" stroke="currentColor" stroke-width="1.5" fill="none"/></svg>
+                    <span>Completed</span>
+                </li>
+                <li class="nav-item" data-page="available-quests">
+                    <svg class="nav-icon" viewBox="0 0 20 20"><circle cx="10" cy="10" r="7" stroke="currentColor" stroke-width="1.5" fill="none"/><path d="M10 7v6M7 10h6" stroke="currentColor" stroke-width="1.5"/></svg>
+                    <span>Available</span>
+                </li>
+
+                <!-- ACCOUNT SECTION -->
+                <li class="nav-section-label">Account</li>
+                <li class="nav-item" data-page="profile">
+                    <svg class="nav-icon" viewBox="0 0 20 20"><circle cx="10" cy="6.5" r="3" stroke="currentColor" stroke-width="1.5" fill="none"/><path d="M3.5 17c.6-3.2 2.7-4.8 6.5-4.8s5.9 1.6 6.5 4.8" stroke="currentColor" stroke-width="1.5" fill="none"/></svg>
+                    <span>Profile</span>
+                </li>
+                <li class="nav-item" data-page="friends">
+                    <svg class="nav-icon" viewBox="0 0 20 20"><circle cx="7" cy="7" r="3" stroke="currentColor" stroke-width="1.5" fill="none"/><path d="M1.5 17c.5-3 2.3-4.5 5.5-4.5 1.2 0 2.2.2 3 .7M13 5.5a2.5 2.5 0 010 5M13 13c3 0 4.8 1.4 5.5 4" stroke="currentColor" stroke-width="1.5" fill="none"/></svg>
+                    <span>Friends</span>
+                </li>
+                <li class="nav-item" data-page="settings">
+                    <svg class="nav-icon" viewBox="0 0 20 20"><path d="M10 3v2m0 10v2M3 10h2m10 0h2M5.2 5.2l1.4 1.4m8.8 0l1.4-1.4M5.2 14.8l1.4-1.4m8.8 0l1.4 1.4" stroke="currentColor" stroke-width="1.5" fill="none"/></svg>
+                    <span>Settings</span>
+                </li>
+            </ul>
+        </aside>
+
+        <!-- MAIN CONTENT -->
+        <div class="dashboard-main">
+            <!-- HEADER -->
+            <header class="dashboard-header">
+                <h1 class="header-title">Aria Control Dashboard</h1>
+                <div class="header-actions">
+                    <button class="btn btn-secondary btn-small">Refresh</button>
+                    <button class="btn btn-secondary btn-small">Support</button>
+                </div>
+            </header>
+
+            <!-- CONTENT AREA -->
+            <main class="dashboard-content">
+                
+                <!-- ===== OVERVIEW PAGE ===== -->
+                <section class="page-section active" data-page="overview">
+                    <div class="grid-cols-2 mb-lg">
+                        <div class="stat-card">
+                            <div class="stat-label">Active Sessions</div>
+                            <div class="stat-value">2</div>
+                            <div class="stat-change">↑ 100% from last week</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-label">Quests Progress</div>
+                            <div class="stat-value">42%</div>
+                            <div class="stat-change">↑ 12% from last week</div>
+                        </div>
+                    </div>
+
+                    <div class="grid-cols-2 mb-lg">
+                        <div class="stat-card">
+                            <div class="stat-label">Commands Executed</div>
+                            <div class="stat-value">842</div>
+                            <div class="stat-change">↑ 24% from last week</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-label">Engagement Score</div>
+                            <div class="stat-value">1,234</div>
+                            <div class="stat-change">↑ 8% from last week</div>
+                        </div>
+                    </div>
+
+                    <div class="card mb-lg">
+                        <div class="card-title">Quick Actions</div>
+                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px;">
+                            <button class="btn btn-primary">Start Quest</button>
+                            <button class="btn btn-success">Claim Rewards</button>
+                            <button class="btn btn-warning">View Analytics</button>
+                            <button class="btn btn-secondary">Manage Sessions</button>
+                        </div>
+                    </div>
+
+                    <div class="card">
+                        <div class="card-title">Recent Activity</div>
+                        <div style="height: 200px; display: flex; align-items: center; justify-content: center; color: var(--aria-text-muted);">
+                            Activity feed loading...
+                        </div>
+                    </div>
+                </section>
+
+                <!-- ===== INSTANCES PAGE ===== -->
+                <section class="page-section" data-page="instances">
+                    <div class="card mb-lg">
+                        <div class="flex-between mb-lg">
+                            <div class="card-title">Running Instances</div>
+                            <button class="btn btn-primary btn-small">+ New Instance</button>
+                        </div>
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Name</th>
+                                    <th>Status</th>
+                                    <th>Uptime</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td>Instance 1</td>
+                                    <td><span style="color: var(--aria-success);">● Online</span></td>
+                                    <td>2d 14h 32m</td>
+                                    <td><button class="btn btn-secondary btn-small">Manage</button></td>
+                                </tr>
+                                <tr>
+                                    <td>Instance 2</td>
+                                    <td><span style="color: var(--aria-success);">● Online</span></td>
+                                    <td>1d 8h 15m</td>
+                                    <td><button class="btn btn-secondary btn-small">Manage</button></td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+
+                <!-- ===== COMMANDS PAGE ===== -->
+                <section class="page-section" data-page="commands">
+                    <div class="card mb-lg">
+                        <div class="card-title">Command Management</div>
+                        <div style="margin-bottom: 20px;">
+                            <input type="text" placeholder="Search commands..." style="width: 100%;"/>
+                        </div>
+                        <div style="height: 300px; display: flex; align-items: center; justify-content: center; color: var(--aria-text-muted);">
+                            Commands list loading...
+                        </div>
+                    </div>
+                </section>
+
+                <!-- ===== FEED PAGE ===== -->
+                <section class="page-section" data-page="feed">
+                    <div class="card">
+                        <div class="card-title">Activity Feed</div>
+                        <div style="height: 400px; display: flex; align-items: center; justify-content: center; color: var(--aria-text-muted);">
+                            Feed events loading...
+                        </div>
+                    </div>
+                </section>
+
+                <!-- ===== ANALYTICS PAGE ===== -->
+                <section class="page-section" data-page="analytics">
+                    <div class="grid-cols-2 mb-lg">
+                        <div class="card">
+                            <div class="card-title">Daily Activity</div>
+                            <div style="height: 250px; background: rgba(105, 183, 255, 0.05); border-radius: 8px; display: flex; align-items: center; justify-content: center;">
+                                📊 Chart Loading
+                            </div>
+                        </div>
+                        <div class="card">
+                            <div class="card-title">Command Statistics</div>
+                            <div style="height: 250px; background: rgba(105, 183, 255, 0.05); border-radius: 8px; display: flex; align-items: center; justify-content: center;">
+                                📊 Chart Loading
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- ===== PRESENCE STUDIO PAGE ===== -->
+                <section class="page-section" data-page="presence-studio">
+                    <div class="card mb-lg">
+                        <div class="card-title">Custom Presence Creator</div>
+                        <div class="grid-cols-1 gap-lg">
+                            <div>
+                                <label style="display: block; margin-bottom: 8px; font-weight: 500;">Activity Name</label>
+                                <input type="text" placeholder="Enter activity name"/>
+                            </div>
+                            <div>
+                                <label style="display: block; margin-bottom: 8px; font-weight: 500;">Activity Type</label>
+                                <select>
+                                    <option>Playing</option>
+                                    <option>Streaming</option>
+                                    <option>Listening</option>
+                                    <option>Watching</option>
+                                </select>
+                            </div>
+                            <div class="flex-between">
+                                <button class="btn btn-primary">Preview</button>
+                                <button class="btn btn-success">Set Active</button>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- ===== STATUS PAGE ===== -->
+                <section class="page-section" data-page="status">
+                    <div class="card mb-lg">
+                        <div class="card-title">Online Status</div>
+                        <div style="margin: 20px 0;">
+                            <label style="display: block; margin-bottom: 12px; font-weight: 500;">Current Status</label>
+                            <select style="margin-bottom: 20px; width: 100%;">
+                                <option>🟢 Online</option>
+                                <option>🟡 Idle</option>
+                                <option>🔴 Do Not Disturb</option>
+                                <option>⚫ Invisible</option>
+                            </select>
+                            <button class="btn btn-success btn-block">Update Status</button>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- ===== NITRO PAGE ===== -->
+                <section class="page-section" data-page="nitro">
+                    <div class="grid-cols-2 mb-lg">
+                        <div class="card">
+                            <div class="card-title">Nitro Status</div>
+                            <div style="padding: 20px 0;">
+                                <p style="margin-bottom: 12px;">Status: <span style="color: var(--aria-success);">Active</span></p>
+                                <p style="margin-bottom: 12px;">Expires: 45 days</p>
+                                <button class="btn btn-primary btn-small">Manage Subscription</button>
+                            </div>
+                        </div>
+                        <div class="card">
+                            <div class="card-title">Server Boosts</div>
+                            <div style="padding: 20px 0;">
+                                <p style="margin-bottom: 12px;">Active Boosts: 3</p>
+                                <button class="btn btn-secondary btn-small">Boost Server</button>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- ===== QUESTS OVERVIEW PAGE ===== -->
+                <section class="page-section" data-page="quests-overview">
+                    <div class="grid-cols-3 mb-lg">
+                        <div class="stat-card">
+                            <div class="stat-label">Active Quests</div>
+                            <div class="stat-value">5</div>
+                            <div class="stat-change">In Progress</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-label">Completed</div>
+                            <div class="stat-value">24</div>
+                            <div class="stat-change">+3 this week</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-label">Rewards Earned</div>
+                            <div class="stat-value">1,240</div>
+                            <div class="stat-change">+320 this week</div>
+                        </div>
+                    </div>
+                    <div class="card mb-lg">
+                        <div class="flex-between mb-lg">
+                            <div class="card-title">Quest Progress</div>
+                            <button class="btn btn-primary btn-small">View All</button>
+                        </div>
+                        <div style="height: 300px; display: flex; align-items: center; justify-content: center; color: var(--aria-text-muted);">
+                            Quest list loading...
+                        </div>
+                    </div>
+                </section>
+
+                <!-- ===== ACTIVE QUESTS PAGE ===== -->
+                <section class="page-section" data-page="active-quests">
+                    <div class="card mb-lg">
+                        <div class="flex-between mb-lg">
+                            <div class="card-title">Active Quests</div>
+                            <button class="btn btn-primary btn-small">Auto-Complete</button>
+                        </div>
+                        <div style="height: 350px; display: flex; align-items: center; justify-content: center; color: var(--aria-text-muted);">
+                            Active quests loading...
+                        </div>
+                    </div>
+                </section>
+
+                <!-- ===== COMPLETED PAGE ===== -->
+                <section class="page-section" data-page="completed">
+                    <div class="card mb-lg">
+                        <div class="card-title">Completed Quests</div>
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Quest Name</th>
+                                    <th>Completed</th>
+                                    <th>Rewards</th>
+                                    <th>Claimed</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td>Mystery Box Hunt</td>
+                                    <td>Today</td>
+                                    <td>250</td>
+                                    <td><span style="color: var(--aria-success);">✓</span></td>
+                                </tr>
+                                <tr>
+                                    <td>Community Challenge</td>
+                                    <td>Yesterday</td>
+                                    <td>500</td>
+                                    <td><span style="color: var(--aria-success);">✓</span></td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+
+                <!-- ===== AVAILABLE QUESTS PAGE ===== -->
+                <section class="page-section" data-page="available-quests">
+                    <div class="card mb-lg">
+                        <div class="flex-between mb-lg">
+                            <div class="card-title">Available Quests</div>
+                            <button class="btn btn-success btn-small">Enroll All</button>
+                        </div>
+                        <div style="height: 350px; display: flex; align-items: center; justify-content: center; color: var(--aria-text-muted);">
+                            Available quests loading...
+                        </div>
+                    </div>
+                </section>
+
+                <!-- ===== PROFILE PAGE ===== -->
+                <section class="page-section" data-page="profile">
+                    <div class="grid-cols-2 mb-lg">
+                        <div class="card">
+                            <div class="card-title">User Profile</div>
+                            <div style="text-align: center; padding: 30px 0;">
+                                <div style="width: 80px; height: 80px; background: linear-gradient(135deg, #69B7FF 0%, #A5D8FF 100%); border-radius: 50%; margin: 0 auto 20px; display: flex; align-items: center; justify-content: center; font-size: 32px;">👤</div>
+                                <p style="font-size: 16px; font-weight: 600; margin-bottom: 8px;">User#0000</p>
+                                <p style="color: var(--aria-text-muted); margin-bottom: 20px;">Member since 2024</p>
+                                <button class="btn btn-primary btn-small">Edit Profile</button>
+                            </div>
+                        </div>
+                        <div class="card">
+                            <div class="card-title">Account Stats</div>
+                            <div style="padding: 20px 0;">
+                                <div style="display: flex; justify-content: space-between; padding: 12px 0; border-bottom: 1px solid var(--aria-border);">
+                                    <span>Commands Executed:</span>
+                                    <span style="font-weight: 600;">842</span>
+                                </div>
+                                <div style="display: flex; justify-content: space-between; padding: 12px 0; border-bottom: 1px solid var(--aria-border);">
+                                    <span>Quests Completed:</span>
+                                    <span style="font-weight: 600;">24</span>
+                                </div>
+                                <div style="display: flex; justify-content: space-between; padding: 12px 0;">
+                                    <span>Points Earned:</span>
+                                    <span style="font-weight: 600;">1,240</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- ===== FRIENDS PAGE ===== -->
+                <section class="page-section" data-page="friends">
+                    <div class="card mb-lg">
+                        <div class="flex-between mb-lg">
+                            <div class="card-title">Friends List</div>
+                            <button class="btn btn-primary btn-small">+ Add Friend</button>
+                        </div>
+                        <div style="height: 350px; display: flex; align-items: center; justify-content: center; color: var(--aria-text-muted);">
+                            Friends list loading...
+                        </div>
+                    </div>
+                </section>
+
+                <!-- ===== SETTINGS PAGE ===== -->
+                <section class="page-section" data-page="settings">
+                    <div class="card mb-lg">
+                        <div class="card-title">Dashboard Settings</div>
+                        <div class="grid-cols-1 gap-lg">
+                            <div>
+                                <label style="display: flex; align-items: center; gap: 10px; margin-bottom: 20px;">
+                                    <input type="checkbox" checked style="width: 20px; height: 20px; cursor: pointer;"/>
+                                    <span>Enable Notifications</span>
+                                </label>
+                                <label style="display: flex; align-items: center; gap: 10px; margin-bottom: 20px;">
+                                    <input type="checkbox" checked style="width: 20px; height: 20px; cursor: pointer;"/>
+                                    <span>Auto-Claim Rewards</span>
+                                </label>
+                                <label style="display: flex; align-items: center; gap: 10px; margin-bottom: 20px;">
+                                    <input type="checkbox" style="width: 20px; height: 20px; cursor: pointer;"/>
+                                    <span>Real-time Notifications</span>
+                                </label>
+                                <label style="display: flex; align-items: center; gap: 10px; margin-bottom: 20px;">
+                                    <input type="checkbox" style="width: 20px; height: 20px; cursor: pointer;"/>
+                                    <span>WebSocket Updates</span>
+                                </label>
+                            </div>
+                            <div style="border-top: 1px solid var(--aria-border); padding-top: 20px;">
+                                <button class="btn btn-primary" style="margin-right: 10px;">Save Settings</button>
+                                <button class="btn btn-secondary">Reset to Defaults</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="card mb-lg">
+                        <div class="card-title">Theme & Appearance</div>
+                        <div class="grid-cols-1 gap-lg">
+                            <div>
+                                <label style="display: block; margin-bottom: 8px; font-weight: 500;">Color Theme</label>
+                                <select style="width: 100%; margin-bottom: 20px;">
+                                    <option>Dark (Default)</option>
+                                    <option>Light (Coming Soon)</option>
+                                    <option>Auto (System)</option>
+                                    <option>Custom Theme Builder</option>
+                                </select>
+                            </div>
+                            <div>
+                                <button class="btn btn-secondary">Launch Theme Builder</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="card">
+                        <div class="card-title">Advanced Features</div>
+                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-top: 16px;">
+                            <button class="btn btn-secondary btn-small">📊 Analytics Charts</button>
+                            <button class="btn btn-secondary btn-small">🎤 Voice Commands</button>
+                            <button class="btn btn-secondary btn-small">🤝 Multiplayer</button>
+                            <button class="btn btn-secondary btn-small">📱 Mobile App</button>
+                            <button class="btn btn-secondary btn-small">🔮 AR Preview</button>
+                            <button class="btn btn-secondary btn-small">⚡ Performance</button>
+                        </div>
+                    </div>
+                </section>
+
+            </main>
+        </div>
+    </div>
+
+    <!-- TOAST NOTIFICATIONS -->
+    <div class="toast-container" id="toastContainer"></div>
+
+    <!-- JAVASCRIPT -->
+    <script>
+        // Page navigation
+        document.querySelectorAll('.nav-item').forEach(item => {
+            item.addEventListener('click', function() {
+                const page = this.getAttribute('data-page');
+                
+                // Update active nav item
+                document.querySelectorAll('.nav-item').forEach(i => i.classList.remove('active'));
+                this.classList.add('active');
+                
+                // Update page section
+                document.querySelectorAll('.page-section').forEach(section => {
+                    section.classList.remove('active');
+                });
+                document.querySelector(`[data-page="${page}"]`).classList.add('active');
+            });
+        });
+
+        // Toast notification helper
+        function showToast(message, type = 'info') {
+            const container = document.getElementById('toastContainer');
+            const toast = document.createElement('div');
+            toast.className = `toast ${type}`;
+            toast.textContent = message;
+            container.appendChild(toast);
+            
+            setTimeout(() => {
+                toast.style.opacity = '0';
+                setTimeout(() => toast.remove(), 300);
+            }, 3000);
+        }
+
+        // Example: Show welcome toast
+        window.addEventListener('load', () => {
+            showToast('Welcome to Aria Dashboard 2026! 🚀', 'success');
+        });
+    </script>
+</body>
+</html>
