@@ -87,13 +87,28 @@ function showToast(title, msg = '', type = 'info', duration = 3800) {
     if (!host) return;
     const t = document.createElement('div');
     t.className = `p-toast ${type}`;
-    t.innerHTML = `
-        <span class="p-toast-icon">${_TOAST_ICONS[type] || '💠'}</span>
-        <div class="p-toast-body">
-            <div class="p-toast-title">${title}</div>
-            ${msg ? `<div class="p-toast-msg">${msg}</div>` : ''}
-        </div>
-        <button class="p-toast-close" onclick="removeToast(this.parentElement)">×</button>`;
+    const icon = document.createElement('span');
+    icon.className = 'p-toast-icon';
+    icon.textContent = _TOAST_ICONS[type] || '💠';
+    const body = document.createElement('div');
+    body.className = 'p-toast-body';
+    const heading = document.createElement('div');
+    heading.className = 'p-toast-title';
+    heading.textContent = String(title);
+    body.appendChild(heading);
+    if (msg) {
+        const message = document.createElement('div');
+        message.className = 'p-toast-msg';
+        message.textContent = String(msg);
+        body.appendChild(message);
+    }
+    const close = document.createElement('button');
+    close.className = 'p-toast-close';
+    close.type = 'button';
+    close.textContent = '×';
+    close.setAttribute('aria-label', 'Dismiss notification');
+    close.addEventListener('click', () => removeToast(t));
+    t.append(icon, body, close);
     host.appendChild(t);
     if (duration > 0) setTimeout(() => removeToast(t), duration);
 }
@@ -102,6 +117,26 @@ function removeToast(el) {
     el.classList.add('p-toast-exit');
     setTimeout(() => { if (el.parentNode) el.parentNode.removeChild(el); }, 380);
 }
+
+const _dashboardErrorTimes = new Map();
+
+function reportDashboardError(source, error) {
+    const message = error instanceof Error ? error.message : String(error || 'Unknown error');
+    console.error(`[Aria dashboard] ${source}:`, error);
+    dismissLoader();
+    const now = Date.now();
+    if (now - (_dashboardErrorTimes.get(source) || 0) < 10000) return;
+    _dashboardErrorTimes.set(source, now);
+    showToast('Dashboard recovered', `${source} failed: ${message}`, 'err', 6500);
+}
+
+window.addEventListener('error', event => {
+    reportDashboardError('Interface', event.error || event.message);
+});
+
+window.addEventListener('unhandledrejection', event => {
+    reportDashboardError('Background operation', event.reason);
+});
 
 // ═══════════════════════════════════════════════════════════════
 //  TYPEWRITER EFFECT
@@ -307,30 +342,62 @@ navItems.forEach(item => {
 
 // ── API helpers ───────────────────────────────────────────────────────────────
 async function fetchJSON(url) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 12000);
     try {
-        const r = await fetch(url, { cache: 'no-store', credentials: 'same-origin' });
+        const r = await fetch(url, {
+            cache: 'no-store',
+            credentials: 'same-origin',
+            signal: controller.signal,
+        });
         if (!r.ok) throw new Error(r.status);
         return await r.json();
     } catch (e) {
         console.warn('Fetch failed:', url, e);
         return null;
+    } finally {
+        clearTimeout(timeout);
     }
 }
 
-async function postJSON(url, body) {
+async function mutateJSON(url, method, body) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 12000);
+    const headers = {
+        'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]')?.content || '',
+    };
+    const init = {
+        method,
+        headers,
+        cache: 'no-store',
+        credentials: 'same-origin',
+        signal: controller.signal,
+    };
+    if (body !== undefined) {
+        headers['Content-Type'] = 'application/json';
+        init.body = JSON.stringify(body);
+    }
     try {
-        const r = await fetch(url, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            cache: 'no-store',
-            credentials: 'same-origin',
-            body: JSON.stringify(body),
-        });
-        return await r.json();
+        const r = await fetch(url, init);
+        const result = await r.json();
+        if (!r.ok && (!result || typeof result !== 'object')) {
+            throw new Error(`HTTP ${r.status}`);
+        }
+        return result;
     } catch (e) {
         console.warn('Post failed:', url, e);
         return null;
+    } finally {
+        clearTimeout(timeout);
     }
+}
+
+function postJSON(url, body) {
+    return mutateJSON(url, 'POST', body);
+}
+
+function deleteJSON(url) {
+    return mutateJSON(url, 'DELETE');
 }
 
 function setText(id, val) {
@@ -1459,39 +1526,57 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 // ── Section router ────────────────────────────────────────────────────────────
+const _sectionLoadPromises = new Map();
+
 function loadSection(name) {
-    if (name === 'overview')  loadOverview();
-    if (name === 'account')   loadAccount();
-    if (name === 'friends')   loadFriends();
-    if (name === 'administration') loadAdministration();
-    if (name === 'owner')     loadOwnerPanel();
-    if (name === 'commands')  loadCommands();
-    if (name === 'analytics') loadAnalytics();
-    if (name === 'history')   loadHistory();
-    if (name === 'logger')    loadMessageLogger();
-    if (name === 'automation') loadCommandTools();
-    if (name === 'boost')     loadBoost();
-    if (name === 'rpc')       {
+    const inProgress = _sectionLoadPromises.get(name);
+    if (inProgress) return inProgress;
+
+    let tasks;
+    if (name === 'overview') tasks = [loadOverview];
+    else if (name === 'account') tasks = [loadAccount];
+    else if (name === 'friends') tasks = [loadFriends];
+    else if (name === 'administration') tasks = [loadAdministration];
+    else if (name === 'owner') tasks = [loadOwnerPanel];
+    else if (name === 'commands') tasks = [loadCommands];
+    else if (name === 'analytics') tasks = [loadAnalytics];
+    else if (name === 'history') tasks = [loadHistory];
+    else if (name === 'logger') tasks = [loadMessageLogger];
+    else if (name === 'automation') tasks = [loadCommandTools];
+    else if (name === 'boost') tasks = [loadBoost];
+    else if (name === 'rpc') {
         let savedTab = 'editor';
         try { savedTab = localStorage.getItem('aria.rpcDashboardTab') || savedTab; } catch (_) {}
         setRpcTab(savedTab);
-        loadRpc(); loadRpcStack(); loadSpotifyLyrics();
+        tasks = [loadRpc, loadRpcStack, loadSpotifyLyrics];
     }
-    if (name === 'presence')  loadPresence();
-    if (name === 'hosted')    loadHosted();
-    if (name === 'logs')      loadLogs();
-    if (name === 'users')     loadDashUsers();
-    if (name === 'settings')  loadSettings();
-    if (name === 'chat')      loadChat();
-    if (name === 'system')    loadSystemStats();
-    if (name === 'cmdbreakdown') loadCommandBreakdown();
-    if (name === 'errors')    loadErrorLogs();
-    if (name === 'leaderboard') loadLeaderboard();
-    if (name === 'serverinfo') loadServerInfo();
-    if (name === 'activitymap') loadActivityMap();
-    if (name === 'notifications') loadNotifications();
-    if (name === 'advanced-analytics') loadAdvancedAnalytics();
-    if (name === 'widgets')   loadWidgets();
+    else if (name === 'presence') tasks = [loadPresence];
+    else if (name === 'hosted') tasks = [loadHosted];
+    else if (name === 'logs') tasks = [loadLogs];
+    else if (name === 'users') tasks = [loadDashUsers];
+    else if (name === 'settings') tasks = [loadSettings];
+    else if (name === 'chat') tasks = [loadChat];
+    else if (name === 'system') tasks = [loadSystemStats];
+    else if (name === 'cmdbreakdown') tasks = [loadCommandBreakdown];
+    else if (name === 'errors') tasks = [loadErrorLogs];
+    else if (name === 'leaderboard') tasks = [loadLeaderboard];
+    else if (name === 'serverinfo') tasks = [loadServerInfo];
+    else if (name === 'activitymap') tasks = [loadActivityMap];
+    else if (name === 'notifications') tasks = [loadNotifications];
+    else if (name === 'advanced-analytics') tasks = [loadAdvancedAnalytics];
+    else if (name === 'widgets') tasks = [loadWidgets];
+    else return Promise.resolve();
+
+    const pending = Promise.allSettled(tasks.map(task => Promise.resolve().then(task)))
+        .then(results => {
+            const failure = results.find(result => result.status === 'rejected');
+            if (failure) reportDashboardError(`Loading ${name}`, failure.reason);
+        })
+        .finally(() => {
+            if (_sectionLoadPromises.get(name) === pending) _sectionLoadPromises.delete(name);
+        });
+    _sectionLoadPromises.set(name, pending);
+    return pending;
 }
 
 async function loadAccount() {
@@ -1800,7 +1885,7 @@ function markNotificationsSeen() {
     );
     _notificationState.seenTs = maxTs;
     // Mark read on server too
-    fetch('/api/discord/notifications/mark_read', { method: 'POST', headers: {'Content-Type':'application/json'}, body: '{}' }).catch(() => {});
+    postJSON('/api/discord/notifications/mark_read', {});
     refreshNotificationCenter();
 }
 
@@ -3792,15 +3877,7 @@ async function approveAccessRequest(reqId, reqType = 'access') {
     if (customPassword.trim()) body.password = customPassword.trim();
 
     try {
-        const r = await fetch(`/api/dash/requests/${encodeURIComponent(reqId)}/approve`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]')?.content || '',
-            },
-            body: JSON.stringify(body),
-        });
-        const res = await r.json();
+        const res = await postJSON(`/api/dash/requests/${encodeURIComponent(reqId)}/approve`, body);
         if (res && res.ok) {
             if (isPasswordReset) {
                 showOwnerResetCredential(res.username, res.password);
@@ -3822,8 +3899,7 @@ async function approveAccessRequest(reqId, reqType = 'access') {
 
 async function denyAccessRequest(reqId) {
     try {
-        const r = await fetch(`/api/dash/requests/${encodeURIComponent(reqId)}/deny`, { method: 'POST' });
-        const res = await r.json();
+        const res = await postJSON(`/api/dash/requests/${encodeURIComponent(reqId)}/deny`, {});
         if (res && res.ok) {
             showDashUsersMsg('Request denied.', true);
             trackDashboardAction('request_deny', `Denied request ${reqId}`);
@@ -3864,8 +3940,7 @@ async function addDashUser() {
 
 async function removeDashUser(uid) {
     try {
-        const r = await fetch(`/api/dash/register/${uid}`, { method: 'DELETE' });
-        const res = await r.json();
+        const res = await deleteJSON(`/api/dash/register/${encodeURIComponent(uid)}`);
         if (res && res.ok) { showDashUsersMsg(`Removed ${uid}`, true); trackDashboardAction('account_remove', `Removed account ${uid}`); loadDashUsers(); }
         else showDashUsersMsg((res && res.error) || 'Failed.', false);
     } catch(e) { showDashUsersMsg('Request failed.', false); }
@@ -4054,15 +4129,30 @@ setInterval(() => {
 
 // ── Initial load ──────────────────────────────────────────────────────────────
 async function bootDashboard() {
-    const initialRequests = Promise.allSettled([
-        loadOverview(),
-        loadDashProfile(),
-        refreshNotificationCenter(),
-    ]);
-    const timeout = new Promise(resolve => setTimeout(() => resolve(false), 8000));
-    const isSynced = await Promise.race([initialRequests.then(() => true), timeout]);
-    setText('loaderStatus', isSynced ? 'RUNTIME / INITIAL SYNC COMPLETE' : 'RUNTIME / CONTINUING CONNECTION');
-    setTimeout(dismissLoader, 300);
+    let timeoutId;
+    try {
+        const initialRequests = Promise.allSettled([
+            loadSection('overview'),
+            loadDashProfile(),
+            refreshNotificationCenter(),
+        ]).then(results => {
+            const failure = results.find(result => result.status === 'rejected');
+            if (failure) reportDashboardError('Initial dashboard data', failure.reason);
+            return true;
+        });
+        const timeout = new Promise(resolve => {
+            timeoutId = setTimeout(() => resolve(false), 8000);
+        });
+        const isSynced = await Promise.race([initialRequests.then(() => true), timeout]);
+        setText('loaderStatus', isSynced
+            ? 'RUNTIME / INITIAL SYNC COMPLETE'
+            : 'RUNTIME / CONTINUING CONNECTION');
+    } catch (error) {
+        reportDashboardError('Initial load', error);
+    } finally {
+        clearTimeout(timeoutId);
+        setTimeout(dismissLoader, 300);
+    }
 }
 bootDashboard();
 // Welcome toast
@@ -4083,7 +4173,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (clearBtn) {
         clearBtn.addEventListener('click', (e) => {
             e.stopPropagation();
-            fetch('/api/discord/notifications', { method: 'DELETE' }).catch(() => {});
+            deleteJSON('/api/discord/notifications');
             _notificationState.events = [];
             _notificationState.seenTs = Date.now() / 1000;
             refreshNotificationCenter();

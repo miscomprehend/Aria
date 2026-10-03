@@ -1,0 +1,68 @@
+name: Windows desktop build
+
+on:
+  pull_request:
+    paths:
+      - "Aria/**"
+      - ".github/workflows/windows-desktop.yml"
+  push:
+    branches: [main]
+    paths:
+      - "Aria/**"
+      - ".github/workflows/windows-desktop.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.12"
+          cache: npm
+          cache-dependency-path: Aria/package-lock.json
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install desktop dependencies
+        working-directory: Aria
+        run: |
+          npm ci
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt pyinstaller
+      - name: Verify desktop image assets
+        working-directory: Aria
+        run: |
+          python -c "
+          from PIL import Image
+          pngs = {
+              'electron/aria.png': (512, 512),
+              'web_ui/static/images/aria-favicon.png': (512, 512),
+              'web_ui/static/images/aria-touch-icon.png': (180, 180),
+          }
+          for path, expected_size in pngs.items():
+              with Image.open(path) as image:
+                  if image.format != 'PNG' or image.size != expected_size:
+                      raise SystemExit(f'{path} must be a PNG sized {expected_size}')
+          for path in ('electron/aria.ico', 'web_ui/static/images/aria-favicon.ico'):
+              with Image.open(path) as image:
+                  if image.format != 'ICO':
+                      raise SystemExit(f'{path} must be an ICO')
+          "
+      - name: Build Windows installer and native dashboard
+        working-directory: Aria
+        run: npm run dist
+      - name: Upload Windows installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: aria-windows-installer
+          path: Aria/release/*.exe
+          if-no-files-found: error

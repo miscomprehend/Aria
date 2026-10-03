@@ -12,12 +12,42 @@ node_modules/
 Aria/.cache/
 Aria/logs/
 logs/
+Aria/Aria.Native/bin/
+Aria/Aria.Native/obj/
+Aria/dist/
 
 # Local runtime state and temporary files
 *.tmp
 *.bak
 *.backup
 *.log
+/Aria/*.db
+/Aria/account_stats.json
+/Aria/admin_users.json
+/Aria/authed_users.json
+/Aria/boost_state.json
+/Aria/bot_pid.txt
+/Aria/dashboard_authed_users.json
+/Aria/dashboard_blocked_users.json
+/Aria/dashboard_users.json
+/Aria/guildrotate_config.json
+/Aria/history_data.json
+/Aria/history_data_backup.json
+/Aria/hosted_runtime/
+/Aria/invites.txt
+/Aria/proxies.txt
+/Aria/proxy_state.json
+/Aria/proxy_state.txt
+/Aria/runtime_state.json
+/Aria/tracker_deleted.json
+/Aria/tracker_users.json
+/Aria/user_prefixes.json
+/Aria/vr_config.json
+/account_stats.json
+/boost_state.json
+/history_data.json
+/history_data_backup.json
+/proxies.txt
 
 # Secrets/local configuration
 config.json

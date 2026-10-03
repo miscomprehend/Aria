@@ -59,6 +59,7 @@
   }
 
   function renderSearchResults() {
+    if (!searchInput || !searchResults || !searchStatus) return;
     const query = searchInput.value.trim().toLowerCase();
     searchResults.replaceChildren();
     if (!query) {
@@ -102,7 +103,13 @@
 
   document.querySelectorAll("[data-doc-link]").forEach((link) => {
     link.addEventListener("click", (event) => {
-      const target = document.getElementById(decodeURIComponent(link.hash.slice(1)));
+      let targetId;
+      try {
+        targetId = decodeURIComponent(link.hash.slice(1));
+      } catch {
+        return;
+      }
+      const target = document.getElementById(targetId);
       if (!target) return;
       event.preventDefault();
       selectTab(link.dataset.docTabTarget);
@@ -113,19 +120,24 @@
     });
   });
 
-  document.getElementById("docs-search-open").addEventListener("click", () => {
-    dialog.showModal();
-    searchInput.focus();
-  });
-  document.getElementById("docs-search-close").addEventListener("click", () => dialog.close());
-  searchInput.addEventListener("input", renderSearchResults);
-  dialog.addEventListener("close", () => {
-    searchInput.value = "";
-    renderSearchResults();
-  });
+  const searchOpen = document.getElementById("docs-search-open");
+  const searchClose = document.getElementById("docs-search-close");
+  if (dialog && searchInput && searchResults && searchStatus) {
+    searchOpen?.addEventListener("click", () => {
+      if (!dialog.open) dialog.showModal();
+      searchInput.focus();
+    });
+    searchClose?.addEventListener("click", () => dialog.close());
+    searchInput.addEventListener("input", renderSearchResults);
+    dialog.addEventListener("close", () => {
+      searchInput.value = "";
+      renderSearchResults();
+    });
+  }
 
   document.addEventListener("keydown", (event) => {
     if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
+      if (!dialog || !searchInput) return;
       event.preventDefault();
       if (!dialog.open) dialog.showModal();
       searchInput.focus();

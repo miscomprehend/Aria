@@ -4348,12 +4348,18 @@ class WebPanel:
 
         @self.app.get("/favicon.ico")
         def favicon() -> Any:
-            local_fallback = "/static/images/aria-favicon.svg"
             cfg = getattr(self.bot, "config", {}) if self.bot is not None else {}
             favicon_url = ""
             if isinstance(cfg, dict):
                 favicon_url = str(cfg.get("favicon_url") or cfg.get("brand_image_url") or "").strip()
-            return redirect(favicon_url or local_fallback, code=302)
+            if favicon_url:
+                return redirect(favicon_url, code=302)
+            return send_from_directory(
+                os.path.join(self._webui_static, "images"),
+                "aria-favicon.ico",
+                mimetype="image/vnd.microsoft.icon",
+                max_age=86400,
+            )
 
         @self.app.get("/brand-image")
         def brand_image() -> Any:
@@ -4362,7 +4368,7 @@ class WebPanel:
             brand_url = ""
             if isinstance(cfg, dict):
                 brand_url = str(cfg.get("brand_image_url") or cfg.get("favicon_url") or "").strip()
-            return redirect(brand_url or "/static/images/aria-favicon.svg", code=302)
+            return redirect(brand_url or "/static/images/aria-favicon.png", code=302)
 
         @self.app.get("/static/<path:asset_path>")
         def static_assets(asset_path: str) -> Any:

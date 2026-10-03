@@ -11,6 +11,17 @@
             <SolidColorBrush x:Key="AriaRaisedBrush" Color="#151F2B" />
             <SolidColorBrush x:Key="AriaBorderBrush" Color="#273341" />
             <SolidColorBrush x:Key="AriaMutedBrush" Color="#A4B1BF" />
+            <SolidColorBrush x:Key="AriaHoverBrush" Color="#243345" />
+            <SolidColorBrush x:Key="AriaPressedBrush" Color="#2D4157" />
+            <SolidColorBrush x:Key="AriaNavActiveBrush" Color="#1C3145" />
+            <SolidColorBrush x:Key="AriaDangerBrush" Color="#FF7E87" />
+            <SolidColorBrush x:Key="ButtonBackgroundPointerOver" Color="#243345" />
+            <SolidColorBrush x:Key="ButtonBackgroundPressed" Color="#2D4157" />
+            <SolidColorBrush x:Key="ButtonBorderBrushPointerOver" Color="#46617D" />
+            <SolidColorBrush x:Key="ButtonBorderBrushPressed" Color="#69B7FF" />
+            <SolidColorBrush x:Key="TextControlBackgroundPointerOver" Color="#172230" />
+            <SolidColorBrush x:Key="TextControlBorderBrushPointerOver" Color="#46617D" />
+            <SolidColorBrush x:Key="TextControlBorderBrushFocused" Color="#69B7FF" />
         </ResourceDictionary>
     </Application.Resources>
 </Application>

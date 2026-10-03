@@ -1,4 +1,4 @@
-modifyself
+modifyself @ git+https://github.com/sniffy-furry/modifyself.git@a73a469845f455edd1893f8e6326393bcde445f0
 # Components V2 (LayoutView/Container/TextDisplay/ActionRow-in-Container) was
 # added in discord.py 2.6.0 — the real bot's whole CV2 UI needs it. Pinning
 # just >=2.3 meant `pip install -r requirements.txt` silently left an older

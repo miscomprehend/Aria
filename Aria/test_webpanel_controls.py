@@ -97,6 +97,20 @@ class WebPanelControlTests(unittest.TestCase):
     def tearDown(self):
         self.temp_dir.cleanup()
 
+    def test_favicon_route_serves_multisize_icon_when_no_custom_brand_is_configured(self):
+        with patch.object(
+            panel,
+            "_webui_static",
+            str(Path(__file__).parent / "web_ui" / "static"),
+            create=True,
+        ):
+            response = self.client.get("/favicon.ico")
+        self.addCleanup(response.close)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.mimetype, "image/vnd.microsoft.icon")
+        self.assertEqual(response.data[:4], b"\x00\x00\x01\x00")
+
     def test_electron_owner_session_requires_local_one_time_token(self):
         import os
 
