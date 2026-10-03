@@ -100,13 +100,16 @@ Current native dashboard sections:
 Other sections in the browser dashboard have not yet been ported to WinUI. They
 remain available in the browser dashboard.
 
-The Windows desktop application uses Aria's icon and a native token setup
-screen. Token setup verifies the account, then sends the token to the local
-launcher through a short-lived, authenticated localhost channel. The token is
-not written to application logs. Choose **Remember token** to save it in
-Aria's encrypted local configuration; otherwise it is used only for the
-current run. A token's verified account ID is used to identify the desktop
-runtime owner. The configured secondary owner ID is
+The Windows desktop application uses Aria's icon in its window, title bar,
+token setup screen, loading screen, executable, and installer. The native
+dashboard publishes the shared icon and image assets alongside the app so the
+branding is available after installation. Token setup verifies the account,
+then sends the token to the local launcher through a short-lived,
+authenticated localhost channel. The token is not written to application
+logs. Choose **Remember token** to save it in Aria's encrypted local
+configuration; otherwise it is used only for the current run. A token's
+verified account ID is used to identify the desktop runtime owner. The
+configured secondary owner ID is
 `465513550312505344`.
 
 If a local Aria service is already running, the desktop app connects to it.

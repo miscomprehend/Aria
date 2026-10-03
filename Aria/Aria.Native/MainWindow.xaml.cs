@@ -5,6 +5,7 @@ using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI;
 using Windows.Graphics;
 using System.IO;
+using Microsoft.UI.Xaml.Media.Imaging;
 
 namespace Aria.Native;
 
@@ -19,6 +20,10 @@ public sealed partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+        var brandIconPath = Path.Combine(AppContext.BaseDirectory, "aria.png");
+        var brandIcon = new BitmapImage(new Uri(brandIconPath, UriKind.Absolute));
+        TitleBrandIcon.Source = brandIcon;
+        SetupBrandIcon.Source = brandIcon;
         ExtendsContentIntoTitleBar = true;
         SetTitleBar(TitleBar);
         var windowHandle = WinRT.Interop.WindowNative.GetWindowHandle(this);
@@ -265,120 +270,6 @@ public sealed partial class MainWindow : Window
             return;
         }
 
-        private async Task LoadOwnerToolsAsync()
-        {
-            using var response = await _client.GetAsync("/api/owner/summary");
-            var data = response.RootElement.GetProperty("data");
-            PageContent.Children.Add(CreateMetricGrid(
-                ("Accounts", ReadText(data, "total_accounts", "0")),
-                ("Admin accounts", ReadText(data, "admin_accounts", "0")),
-                ("Pending requests", ReadText(data, "pending_requests", "0")),
-                ("Gateway", ReadBoolean(data, "connected") ? "Connected" : "Offline")));
-            PageContent.Children.Add(CreateCard("Main account", new[]
-            {
-                ("Username", ReadText(data, "username", "—")),
-                ("Account ID", ReadText(data, "user_id", "—")),
-                ("Gateway latency", $"{ReadText(data, "gateway_latency_ms", "—")} ms"),
-            }));
-
-            var requests = data.GetProperty("password_reset_requests");
-            var queue = new StackPanel { Spacing = 10 };
-            if (requests.GetArrayLength() == 0)
-            {
-                queue.Children.Add(new TextBlock
-                {
-                    Text = "There are no pending password reset requests.",
-                    Foreground = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["AriaMutedBrush"],
-                });
-            }
-            else
-            {
-                foreach (var request in requests.EnumerateArray())
-                {
-                    var requestId = ReadText(request, "id", "");
-                    var details = new StackPanel { Spacing = 4 };
-                    details.Children.Add(new TextBlock
-                    {
-                        Text = ReadText(request, "username", "Account"),
-                        FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
-                    });
-                    details.Children.Add(new TextBlock
-                    {
-                        Text = ReadText(request, "reason", "Password reset requested"),
-                        Foreground = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["AriaMutedBrush"],
-                        TextWrapping = TextWrapping.Wrap,
-                    });
-                    var actions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
-                    var approve = new Button { Content = "Approve reset" };
-                    approve.Click += async (_, _) => await ResolvePasswordResetAsync(requestId, true);
-                    var deny = new Button { Content = "Deny" };
-                    deny.Click += async (_, _) => await ResolvePasswordResetAsync(requestId, false);
-                    actions.Children.Add(approve);
-                    actions.Children.Add(deny);
-
-                    var item = new StackPanel { Spacing = 10 };
-                    item.Children.Add(details);
-                    item.Children.Add(actions);
-                    queue.Children.Add(new Border
-                    {
-                        Background = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["AriaRaisedBrush"],
-                        BorderBrush = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["AriaBorderBrush"],
-                        BorderThickness = new Thickness(1),
-                        CornerRadius = new CornerRadius(6),
-                        Padding = new Thickness(12),
-                        Child = item,
-                    });
-                }
-            }
-            PageContent.Children.Add(CreatePanel("Password reset requests", queue));
-
-            var accounts = new StackPanel { Spacing = 8 };
-            foreach (var account in data.GetProperty("accounts").EnumerateArray().Take(20))
-                accounts.Children.Add(new TextBlock
-                {
-                    Text = $"{ReadText(account, "username", "Account")}  ·  {ReadText(account, "role", "user")}",
-                    Foreground = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["AriaMutedBrush"],
-                });
-            PageContent.Children.Add(CreatePanel("Recent accounts", accounts));
-        }
-
-        private async Task ResolvePasswordResetAsync(string requestId, bool approve)
-        {
-            try
-            {
-                using var response = await _client.PostAsync(
-                    $"/api/dash/requests/{Uri.EscapeDataString(requestId)}/{(approve ? "approve" : "deny")}",
-                    new { });
-                if (approve && response.RootElement.TryGetProperty("password", out var password))
-                {
-                    var passwordText = new TextBlock
-                    {
-                        Text = password.GetString() ?? "",
-                        IsTextSelectionEnabled = true,
-                        FontFamily = new Microsoft.UI.Xaml.Media.FontFamily("Consolas"),
-                    };
-                    var dialog = new ContentDialog
-                    {
-                        Title = "Temporary password generated",
-                        Content = passwordText,
-                        CloseButtonText = "Done",
-                        XamlRoot = PageContent.XamlRoot,
-                    };
-                    await dialog.ShowAsync();
-                }
-                await LoadPageAsync("owner");
-            }
-            catch (Exception error)
-            {
-                PageContent.Children.Insert(0, new TextBlock
-                {
-                    Text = error.Message,
-                    Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.Salmon),
-                    TextWrapping = TextWrapping.Wrap,
-                });
-            }
-        }
-
         foreach (var instance in hosted.EnumerateArray())
         {
             var reference = ReadText(instance, "token_ref", "");
@@ -420,6 +311,120 @@ public sealed partial class MainWindow : Window
             Grid.SetColumn(actions, 1);
             row.Children.Add(actions);
             PageContent.Children.Add(CreatePanel("Instance", row));
+        }
+    }
+
+    private async Task LoadOwnerToolsAsync()
+    {
+        using var response = await _client.GetAsync("/api/owner/summary");
+        var data = response.RootElement.GetProperty("data");
+        PageContent.Children.Add(CreateMetricGrid(
+            ("Accounts", ReadText(data, "total_accounts", "0")),
+            ("Admin accounts", ReadText(data, "admin_accounts", "0")),
+            ("Pending requests", ReadText(data, "pending_requests", "0")),
+            ("Gateway", ReadBoolean(data, "connected") ? "Connected" : "Offline")));
+        PageContent.Children.Add(CreateCard("Main account", new[]
+        {
+            ("Username", ReadText(data, "username", "—")),
+            ("Account ID", ReadText(data, "user_id", "—")),
+            ("Gateway latency", $"{ReadText(data, "gateway_latency_ms", "—")} ms"),
+        }));
+
+        var requests = data.GetProperty("password_reset_requests");
+        var queue = new StackPanel { Spacing = 10 };
+        if (requests.GetArrayLength() == 0)
+        {
+            queue.Children.Add(new TextBlock
+            {
+                Text = "There are no pending password reset requests.",
+                Foreground = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["AriaMutedBrush"],
+            });
+        }
+        else
+        {
+            foreach (var request in requests.EnumerateArray())
+            {
+                var requestId = ReadText(request, "id", "");
+                var details = new StackPanel { Spacing = 4 };
+                details.Children.Add(new TextBlock
+                {
+                    Text = ReadText(request, "username", "Account"),
+                    FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+                });
+                details.Children.Add(new TextBlock
+                {
+                    Text = ReadText(request, "reason", "Password reset requested"),
+                    Foreground = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["AriaMutedBrush"],
+                    TextWrapping = TextWrapping.Wrap,
+                });
+                var actions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+                var approve = new Button { Content = "Approve reset" };
+                approve.Click += async (_, _) => await ResolvePasswordResetAsync(requestId, true);
+                var deny = new Button { Content = "Deny" };
+                deny.Click += async (_, _) => await ResolvePasswordResetAsync(requestId, false);
+                actions.Children.Add(approve);
+                actions.Children.Add(deny);
+
+                var item = new StackPanel { Spacing = 10 };
+                item.Children.Add(details);
+                item.Children.Add(actions);
+                queue.Children.Add(new Border
+                {
+                    Background = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["AriaRaisedBrush"],
+                    BorderBrush = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["AriaBorderBrush"],
+                    BorderThickness = new Thickness(1),
+                    CornerRadius = new CornerRadius(6),
+                    Padding = new Thickness(12),
+                    Child = item,
+                });
+            }
+        }
+        PageContent.Children.Add(CreatePanel("Password reset requests", queue));
+
+        var accounts = new StackPanel { Spacing = 8 };
+        foreach (var account in data.GetProperty("accounts").EnumerateArray().Take(20))
+            accounts.Children.Add(new TextBlock
+            {
+                Text = $"{ReadText(account, "username", "Account")}  ·  {ReadText(account, "role", "user")}",
+                Foreground = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["AriaMutedBrush"],
+            });
+        PageContent.Children.Add(CreatePanel("Recent accounts", accounts));
+    }
+
+    private async Task ResolvePasswordResetAsync(string requestId, bool approve)
+    {
+        try
+        {
+            using var response = await _client.PostAsync(
+                $"/api/dash/requests/{Uri.EscapeDataString(requestId)}/{(approve ? "approve" : "deny")}",
+                new { });
+            if (approve && response.RootElement.TryGetProperty("password", out var password))
+            {
+                var passwordText = new TextBlock
+                {
+                    Text = password.GetString() ?? "",
+                    IsTextSelectionEnabled = true,
+                    FontFamily = new Microsoft.UI.Xaml.Media.FontFamily("Consolas"),
+                };
+                var dialog = new ContentDialog
+                {
+                    Title = "Temporary password generated",
+                    Content = passwordText,
+                    CloseButtonText = "Done",
+                    XamlRoot = PageContent.XamlRoot,
+                };
+                await dialog.ShowAsync();
+            }
+            await LoadPageAsync("owner");
+        }
+        catch (Exception error)
+        {
+            PageContent.Children.Insert(0, new TextBlock
+            {
+                Text = error.Message,
+                Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.Salmon),
+                TextWrapping = TextWrapping.Wrap,
+            });
         }
     }
 

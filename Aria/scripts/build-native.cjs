@@ -37,4 +37,14 @@ if (result.error) {
   console.error(`Could not build the native dashboard: ${result.error.message}`);
   process.exit(1);
 }
-process.exit(result.status ?? 1);
+if (result.status !== 0) process.exit(result.status ?? 1);
+
+for (const asset of ["Aria.Native.exe", "aria.ico", "aria.png"]) {
+  const assetPath = path.join(output, asset);
+  if (!fs.existsSync(assetPath)) {
+    console.error(`The native dashboard publish is missing ${asset}.`);
+    process.exit(1);
+  }
+}
+
+console.log("Native dashboard, application icon, and loading image are ready.");
