@@ -1,0 +1,113 @@
+"""Reply helpers for Aria selfbot cogs.
+
+The RPC cog replies through ASCIIMixin (aprint / asuccess / aerror / awarn) and
+asend. Every reply is rendered with the shared ANSI style (ansi.py), deletes the
+invoking command immediately, and self-deletes after `delay` seconds.
+"""
+import asyncio
+import sys
+
+try:
+    from . import ansi
+except ImportError:
+    import ansi
+
+# keep strong refs to pending delete tasks so the event loop can't GC them
+# before they fire (an unreferenced asyncio task may be collected mid-sleep).
+_TASKS = set()
+
+
+def _diag(msg: str) -> None:
+    """Write straight to stderr — visible in the agent's terminal/log stream
+    without needing to plumb aria_backend.log() into every cog module."""
+    try:
+        sys.stderr.write(f"[aria] {msg}\n")
+        sys.stderr.flush()
+    except Exception:
+        pass
+
+
+def _msg_ref(m):
+    """Pull (channel_id, message_id) out of whatever ctx.send() gave us.
+
+    Older modifyself builds return a plain dict (not a Message) for a
+    channel that isn't cached yet — DMs most commonly — so we can't rely on
+    m.delete() existing at all. Reading the ids by hand and deleting through
+    the HTTP client directly works either way."""
+    if isinstance(m, dict):
+        return int(m["channel_id"]), int(m["id"])
+    return int(m.channel_id), int(m.id)
+
+
+async def _send_and_expire(ctx, text, delay=15):
+    # delete the invoking command message immediately
+    try:
+        await ctx.message.delete()
+    except Exception as e:
+        _diag(f"could not delete command message: {e!r}")
+
+    m = None
+    try:
+        m = await ctx.send(text)
+    except Exception as e:
+        _diag(f"send() failed, no reply to auto-delete: {e!r}")
+        return
+    if m is None:
+        _diag("send() returned no message object — auto-delete timer NOT scheduled")
+        return
+
+    try:
+        mid = _msg_ref(m)[1]
+    except Exception as e:
+        _diag(f"could not read ids off the sent message ({e!r}) — auto-delete timer NOT scheduled")
+        return
+
+    try:
+        delete_delay = max(1, int(delay or 15))
+    except (TypeError, ValueError):
+        _diag(f"invalid auto-delete delay {delay!r}; using 15 seconds")
+        delete_delay = 15
+
+    async def _rm():
+        try:
+            await asyncio.sleep(delete_delay)
+        except asyncio.CancelledError:
+            _diag(f"auto-delete timer for message {mid} was cancelled")
+            raise
+        try:
+            if hasattr(m, "delete"):
+                await m.delete()
+            else:
+                cid, real_mid = _msg_ref(m)
+                await ctx.bot._http.delete_message(cid, real_mid)
+        except Exception as e:
+            # was it already gone (user deleted it manually) vs. a real failure?
+            _diag(f"auto-delete of message {mid} failed: {e!r}")
+
+    t = asyncio.create_task(_rm())
+    _TASKS.add(t)
+    t.add_done_callback(_TASKS.discard)
+
+
+# single entry point every selfbot reply path uses
+async def send_temp(ctx, text, delay=15):
+    await _send_and_expire(ctx, text, delay)
+
+
+class ASCIIMixin:
+    async def aprint(self, ctx, title, lines, delay=15):
+        body = "\n".join(f"{ansi.WHITE}{str(x)}{ansi.RESET}" for x in (lines or []))
+        await _send_and_expire(ctx, ansi.header(str(title)) + "\n" + ansi._block(body), delay)
+
+    async def asuccess(self, ctx, msg, delay=15):
+        await _send_and_expire(ctx, ansi.success(str(msg)), delay)
+
+    async def aerror(self, ctx, msg, delay=15):
+        await _send_and_expire(ctx, ansi.error(str(msg)), delay)
+
+    async def awarn(self, ctx, msg, delay=15):
+        await _send_and_expire(ctx, ansi.warning(str(msg)), delay)
+
+
+async def asend(ctx, text, delay=15):
+    await _send_and_expire(ctx, ansi._block(f"{ansi.WHITE}{text}{ansi.RESET}"), delay)

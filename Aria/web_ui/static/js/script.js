@@ -1469,6 +1469,7 @@ function loadSection(name) {
     if (name === 'analytics') loadAnalytics();
     if (name === 'history')   loadHistory();
     if (name === 'logger')    loadMessageLogger();
+    if (name === 'automation') loadCommandTools();
     if (name === 'boost')     loadBoost();
     if (name === 'rpc')       {
         let savedTab = 'editor';
@@ -4699,6 +4700,109 @@ async function refreshMessageLogger() {
     await loadMessageLogger();
 }
 
+function renderCommandTools(data) {
+    if (data?.anti_gc) {
+        const enabled = document.getElementById('commandAgctEnabled');
+        const blockCreators = document.getElementById('commandAgctBlockCreators');
+        if (enabled) enabled.checked = Boolean(data.anti_gc.enabled);
+        if (blockCreators) blockCreators.checked = Boolean(data.anti_gc.block_creators);
+    }
+
+    if (Array.isArray(data?.auto_replies)) {
+        const body = document.getElementById('autoReplyBody');
+        const count = document.getElementById('autoReplyCount');
+        if (!body) return;
+        body.replaceChildren();
+        if (count) count.textContent = `${data.auto_replies.length} target${data.auto_replies.length === 1 ? '' : 's'}`;
+        if (!data.auto_replies.length) {
+            const row = document.createElement('tr');
+            const cell = document.createElement('td');
+            cell.colSpan = 3;
+            cell.className = 'empty-row';
+            cell.textContent = 'No auto-replies configured.';
+            row.appendChild(cell);
+            body.appendChild(row);
+            return;
+        }
+        for (const reply of data.auto_replies) {
+            const row = document.createElement('tr');
+            for (const value of [reply.user_id, reply.message]) {
+                const cell = document.createElement('td');
+                cell.textContent = String(value ?? '');
+                row.appendChild(cell);
+            }
+            const actionCell = document.createElement('td');
+            const remove = document.createElement('button');
+            remove.type = 'button';
+            remove.className = 'btn btn-danger-soft';
+            remove.textContent = 'Remove';
+            remove.dataset.autoReplyUserId = String(reply.user_id ?? '');
+            actionCell.appendChild(remove);
+            row.appendChild(actionCell);
+            body.appendChild(row);
+        }
+    }
+}
+
+async function loadCommandTools() {
+    const data = await fetchJSON('/api/command-tools');
+    if (data?.ok) {
+        renderCommandTools(data);
+        return;
+    }
+    const message = document.getElementById('commandToolsMsg');
+    if (message) message.textContent = data?.error || 'Command controls could not be loaded.';
+}
+
+async function saveCommandTool(action, value) {
+    const result = await postJSON('/api/command-tools', { action, value });
+    if (!result?.ok) {
+        showToast('Command Controls', result?.error || 'The change could not be saved.', 'err');
+        await loadCommandTools();
+        return false;
+    }
+    renderCommandTools(result);
+    const message = document.getElementById('commandToolsMsg');
+    if (message) message.textContent = 'Protection setting updated for this session.';
+    return true;
+}
+
+async function addCommandAutoReply() {
+    const userInput = document.getElementById('autoReplyUserId');
+    const messageInput = document.getElementById('autoReplyMessage');
+    const userId = (userInput?.value || '').trim();
+    const reply = (messageInput?.value || '').trim();
+    if (!/^\d{1,20}$/.test(userId) || !reply) {
+        showToast('Auto-reply', 'Enter a numeric user ID and a reply message.', 'err');
+        return;
+    }
+    const data = await postJSON('/api/command-tools', {
+        action: 'auto_reply_add',
+        user_id: userId,
+        message: reply,
+    });
+    if (!data?.ok) {
+        showToast('Auto-reply', data?.error || 'The auto-reply could not be saved.', 'err');
+        return;
+    }
+    if (messageInput) messageInput.value = '';
+    renderCommandTools(data);
+    showToast('Auto-reply', data.message || 'Auto-reply saved.', 'ok');
+}
+
+async function removeCommandAutoReply(userId) {
+    const data = await postJSON('/api/command-tools', {
+        action: 'auto_reply_remove',
+        user_id: userId,
+    });
+    if (!data?.ok) {
+        showToast('Auto-reply', data?.error || 'The auto-reply could not be removed.', 'err');
+        return;
+    }
+    renderCommandTools(data);
+    showToast('Auto-reply', data.message || 'Auto-reply removed.', 'ok');
+}
+
 setInterval(() => {
     if (document.querySelector('.nav-item.active')?.dataset.section === 'logger') {
         loadMessageLogger();
@@ -4706,6 +4810,18 @@ setInterval(() => {
 }, 5000);
 
 document.addEventListener('DOMContentLoaded', () => {
+    document.getElementById('commandAgctEnabled')?.addEventListener('change', event => {
+        saveCommandTool('antigc_enabled', event.currentTarget.checked);
+    });
+    document.getElementById('commandAgctBlockCreators')?.addEventListener('change', event => {
+        saveCommandTool('antigc_block_creators', event.currentTarget.checked);
+    });
+    document.getElementById('addAutoReplyButton')?.addEventListener('click', addCommandAutoReply);
+    document.getElementById('autoReplyBody')?.addEventListener('click', event => {
+        const button = event.target.closest('[data-auto-reply-user-id]');
+        if (button) removeCommandAutoReply(button.dataset.autoReplyUserId);
+    });
+
     const toggleMap = {
         loggerEnabled: 'enabled',
         loggerMentions: 'mentions',

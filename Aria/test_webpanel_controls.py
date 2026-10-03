@@ -18,6 +18,7 @@ from message_logger import MessageLogger
 from rpc_profiles import RPCProfileStore
 from hosted_command_registry import write_command_registry
 from hosted_rpc_bridge import dispatch_hosted_rpc, start_hosted_rpc_worker
+from friends_tools import FriendsTools
 from webpanel import WebPanel, _PANEL_MASTER_ID, _PANEL_SECONDARY_OWNER_ID
 from formatter import VERSION
 
@@ -27,6 +28,8 @@ class FakeBot:
         self.activity = {"type": 0, "name": "Initial"}
         self.activities = [self.activity]
         self.message_logger = MessageLogger(str(Path(directory) / "logger.json"))
+        self.anti_gc_trap = SimpleNamespace(enabled=False, block_creators=False)
+        self.friends_tools = FriendsTools(SimpleNamespace(request=lambda *args, **kwargs: None))
         self._rpc_rotation_state = {"running": False}
         self.connection_active = True
         self.identified = False
@@ -1629,6 +1632,56 @@ class WebPanelControlTests(unittest.TestCase):
 
         self.assertTrue(self.client.post("/api/message-logger", json={"action": "config", "config": {"enabled": True}}).json["config"]["enabled"])
         self.assertEqual(self.client.post("/api/message-logger", json={"action": "keyword_add", "keyword": "aria"}).json["config"]["keywords"], ["aria"])
+
+    def test_command_tools_dashboard_controls(self):
+        self.assertEqual(self.client.get("/api/command-tools").status_code, 403)
+        self.authenticated = True
+        with self.client.session_transaction() as active_session:
+            active_session["user_id"] = _PANEL_MASTER_ID
+
+        initial = self.client.get("/api/command-tools")
+        self.assertEqual(initial.status_code, 200)
+        self.assertEqual(initial.json["anti_gc"], {"enabled": False, "block_creators": False})
+        self.assertEqual(initial.json["auto_replies"], [])
+
+        enabled = self.client.post(
+            "/api/command-tools",
+            json={"action": "antigc_enabled", "value": True},
+        )
+        self.assertEqual(enabled.status_code, 200)
+        self.assertTrue(panel.bot.anti_gc_trap.enabled)
+
+        invalid_toggle = self.client.post(
+            "/api/command-tools",
+            json={"action": "antigc_enabled", "value": "true"},
+        )
+        self.assertEqual(invalid_toggle.status_code, 400)
+
+        added = self.client.post(
+            "/api/command-tools",
+            json={"action": "auto_reply_add", "user_id": "12345", "message": "Hello"},
+        )
+        self.assertEqual(added.status_code, 200)
+        self.assertEqual(added.json["auto_replies"], [{"user_id": "12345", "message": "Hello"}])
+
+        invalid_user = self.client.post(
+            "/api/command-tools",
+            json={"action": "auto_reply_add", "user_id": "not-an-id", "message": "Hello"},
+        )
+        self.assertEqual(invalid_user.status_code, 400)
+
+        removed = self.client.post(
+            "/api/command-tools",
+            json={"action": "auto_reply_remove", "user_id": "12345"},
+        )
+        self.assertEqual(removed.status_code, 200)
+        self.assertEqual(removed.json["auto_replies"], [])
+
+    def test_dashboard_and_desktop_versions_match(self):
+        package = json.loads((Path(__file__).parent / "package.json").read_text(encoding="utf-8"))
+        native_project = (Path(__file__).parent / "Aria.Native" / "Aria.Native.csproj").read_text(encoding="utf-8")
+        self.assertEqual(package["version"], VERSION.removeprefix("v"))
+        self.assertIn(f"<Version>{package['version']}</Version>", native_project)
 
 
 if __name__ == "__main__":

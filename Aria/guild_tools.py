@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import threading
+import logging
 from typing import Any, Optional
+
+_LOGGER = logging.getLogger(__name__)
 
 
 class GuildTools:
@@ -14,16 +17,25 @@ class GuildTools:
         self._rotation_thread: Optional[threading.Thread] = None
 
     def _guilds(self) -> list[dict[str, Any]]:
+        first_error = None
         try:
-            return self.api.get_guilds(force=True) or []
-        except Exception:
-            try:
-                response = self.api.request("GET", "/users/@me/guilds")
-                if response and response.status_code == 200:
-                    return response.json() or []
-            except Exception:
-                pass
-        return []
+            guilds = self.api.get_guilds(force=True)
+            if isinstance(guilds, list):
+                return guilds
+            first_error = RuntimeError("Guild cache returned an invalid response.")
+        except Exception as exc:
+            first_error = exc
+        try:
+            response = self.api.request("GET", "/users/@me/guilds")
+            if response is not None and response.status_code == 200:
+                guilds = response.json()
+                if isinstance(guilds, list):
+                    return guilds
+                raise RuntimeError("Discord returned an invalid guild list.")
+            status = response.status_code if response is not None else "no response"
+            raise RuntimeError(f"Guild request failed (HTTP {status}).")
+        except Exception as exc:
+            raise RuntimeError(f"Could not load your guild list: {exc}") from (first_error or exc)
 
     def _set_clan(self, guild_id: Optional[str], enabled: bool) -> tuple[bool, str]:
         try:
@@ -43,7 +55,11 @@ class GuildTools:
         guild_id = str(value or "").strip()
         if not guild_id.isdigit():
             return "Usage: setclan <guild_id>"
-        if not any(str(guild.get("id")) == guild_id for guild in self._guilds()):
+        try:
+            guilds = self._guilds()
+        except RuntimeError as exc:
+            return str(exc)
+        if not any(str(guild.get("id")) == guild_id for guild in guilds):
             return "That guild is not in your account's guild list."
         ok, error = self._set_clan(guild_id, True)
         return f"Clan tag set for guild {guild_id}." if ok else error
@@ -98,9 +114,15 @@ class GuildTools:
                 selected_index = indexes[index % len(indexes)]
                 if selected_index <= len(guilds):
                     self._set_clan(str(guilds[selected_index - 1].get("id") or ""), True)
+                else:
+                    _LOGGER.warning(
+                        "Clan-tag rotation index %s exceeds current guild count %s",
+                        selected_index,
+                        len(guilds),
+                    )
                 index += 1
             except Exception as exc:
-                print(f"[guild-tools] Clan-tag rotation error: {exc}")
+                _LOGGER.exception("Clan-tag rotation failed; retrying after its configured interval")
             if stop_event.wait(max(60.0, delay_minutes * 60.0)):
                 break
 

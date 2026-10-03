@@ -3488,6 +3488,75 @@ class WebPanel:
                 return jsonify({"ok": False, "error": str(e)}), 500
             return jsonify({"ok": True, **state})
 
+        @self.app.get("/api/command-tools")
+        def api_command_tools_get() -> Any:
+            if not self._require_session():
+                return jsonify({"ok": False, "error": "Unauthorized"}), 403
+            if self.bot is None:
+                return jsonify({"ok": False, "error": "No active account instance"}), 503
+            anti_gc = getattr(self.bot, "anti_gc_trap", None)
+            friends = getattr(self.bot, "friends_tools", None)
+            return jsonify({
+                "ok": True,
+                "anti_gc": {
+                    "enabled": bool(getattr(anti_gc, "enabled", False)),
+                    "block_creators": bool(getattr(anti_gc, "block_creators", False)),
+                },
+                "auto_replies": friends.auto_reply_state() if friends else [],
+            })
+
+        @self.app.post("/api/command-tools")
+        def api_command_tools_update() -> Any:
+            if not self._require_session():
+                return jsonify({"ok": False, "error": "Unauthorized"}), 403
+            if self.bot is None:
+                return jsonify({"ok": False, "error": "No active account instance"}), 503
+            data = request.get_json(silent=True)
+            if not isinstance(data, dict):
+                return jsonify({"ok": False, "error": "Expected a JSON object"}), 400
+
+            action = str(data.get("action") or "").strip().lower()
+            if action in {"antigc_enabled", "antigc_block_creators"}:
+                value = data.get("value")
+                if type(value) is not bool:
+                    return jsonify({"ok": False, "error": "Toggle value must be true or false"}), 400
+                anti_gc = getattr(self.bot, "anti_gc_trap", None)
+                if anti_gc is None:
+                    return jsonify({"ok": False, "error": "Anti-GC controls are unavailable"}), 503
+                attribute = "enabled" if action == "antigc_enabled" else "block_creators"
+                setattr(anti_gc, attribute, value)
+                return jsonify({
+                    "ok": True,
+                    "anti_gc": {
+                        "enabled": bool(anti_gc.enabled),
+                        "block_creators": bool(anti_gc.block_creators),
+                    },
+                })
+
+            friends = getattr(self.bot, "friends_tools", None)
+            if friends is None:
+                return jsonify({"ok": False, "error": "Friend automation is unavailable"}), 503
+            user_id = str(data.get("user_id") or "").strip()
+            if action == "auto_reply_add":
+                message = str(data.get("message") or "").strip()
+                result = friends.configure_autoreply(f"{user_id} {message}")
+                if not result.startswith("Auto-reply enabled"):
+                    return jsonify({"ok": False, "error": result}), 400
+            elif action == "auto_reply_remove":
+                result = friends.stop_autoreply(user_id)
+                if result.startswith("No auto-reply"):
+                    return jsonify({"ok": False, "error": result}), 404
+                if result.startswith("Provide "):
+                    return jsonify({"ok": False, "error": result}), 400
+            else:
+                return jsonify({"ok": False, "error": "Unknown command-tools action"}), 400
+
+            return jsonify({
+                "ok": True,
+                "auto_replies": friends.auto_reply_state(),
+                "message": result,
+            })
+
         # ── Presence Status ───────────────────────────────────────────────
         @self.app.get("/api/presence")
         def api_presence_get() -> Any:

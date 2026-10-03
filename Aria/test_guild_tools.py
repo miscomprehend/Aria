@@ -39,6 +39,18 @@ class GuildToolsTests(unittest.TestCase):
             "identity_enabled": True,
         })
 
+    def test_set_clan_reports_guild_list_failures_instead_of_claiming_absence(self):
+        class FailedGuildApi(FakeApi):
+            def get_guilds(self, force=False):
+                raise OSError("offline")
+
+            def request(self, method, endpoint, **kwargs):
+                self.requests.append((method, endpoint, kwargs))
+                return SimpleNamespace(status_code=503, json=lambda: {})
+
+        tools = GuildTools(FailedGuildApi())
+        self.assertIn("HTTP 503", tools.set_clan("202"))
+
     def test_clear_clan_uses_disabled_null_identity(self):
         self.assertEqual(self.tools.clear_clan(), "Clan tag cleared.")
         self.assertEqual(self.api.requests[-1][2]["json"], {

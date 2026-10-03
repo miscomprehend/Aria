@@ -1,6 +1,6 @@
 {
   "name": "aria-desktop",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "private": true,
   "description": "Aria desktop app with a native Windows dashboard",
   "main": "electron/main.cjs",

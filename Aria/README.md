@@ -19,6 +19,28 @@ The repository contains the Aria application in the `Aria` subdirectory:
 - `Aria.Native/` contains the Windows WinUI dashboard.
 - `host.py` manages hosted client processes.
 
+## Runtime and dashboard
+
+The main app uses one account gateway connection. The desktop dashboard and
+hosted runtime use these application modules:
+
+- RPC and presets: `main.py`, `rpc_activity.py`, and `rpc_profiles.py`.
+- Spotify playback/lyrics control: `bulk_commands.py` and `spotify_lyrics.py`.
+- Message logging: `main.py` and `message_logger.py`.
+- Profile editing: `main.py`, `profile_avatar.py`, and `profile_details.py`.
+- Group-DM protection: `main.py` and `anti_gc_trap.py`.
+- Friend relationship views, one-at-a-time friend actions, and opt-in
+  per-user auto-replies: `friends_tools.py` and `main.py`.
+- Explicit single-member group-DM actions and icon tools:
+  `group_chat_tools.py`.
+- Guild and reaction tools: `guild_tools.py` and `superreact_commands.py`.
+
+The web dashboard's **Command Controls** page manages anti-GC toggles and
+per-user auto-replies for the active runtime. These settings are session-local;
+auto-replies are cleared when the runtime stops. Message-logger configuration
+is persisted separately. Bulk relationship removal and mass group-chat removal
+are not exposed in the main app command surface.
+
 Run commands below from the application directory—the directory containing
 `package.json` and `requirements.txt`.
 
@@ -332,9 +354,10 @@ to `Aria/message_logger.json`.
 ## Updating an installed Windows app
 
 Pulling source changes does not update an already-installed application. To
-publish an update, update the version in `package.json` and the root entry in
-`package-lock.json`, then build and distribute a new installer. The packaged
-backend uses the application version to determine when it should be refreshed.
+publish an update, keep `package.json`, `package-lock.json`, `formatter.py`,
+and `Aria.Native/Aria.Native.csproj` on the same release version, then build
+and distribute a new installer. The packaged backend uses the application
+version to determine when it should be refreshed.
 
 On the target Windows PC, close Aria and update the source checkout:
 
@@ -359,6 +382,4 @@ install it over the existing app to retain that account's application data.
 
 ## Credits
 
-The RPC profile and message-logger workflows were informed by the
-[Beyond project](https://github.com/kzfq/beyond), which is MIT-licensed. Aria
-maintains its own implementation.
+Aria is maintained by Misconsideration.

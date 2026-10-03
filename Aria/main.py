@@ -1920,6 +1920,16 @@ def main():
     from friend_scraper import EnhancedFriendScraper
     friend_scraper = EnhancedFriendScraper(bot.api)
     bot.friend_scraper = friend_scraper
+    try:
+        from friends_tools import setup_friends_tools
+        setup_friends_tools(bot, is_control_user)
+    except Exception as e:
+        print(f"[friends_tools] failed: {e}")
+    try:
+        from group_chat_tools import setup_group_chat_tools
+        setup_group_chat_tools(bot, is_control_user)
+    except Exception as e:
+        print(f"[group_chat_tools] failed: {e}")
 
     _ready_sync_state = {"user_id": None, "running": False}
 
@@ -2217,7 +2227,7 @@ def main():
                 fmt.giveaway_status(status, s["entered"], s["won"], s["failed"], s.get("last_win")),
             )
 
-    @bot.command(name="agct", aliases=["antigctrap"])
+    @bot.command(name="agct", aliases=["antigc", "antigctrap"])
     def agct_cmd(ctx, args):
         import formatter as fmt
         agct = ctx["bot"].anti_gc_trap
@@ -2266,36 +2276,48 @@ def main():
                 elif args[1] == "off":
                     agct.block_creators = False
                     msg = ctx["api"].send_message(ctx["channel_id"], "> Anti-GC trap block creators **disabled.**")
+                else:
+                    msg = ctx["api"].send_message(ctx["channel_id"], f"> Usage: {bot.prefix}agct block <on|off>")
+            else:
+                msg = ctx["api"].send_message(ctx["channel_id"], f"> Usage: {bot.prefix}agct block <on|off>")
         
         elif args[0] == "msg" and len(args) >= 2:
             message = " ".join(args[1:])
             agct.leave_message = message
             msg = ctx["api"].send_message(ctx["channel_id"], f"> **✓ Anti-GC Trap** :: Leave message set.")
+        elif args[0] == "msg":
+            msg = ctx["api"].send_message(ctx["channel_id"], f"> Usage: {bot.prefix}agct msg <text>")
         
         elif args[0] == "name" and len(args) >= 2:
             name = " ".join(args[1:])
             agct.gc_name = name
             msg = ctx["api"].send_message(ctx["channel_id"], f"> **✓ Anti-GC Trap** :: GC name set to **{name}**.")
+        elif args[0] == "name":
+            msg = ctx["api"].send_message(ctx["channel_id"], f"> Usage: {bot.prefix}agct name <text>")
         
         elif args[0] == "icon" and len(args) >= 2:
             url = args[1]
             agct.gc_icon_url = url
             msg = ctx["api"].send_message(ctx["channel_id"], "> **✓ Anti-GC Trap** :: GC icon URL set.")
+        elif args[0] == "icon":
+            msg = ctx["api"].send_message(ctx["channel_id"], f"> Usage: {bot.prefix}agct icon <url>")
         
         elif args[0] == "webhook" and len(args) >= 2:
             url = args[1]
             agct.webhook_url = url
             agct.save_whitelist()
             msg = ctx["api"].send_message(ctx["channel_id"], "> **✓ Anti-GC Trap** :: Webhook set.")
+        elif args[0] == "webhook":
+            msg = ctx["api"].send_message(ctx["channel_id"], f"> Usage: {bot.prefix}agct webhook <url>")
         
         elif args[0] == "wl":
-            if len(args) >= 3:
-                if args[1] == "add":
+            if len(args) >= 2:
+                if args[1] == "add" and len(args) >= 3:
                     user_id = args[2]
                     success = agct.add_to_whitelist(user_id)
                     msg = ctx["api"].send_message(ctx["channel_id"], f"> **✓ Anti-GC Trap** :: Added `{user_id}` to whitelist.")
                 
-                elif args[1] == "remove":
+                elif args[1] in {"remove", "unwl"} and len(args) >= 3:
                     user_id = args[2]
                     success = agct.remove_from_whitelist(user_id)
                     msg = ctx["api"].send_message(ctx["channel_id"], f"> **✗ Anti-GC Trap** :: Removed `{user_id}` from whitelist.")
@@ -2309,6 +2331,34 @@ def main():
                         msg = ctx["api"].send_message(ctx["channel_id"], f"> **Anti-GC Trap** :: Whitelist — {wl_list}")
                     else:
                         msg = ctx["api"].send_message(ctx["channel_id"], "> **Anti-GC Trap** :: Whitelist is empty.")
+                else:
+                    msg = ctx["api"].send_message(
+                        ctx["channel_id"],
+                        f"> Usage: {bot.prefix}agct wl <add|remove|list> [user_id]",
+                    )
+            else:
+                msg = ctx["api"].send_message(
+                    ctx["channel_id"],
+                    f"> Usage: {bot.prefix}agct wl <add|remove|list> [user_id]",
+                )
+
+    for _agct_alias, _agct_action in (
+        ("agctblock", ["block"]),
+        ("agcticon", ["icon"]),
+        ("agctmsg", ["msg"]),
+        ("agctname", ["name"]),
+        ("agctwebhook", ["webhook"]),
+        ("agctwl", ["wl", "add"]),
+        ("agctunwl", ["wl", "remove"]),
+        ("agctwllist", ["wl", "list"]),
+    ):
+        def _register_agct_alias(command_name, action):
+            @bot.command(name=command_name)
+            def _agct_alias_cmd(ctx, args):
+                agct_cmd(ctx, [*action, *args])
+            return _agct_alias_cmd
+
+        _register_agct_alias(_agct_alias, _agct_action)
         
     @bot.command(name="ping", aliases=["ms", "latency", "lat"])
     def ping_cmd(ctx, args):
@@ -4928,6 +4978,111 @@ Example Usage:
                 msg = api.send_message(ctx["channel_id"], f"> **✗ SetName** :: Failed HTTP {code}{' — ' + err if err else ''}")
         except Exception as e:
             msg = api.send_message(ctx["channel_id"], f"> **✗ SetName** :: Error: {str(e)[:80]}")
+
+    @bot.command(name="setbio", aliases=["setabout"])
+    def setbio(ctx, args):
+        if not is_control_user(ctx["author_id"]):
+            deny_restricted_command(ctx, "Set Bio")
+            return
+        if not args:
+            ctx["api"].send_message(
+                ctx["channel_id"],
+                f"> **Set Bio** :: Usage: `{bot.prefix}setbio <text|clear>`",
+            )
+            return
+
+        value = " ".join(args).strip()
+        if value.lower() in ("clear", "remove"):
+            value = ""
+        if len(value) > 190:
+            ctx["api"].send_message(ctx["channel_id"], "> **Set Bio** :: Bio must be 190 characters or fewer.")
+            return
+
+        api = ctx["api"]
+        try:
+            ok, response, error = _profile_patch(api, {"bio": value}, ["/users/@me/profile"])
+            if ok:
+                result = "Bio cleared." if not value else "Bio updated."
+                api.send_message(ctx["channel_id"], f"> **✓ Set Bio** :: {result}")
+            else:
+                code = response.status_code if response else "no response"
+                api.send_message(
+                    ctx["channel_id"],
+                    f"> **✗ Set Bio** :: Failed HTTP {code}{' — ' + error if error else ''}",
+                )
+        except Exception as exc:
+            api.send_message(ctx["channel_id"], f"> **✗ Set Bio** :: Error: {str(exc)[:80]}")
+
+    @bot.command(name="setpronouns")
+    def setpronouns(ctx, args):
+        if not is_control_user(ctx["author_id"]):
+            deny_restricted_command(ctx, "Set Pronouns")
+            return
+        if not args:
+            ctx["api"].send_message(
+                ctx["channel_id"],
+                f"> **Set Pronouns** :: Usage: `{bot.prefix}setpronouns <text|clear>`",
+            )
+            return
+
+        value = " ".join(args).strip()
+        if value.lower() in ("clear", "remove"):
+            value = ""
+        if len(value) > 40:
+            ctx["api"].send_message(ctx["channel_id"], "> **Set Pronouns** :: Pronouns must be 40 characters or fewer.")
+            return
+
+        api = ctx["api"]
+        try:
+            ok, response, error = _profile_patch(api, {"pronouns": value}, ["/users/@me/profile"])
+            if ok:
+                result = "Pronouns cleared." if not value else "Pronouns updated."
+                api.send_message(ctx["channel_id"], f"> **✓ Set Pronouns** :: {result}")
+            else:
+                code = response.status_code if response else "no response"
+                api.send_message(
+                    ctx["channel_id"],
+                    f"> **✗ Set Pronouns** :: Failed HTTP {code}{' — ' + error if error else ''}",
+                )
+        except Exception as exc:
+            api.send_message(ctx["channel_id"], f"> **✗ Set Pronouns** :: Error: {str(exc)[:80]}")
+
+    @bot.command(name="setaccent", aliases=["setcolor", "setcolour"])
+    def setaccent(ctx, args):
+        if not is_control_user(ctx["author_id"]):
+            deny_restricted_command(ctx, "Set Accent Color")
+            return
+        if not args:
+            ctx["api"].send_message(
+                ctx["channel_id"],
+                f"> **Set Accent Color** :: Usage: `{bot.prefix}setaccent <hex color>`",
+            )
+            return
+
+        raw_color = " ".join(args).strip()
+        try:
+            color = int(raw_color.lstrip("#"), 16)
+        except ValueError:
+            ctx["api"].send_message(ctx["channel_id"], "> **Set Accent Color** :: Use a hex color such as #5b8cff.")
+            return
+        if not 0 <= color <= 0xFFFFFF:
+            ctx["api"].send_message(ctx["channel_id"], "> **Set Accent Color** :: Color must be between #000000 and #ffffff.")
+            return
+
+        api = ctx["api"]
+        try:
+            ok, response, error = _profile_patch(api, {"accent_color": color}, ["/users/@me"])
+            if ok:
+                api.send_message(ctx["channel_id"], f"> **✓ Set Accent Color** :: Set to `#{color:06x}`.")
+            else:
+                code = response.status_code if response else "no response"
+                api.send_message(
+                    ctx["channel_id"],
+                    f"> **✗ Set Accent Color** :: Failed HTTP {code}{' — ' + error if error else ''}",
+                )
+        except Exception as exc:
+            api.send_message(ctx["channel_id"], f"> **✗ Set Accent Color** :: Error: {str(exc)[:80]}")
+
     @bot.command(name="stealname", aliases=["copyname"])
     def stealname(ctx, args):
         # Usage: +stealname <user_id|@mention> [server]
@@ -6945,6 +7100,8 @@ Example Usage:
         category_header_map = {
             "general": "General",
             "utility": "Utility",
+            "friends": "Friends",
+            "groupchat": "Group Chat",
             "messaging": "Messaging",
             "profile": "Profile",
             "server": "Server",
@@ -6967,6 +7124,9 @@ Example Usage:
         category_alias_map = {
             "main": "general",
             "misc": "general",
+            "friend": "friends",
+            "gc": "groupchat",
+            "group": "groupchat",
             "message": "messaging",
             "messages": "messaging",
             "user": "profile",
@@ -7069,6 +7229,31 @@ Example Usage:
                     ("flip <text>", "Flip text upside down"),
                     ("version", "Show Aria version"),
                     ("restart", "Restart the bot"),
+                ],
+            },
+            "groupchat": {
+                "title": f"{p}help Group Chat",
+                "lines": [
+                    ("gcicon", "Show this group DM's icon URL"),
+                    ("setgcicon <https_image_url>", "Set this group DM's icon"),
+                    ("gcadd <user_id>", "Add one user to this group DM"),
+                    ("gcremove <user_id>", "Remove one user from this group DM"),
+                ],
+            },
+
+            "friends": {
+                "title": f"{p}help Friends",
+                "lines": [
+                    ("friends [list|add|remove|block] [user_id]", "List or manage a single relationship"),
+                    ("friend <user_id>", "Send a friend request"),
+                    ("unfriend <user_id>", "Remove one friend"),
+                    ("pending", "List incoming friend requests"),
+                    ("outgoing", "List outgoing friend requests"),
+                    ("blocked", "List blocked users"),
+                    ("friendcount", "Show friend and relationship counts"),
+                    ("autoreply <user_id> <message>", "Enable an in-memory reply for one user"),
+                    ("autoreplystop [user_id]", "Disable one or all auto-replies"),
+                    ("friendlink [days] [max_uses]", "Create a friend invite link"),
                 ],
             },
 
@@ -7325,7 +7510,8 @@ Example Usage:
                     ("setbanner <url>", "Set banner"),
                     ("stealbanner <user_id>", "Steal user banner"),
                     ("setpronouns <text>", "Set pronouns"),
-                    ("setbio <text>", "Set bio"),
+                    ("setbio <text|clear>", "Set or clear bio"),
+                    ("setaccent <hex>", "Set profile accent color"),
                     ("setdisplayname <text>", "Set display name"),
                     ("stealname <user_id>", "Steal display name"),
                     ("setstatus [emoji,] text", "Set custom status"),
@@ -7407,13 +7593,24 @@ Example Usage:
 
                         "setbio": help_page(
                                 f"{p}setbio <text>",
-                                "Sets your account bio / about me section.",
+                                "Sets your account bio / about me section; use 'clear' to remove it.",
                                 "",
                                 {"type": "section", "text": "Arguments"},
                                 ("text", "Bio text to display on your profile"),
                                 "",
                                 {"type": "section", "text": "Aliases"},
                                 "setaboutme",
+                        ),
+
+                        "setaccent": help_page(
+                                f"{p}setaccent <hex color>",
+                                "Sets your profile accent color.",
+                                "",
+                                {"type": "section", "text": "Arguments"},
+                                ("hex color", "Color such as #5b8cff"),
+                                "",
+                                {"type": "section", "text": "Aliases"},
+                                "setcolor, setcolour",
                         ),
 
                         "setdisplayname": help_page(
@@ -8868,6 +9065,8 @@ Example Usage:
                 ("Nuke", "Destructive ops"),
                 ("Hosting", "Hosted tokens"),
                 ("Token", "Session tools"),
+                ("Friends", "Relationship tools"),
+                ("Group Chat", "Explicit group-DM tools"),
                 ("AFK", "AFK system"),
                 ("Nitro", "Nitro sniper"),
                 ("AGCT", "Anti-GC trap"),
@@ -8996,7 +9195,7 @@ Example Usage:
         p = ctx["bot"].prefix
         category_rules = {
             "System": ["help", "helpwall", "cmdwall", "categories", "quickhelp", "cmdinfo", "restart", "stop", "setprefix", "customize", "terminal", "ui", "web", "version"],
-            "Profile": ["setpfp", "setbanner", "stealpfp", "stealbanner", "stealname", "bio", "setbio", "pronouns", "setpronouns", "displayname", "setdisplayname", "setstatus", "deco", "avatar"],
+            "Profile": ["setpfp", "setbanner", "stealpfp", "stealbanner", "stealname", "bio", "setbio", "pronouns", "setpronouns", "setaccent", "displayname", "setdisplayname", "setstatus", "deco", "avatar"],
             "Guild": ["guild", "guilds", "myguilds", "server", "servercopy", "serverload", "join", "leave", "invite", "role", "channel"],
             "Messaging": ["purge", "spurge", "spam", "massdm", "dm", "mimic", "mock", "react", "typing", "snipe", "esnipe"],
             "User": ["userinfo", "friends", "mutual", "block", "auth", "unauth", "checktoken", "token", "hypesquad", "status", "client"],
@@ -11829,7 +12028,7 @@ Example Usage:
     # friends — list, add, remove friends
     # -----------------------------------------------------------------------
 
-    @bot.command(name="friends", aliases=["friend", "fl", "friendlist"])
+    @bot.command(name="friends", aliases=["fl", "friendlist"])
     def friends_cmd(ctx, args):
         if not is_control_user(ctx["author_id"]):
             deny_restricted_command(ctx, "Friends")
@@ -11837,6 +12036,9 @@ Example Usage:
 
         api = ctx["api"]
         action = args[0].lower() if args else "list"
+        if action not in {"list", "add", "remove", "block", "pending", "outgoing", "blocked", "count"}:
+            action = "add"
+            args = ["add", *args]
 
         if action == "list":
             try:
@@ -11871,8 +12073,40 @@ Example Usage:
             except Exception as e:
                 msg = api.send_message(ctx["channel_id"], f"> **✗ Friends** :: Error: {str(e)[:80]}")
 
+        elif action in {"pending", "outgoing", "blocked", "count"}:
+            try:
+                r = api.request("GET", "/users/@me/relationships")
+                if not r or r.status_code != 200:
+                    msg = api.send_message(ctx["channel_id"], f"> **✗ Friends** :: Failed: HTTP {r.status_code if r else 'no response'}")
+                    return
+                rels = r.json()
+                relationship_types = {"pending": 3, "outgoing": 4, "blocked": 2}
+                if action == "count":
+                    totals = {
+                        name: sum(1 for relationship in rels if relationship.get("type") == kind)
+                        for name, kind in (("Friends", 1), ("Incoming", 3), ("Outgoing", 4), ("Blocked", 2))
+                    }
+                    body = "\n".join(f"{name}: {count}" for name, count in totals.items())
+                    msg = api.send_message(ctx["channel_id"], fmt.sections("Friend counts", body))
+                else:
+                    selected = [item for item in rels if item.get("type") == relationship_types[action]]
+                    lines = []
+                    for item in selected[:20]:
+                        user = item.get("user") or {}
+                        name = user.get("global_name") or user.get("username") or "Unknown"
+                        lines.append(f"{name} :: {user.get('id', '?')}")
+                    msg = api.send_message(
+                        ctx["channel_id"],
+                        fmt.sections(f"{action.title()} ({len(selected)})", "\n".join(lines) or "None"),
+                    )
+            except Exception as e:
+                msg = api.send_message(ctx["channel_id"], f"> **✗ Friends** :: Error: {str(e)[:80]}")
+
         elif action == "add" and len(args) >= 2:
-            target_id = args[1]
+            target_id = str(args[1]).strip().strip("<@!>")
+            if not target_id.isdigit():
+                msg = api.send_message(ctx["channel_id"], "> **✗ Friends** :: Provide a numeric user ID or mention.")
+                return
             try:
                 r = api.request("PUT", f"/users/@me/relationships/{target_id}", data={})
                 if r and r.status_code in (200, 204):
@@ -11889,7 +12123,10 @@ Example Usage:
                 msg = api.send_message(ctx["channel_id"], f"> **✗ Friends** :: Error: {str(e)[:80]}")
 
         elif action == "remove" and len(args) >= 2:
-            target_id = args[1]
+            target_id = str(args[1]).strip().strip("<@!>")
+            if not target_id.isdigit():
+                msg = api.send_message(ctx["channel_id"], "> **✗ Friends** :: Provide a numeric user ID or mention.")
+                return
             try:
                 r = api.request("DELETE", f"/users/@me/relationships/{target_id}")
                 if r and r.status_code in (200, 204):
@@ -11901,7 +12138,10 @@ Example Usage:
                 msg = api.send_message(ctx["channel_id"], f"> **✗ Friends** :: Error: {str(e)[:80]}")
 
         elif action == "block" and len(args) >= 2:
-            target_id = args[1]
+            target_id = str(args[1]).strip().strip("<@!>")
+            if not target_id.isdigit():
+                msg = api.send_message(ctx["channel_id"], "> **✗ Friends** :: Provide a numeric user ID or mention.")
+                return
             try:
                 r = api.request("PUT", f"/users/@me/relationships/{target_id}", data={"type": int(RelationshipType.Blocked)})
                 if r and r.status_code in (200, 204):

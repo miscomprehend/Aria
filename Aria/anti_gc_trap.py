@@ -14,8 +14,8 @@ class AntiGCTrap:
         self.api = api_client
         self.enabled = False
         self.block_creators = False
-        self.leave_message = "loser ass nigga"
-        self.gc_name = "u cant trap a god"
+        self.leave_message = "Group chat protection is enabled."
+        self.gc_name = "Protected group chat"
         self.gc_icon_url = None
         self.webhook_url = None
         self.whitelist = set()
@@ -28,7 +28,7 @@ class AntiGCTrap:
                 self.whitelist = set(data.get("whitelist", []))
                 self.webhook_url = data.get("webhook_url")
                 return True
-        except:
+        except (OSError, ValueError, TypeError):
             return False
     
     def save_whitelist(self):

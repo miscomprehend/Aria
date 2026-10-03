@@ -104,6 +104,10 @@
                 <svg class="nav-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M3 4h14v10H8l-5 3V4z"/><path d="M6 7h8M6 10h5"/></svg>
                 Message Log
             </li>
+            <li class="nav-item" data-nav-group="tools" data-section="automation">
+                <svg class="nav-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M10 2v3m0 10v3M2 10h3m10 0h3"/><circle cx="10" cy="10" r="4"/></svg>
+                Command Controls
+            </li>
 
             <li class="nav-group-label" data-group-toggle="administration" data-admin-only="true" role="button" tabindex="0" aria-expanded="false" hidden><span>Operations</span><span class="nav-group-chevron" aria-hidden="true"></span></li>
             <li class="nav-item" data-nav-group="administration" data-section="administration" data-admin-only="true" hidden>
@@ -762,6 +766,62 @@
                     </table>
                 </div>
             </div>
+            </div>
+        </section>
+
+        <section class="section" id="section-automation">
+            <div class="section-header">
+                <div>
+                    <div class="section-title">Command Controls</div>
+                    <div class="section-sub">Configure runtime anti-GC options and targeted auto-replies</div>
+                </div>
+                <button class="btn btn-ghost" type="button" onclick="loadCommandTools()">Refresh</button>
+            </div>
+
+            <div class="settings-panel settings-panel-mb-md">
+                <div class="settings-panel-header">
+                    <span class="settings-title">Anti-GC protection</span>
+                    <span class="settings-panel-sub">Changes apply to this running account session</span>
+                </div>
+                <div class="logger-switches">
+                    <label class="logger-toggle"><input id="commandAgctEnabled" type="checkbox"><span>Enable protection</span></label>
+                    <label class="logger-toggle"><input id="commandAgctBlockCreators" type="checkbox"><span>Block group creators</span></label>
+                </div>
+                <div class="settings-msg-wrap"><div id="commandToolsMsg" class="settings-msg" role="status" aria-live="polite"></div></div>
+            </div>
+
+            <div class="settings-panel settings-panel-mb-md">
+                <div class="settings-panel-header">
+                    <span class="settings-title">Per-user auto-replies</span>
+                    <span class="settings-panel-sub">Reply only to messages from selected user IDs; settings reset when the runtime stops</span>
+                </div>
+                <div class="setting-row">
+                    <div>
+                        <label class="setting-label" for="autoReplyUserId">User ID</label>
+                        <div class="setting-sub">Numeric ID for the account to match</div>
+                    </div>
+                    <input id="autoReplyUserId" class="setting-input mono" type="text" inputmode="numeric" maxlength="20" placeholder="Discord user ID">
+                </div>
+                <div class="setting-row">
+                    <div>
+                        <label class="setting-label" for="autoReplyMessage">Reply message</label>
+                        <div class="setting-sub">Maximum 2000 characters</div>
+                    </div>
+                    <textarea id="autoReplyMessage" class="setting-input" maxlength="2000" rows="3" placeholder="Enter the reply sent to this user"></textarea>
+                </div>
+                <div class="setting-row">
+                    <span></span>
+                    <button class="btn btn-primary" id="addAutoReplyButton" type="button">Save auto-reply</button>
+                </div>
+                <div class="table-card">
+                    <div class="table-header"><span class="table-title">Configured replies</span><span class="table-badge" id="autoReplyCount">0 targets</span></div>
+                    <div class="table-scroll">
+                        <table class="data-table">
+                            <thead><tr><th>User ID</th><th>Reply</th><th>Action</th></tr></thead>
+                            <tbody id="autoReplyBody"><tr><td colspan="3" class="empty-row">No auto-replies configured.</td></tr></tbody>
+                        </table>
+                    </div>
+                </div>
             </div>
         </section>
 
