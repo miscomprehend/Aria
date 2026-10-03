@@ -921,7 +921,7 @@
     "/home/codespace/.nuget/packages/": {}
   },
   "project": {
-    "version": "1.0.0",
+    "version": "2.0.0",
     "restore": {
       "projectUniqueName": "/workspaces/Aria/Aria/Aria.Native/Aria.Native.csproj",
       "projectName": "Aria.Native",
