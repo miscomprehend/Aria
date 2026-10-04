@@ -501,10 +501,10 @@ function createTokenWindow() {
   }
 
   const options = {
-    width: 520,
-    height: 680,
-    minWidth: 420,
-    minHeight: 560,
+    width: 900,
+    height: 580,
+    minWidth: 760,
+    minHeight: 520,
     frame: false,
     autoHideMenuBar: true,
     resizable: true,
@@ -659,7 +659,7 @@ function createWindow() {
       width: 1280,
       height: 820,
       minWidth: 760,
-      minHeight: 560,
+      minHeight: 520,
       frame: false,
       autoHideMenuBar: true,
       title: "Aria Desktop",
