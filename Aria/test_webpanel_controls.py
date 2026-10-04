@@ -1693,9 +1693,7 @@ class WebPanelControlTests(unittest.TestCase):
 
     def test_dashboard_and_desktop_versions_match(self):
         package = json.loads((Path(__file__).parent / "package.json").read_text(encoding="utf-8"))
-        native_project = (Path(__file__).parent / "Aria.Native" / "Aria.Native.csproj").read_text(encoding="utf-8")
         self.assertEqual(package["version"], VERSION.removeprefix("v"))
-        self.assertIn(f"<Version>{package['version']}</Version>", native_project)
 
 
 if __name__ == "__main__":

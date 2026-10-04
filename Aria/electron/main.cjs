@@ -586,14 +586,9 @@ ipcMain.handle("setup:save-token", async (event, payload) => {
     logMessage("INFO", "Restarting Aria with the updated token setting.");
     startBackend(remember ? null : token);
     dashboardUrl = await waitForDashboard();
-    if (process.platform === "win32") {
-      desktopOwnerId = String(ownerIdentity.id || "");
-      await launchNativeDashboard();
-    } else {
-      await authenticateElectronOwner();
-      if (mainWindow) await mainWindow.loadURL(new URL("/dashboard", dashboardUrl).toString());
-      else createWindow();
-    }
+    await authenticateElectronOwner();
+    if (mainWindow) await mainWindow.loadURL(new URL("/dashboard", dashboardUrl).toString());
+    else createWindow();
     if (tokenWindow && !tokenWindow.isDestroyed()) tokenWindow.close();
     return { ok: true };
   } catch (error) {
@@ -761,15 +756,11 @@ app.whenReady().then(async () => {
       startBackend();
       dashboardUrl = await waitForDashboard();
       updateStartupStatus("Signing into your owner dashboard...");
-      if (process.platform !== "win32") await authenticateElectronOwner();
+      await authenticateElectronOwner();
     } else {
       logMessage("INFO", `Using existing panel at ${dashboardUrl}; its normal login remains enabled.`);
     }
     updateStartupStatus("Opening your dashboard...");
-    if (process.platform === "win32") {
-      await launchNativeDashboard();
-      return;
-    }
     createWindow();
     if (backendProcess && !hasSavedToken()) {
       logMessage("INFO", "No saved token found; opening token setup.");

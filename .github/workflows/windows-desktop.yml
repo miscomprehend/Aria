@@ -28,9 +28,6 @@ jobs:
           node-version: "22.12"
           cache: npm
           cache-dependency-path: Aria/package-lock.json
-      - uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: "8.0.x"
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
@@ -62,7 +59,7 @@ jobs:
       - name: Run Python tests
         working-directory: Aria
         run: python -m unittest discover -v
-      - name: Build Windows installer and native dashboard
+      - name: Build Windows installer
         working-directory: Aria
         run: npm run dist
       - name: Upload Windows installer
