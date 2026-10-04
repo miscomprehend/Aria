@@ -1,4 +1,13 @@
+import symtable
 from pathlib import Path
+
+
+def test_main_does_not_shadow_module_sys_in_command_closures():
+    source = (Path(__file__).resolve().parent / "main.py").read_text(encoding="utf-8")
+    module_scope = symtable.symtable(source, "main.py", "exec")
+    main_scope = next(scope for scope in module_scope.get_children() if scope.get_name() == "main")
+
+    assert not main_scope.lookup("sys").is_local()
 
 
 def test_main_backend_has_one_utility_category_and_exposes_quest():

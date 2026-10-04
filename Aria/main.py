@@ -1325,7 +1325,6 @@ def main():
             if host_mod.host_manager._user_has_active_hosted_locked(instance_owner_id) or already_active:
                 print(f"[HOSTED] Instance for owner {instance_owner_id} already running. Not starting another gateway.")
                 print("[HOSTED] Gateway loaded (singleton guard active, not connecting bot functions)")
-                import sys
                 sys.exit(0)
 
 
