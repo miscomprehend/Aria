@@ -7,6 +7,13 @@ from .constants import Constants
 
 # Import captcha solver if available
 try:
+    from .providers.nocaptcha import NoCaptchaSolver
+    _nocaptcha_available = True
+except ImportError:
+    _nocaptcha_available = False
+    NoCaptchaSolver = None
+
+try:
     from .providers.yescaptcha import YesCaptchaSolver
     _yescaptcha_available = True
 except ImportError:
@@ -19,18 +26,28 @@ class CaptchaSolver:
 
     def __init__(self):
         """Initialize captcha solver."""
-        self._yescaptcha: Optional[Any] = None
-        
-        # Initialize YesCaptcha if API key is available
-        api_key = os.environ.get('YES_CAPTCHA_API_KEY')
-        if api_key and _yescaptcha_available and YesCaptchaSolver:
+        self._solver: Optional[Any] = None
+        self._provider_name: Optional[str] = None
+
+        nocaptcha_key = os.environ.get('NOCAPTCHAAI_API_KEY')
+        if nocaptcha_key and _nocaptcha_available and NoCaptchaSolver:
             try:
-                self._yescaptcha = YesCaptchaSolver(api_key)
+                self._solver = NoCaptchaSolver(nocaptcha_key)
+                self._provider_name = 'NoCaptchaAI'
             except Exception as e:
-                print(f"Failed to initialize YesCaptcha: {e}")
+                print(f"Failed to initialize NoCaptchaAI: {e}")
+
+        if self._solver is None:
+            yescaptcha_key = os.environ.get('YES_CAPTCHA_API_KEY')
+            if yescaptcha_key and _yescaptcha_available and YesCaptchaSolver:
+                try:
+                    self._solver = YesCaptchaSolver(yescaptcha_key)
+                    self._provider_name = 'YesCaptcha'
+                except Exception as e:
+                    print(f"Failed to initialize YesCaptcha: {e}")
 
     async def solve_captcha(self, data: CaptchaDataFromRequest) -> str:
-        """Solve hCaptcha using YesCaptcha.
+        """Solve hCaptcha using NoCaptchaAI or YesCaptcha.
         
         Args:
             data: Captcha data from Discord
@@ -41,11 +58,11 @@ class CaptchaSolver:
         Raises:
             ValueError: If solving fails or is not available
         """
-        if not self._yescaptcha:
+        if not self._solver:
             raise ValueError('Captcha solving not available')
         
         try:
-            result = await self._yescaptcha.hcaptcha(
+            result = await self._solver.hcaptcha(
                 data.captcha_sitekey,
                 'https://discord.com',
                 {
@@ -56,11 +73,12 @@ class CaptchaSolver:
             )
             return result.get('gRecaptchaResponse', '')
         except Exception as e:
-            raise ValueError(f"Failed to solve captcha: {e}")
+            provider = self._provider_name or 'captcha provider'
+            raise ValueError(f"Failed to solve captcha with {provider}: {e}")
 
     def is_available(self) -> bool:
         """Check if captcha solving is available."""
-        return self._yescaptcha is not None
+        return self._solver is not None
 
 
 # Global solver instance

@@ -72,14 +72,8 @@ Aria has three parts that can run together:
    activity features.
 2. **Local web service:** serves the authenticated dashboard API, browser
    dashboard, and public information pages.
-3. **Desktop shell:** Electron manages startup and setup. On Windows it opens
-   the native WinUI dashboard; Linux and macOS use the Electron browser
-   dashboard.
-
-The Windows native dashboard is XAML/WinUI and does not embed the HTML
-dashboard. It includes overview, hosted instances, profile, friends, access,
-status/AFK, presence studio, commands, activity feed, analytics, Nitro,
-message logger, command controls, settings, runtime logs, and owner tools.
+3. **Desktop shell:** Electron manages startup and setup, then shows the
+   Aria web dashboard in its own window on Windows, Linux and macOS.
 Use its **Browser panel** and **Website** buttons to open the full browser
 dashboard or public site in your system browser.
 
@@ -460,6 +454,16 @@ Aria creates local configuration and runtime-state files as it runs.
 dashboard session-signing key is stored in `.aria_webpanel_secret`; keep it
 private and stable across restarts. For deployments that manage secrets via
 environment variables, set `ARIA_WEBPANEL_SECRET` before starting Aria.
+If you enable automatic Discord captcha retries for profile updates, quest
+flows, invites, or other write endpoints, configure one of these optional
+provider keys:
+
+- `NOCAPTCHAAI_API_KEY` (preferred)
+- `YES_CAPTCHA_API_KEY` (fallback)
+
+These retries also cover Nitro gift redemption and giveaway-entry actions
+(button interactions and reaction joins) because they use the shared API
+request path.
 
 Do not commit tokens, passwords, session secrets, database files, runtime
 state, logs, or generated builds. The repository's `.gitignore` excludes

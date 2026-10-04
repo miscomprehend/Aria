@@ -12,6 +12,21 @@ from token_config import configure_token, identify_token_owner
 
 
 class TokenConfigTests(unittest.TestCase):
+    def test_new_config_includes_captcha_key_and_setup_saves_it(self):
+        with tempfile.TemporaryDirectory() as directory:
+            config_path = os.path.join(directory, "config.json")
+            with redirect_stdout(io.StringIO()):
+                config.Config(config_path).save_config()
+            with open(config_path, encoding="utf-8") as handle:
+                self.assertIn("captcha_api_key", json.load(handle))
+
+            configure_token("", remember=False, config_path=config_path,
+                            captcha_key="solver-key", captcha_provider="yescaptcha")
+            with redirect_stdout(io.StringIO()):
+                settings = config.Config(config_path)
+            self.assertEqual(settings.get("captcha_api_key"), "solver-key")
+            self.assertEqual(settings.get("captcha_provider"), "yescaptcha")
+
     def test_identifies_token_owner_from_verified_account_profile(self):
         profile = {"id": "123456789012345678", "username": "aria-owner"}
         with patch("api_client.DiscordAPIClient") as client_class:
@@ -78,7 +93,8 @@ class TokenConfigTests(unittest.TestCase):
             main()
 
         self.assertEqual(json.loads(output.getvalue()), {"owner": owner})
-        configure.assert_called_once_with("test-token", remember=True, owner_identity=owner)
+        configure.assert_called_once_with("test-token", remember=True, owner_identity=owner,
+            captcha_key="", captcha_provider="")
 
     def test_identify_action_prints_saved_account_identity(self):
         from token_config import main

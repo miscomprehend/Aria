@@ -17,35 +17,71 @@
       <button type="button" data-window-action="close" aria-label="Close">×</button>
     </div>
   </header>
-  <main class="setup-shell">
-    <header class="setup-heading">
-      <img class="brand-mark" src="aria.png" alt="" width="46" height="46" />
-      <div>
-        <p class="eyebrow">ARIA DESKTOP</p>
-        <h1>Connect your account</h1>
+  <div class="layout">
+    <aside class="sidebar">
+      <div class="brand">
+        <img class="brand-mark" src="aria.png" alt="" width="38" height="38" />
+        <div><strong>aria setup</strong><span>3 steps · about a minute</span></div>
       </div>
-    </header>
+      <ol class="connect-steps" id="connect-steps">
+        <li class="is-active" data-step="0"><b>01</b><span>Discord Token</span></li>
+        <li data-step="1"><b>02</b><span>Captcha Solver<em>optional</em></span></li>
+        <li data-step="2"><b>03</b><span>Finish</span></li>
+      </ol>
+      <p class="sidebar-note">Everything here can be changed later in Settings.</p>
+    </aside>
 
-    <form id="token-form">
-      <label for="token">Account token</label>
-      <div class="token-field">
-        <input id="token" type="password" autocomplete="off" spellcheck="false" required />
-        <button id="reveal-token" type="button" aria-label="Show token">Show</button>
-      </div>
+    <main class="setup-shell">
+      <form id="token-form">
+        <section class="step" data-panel="0">
+          <p class="eyebrow">STEP 01 / 03</p>
+          <h1>Discord Token</h1>
+          <p class="lead">This is required to log Aria in.</p>
+          <label for="token">Discord Token</label>
+          <div class="token-field">
+            <input id="token" type="password" autocomplete="off" spellcheck="false" placeholder="Paste your token" />
+            <button id="reveal-token" type="button" aria-label="Show token">show</button>
+          </div>
+          <p class="hint">The Discord user token Aria logs in with.</p>
+          <p class="warning">Selfbots break Discord's Terms of Service. Use a throwaway account, never your main.</p>
+        </section>
 
-      <label class="remember-option" for="remember-token">
-        <input id="remember-token" type="checkbox" checked />
-        <span>Remember token on this device</span>
-      </label>
-      <p id="storage-note" class="storage-note">Saved encrypted in Aria's local config.</p>
-      <p id="status" class="status" role="status" aria-live="polite"></p>
+        <section class="step" data-panel="1" hidden>
+          <p class="eyebrow">STEP 02 / 03</p>
+          <h1>Captcha Solver</h1>
+          <p class="lead">Lets Aria solve verification challenges. Skip it if you don't have a key.</p>
+          <label for="captcha-key">Solver API key</label>
+          <div class="token-field">
+            <select id="captcha-provider" aria-label="Captcha provider">
+              <option value="nocaptchaai">NoCaptchaAI</option>
+              <option value="yescaptcha">YesCaptcha</option>
+            </select>
+            <input id="captcha-key" type="password" autocomplete="off" spellcheck="false" placeholder="Saved to config.json" />
+          </div>
+          <p class="hint">Stored encrypted in Aria's local config.json.</p>
+        </section>
 
-      <div class="actions">
-        <button id="cancel" class="secondary" type="button">Cancel</button>
-        <button id="submit" class="primary" type="submit">Save and start Aria</button>
-      </div>
-    </form>
-    <p class="privacy-note">Your token stays on this device. Never share it with anyone.</p>
-  </main>
+        <section class="step" data-panel="2" hidden>
+          <p class="eyebrow">STEP 03 / 03</p>
+          <h1>Finish</h1>
+          <p class="lead">Choose how Aria keeps your token, then start.</p>
+          <label class="remember-option" for="remember-token">
+            <input id="remember-token" type="checkbox" checked />
+            <span>Remember token on this device</span>
+          </label>
+          <p id="storage-note" class="hint">Saved encrypted in Aria's local config.</p>
+          <p class="warning">Your token stays on this device. Never share it with anyone.</p>
+        </section>
+
+        <p id="status" class="status" role="status" aria-live="polite"></p>
+        <div class="actions">
+          <span class="key-hint" id="key-hint">Enter to continue</span>
+          <button id="cancel" class="secondary" type="button">Cancel</button>
+          <button id="back" class="secondary" type="button" hidden>Back</button>
+          <button id="submit" class="primary" type="submit">Continue</button>
+        </div>
+      </form>
+    </main>
+  </div>
 </body>
 </html>

@@ -7,6 +7,9 @@ import sys
 import json
 import time
 
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+
 # Test 1: Import and initialize HeaderSpoofer
 print("[1] Testing HeaderSpoofer import and initialization...")
 try:

@@ -341,6 +341,8 @@ class InstanceSingletonManager:
     automatically by the OS if the owner crashes.
     """
 
+    _WIN_LOCK_OFFSET = 1 << 20
+
     def __init__(self, storage_path: Optional[str] = None):
         import os
 
@@ -361,11 +363,15 @@ class InstanceSingletonManager:
         except ImportError:
             import msvcrt
             try:
-                fd.seek(0)
+                # Windows byte-range locks are mandatory, so lock a byte past the
+                # holder metadata to keep it readable by other processes.
+                fd.seek(InstanceSingletonManager._WIN_LOCK_OFFSET)
                 msvcrt.locking(fd.fileno(), msvcrt.LK_NBLCK, 1)
                 return True
             except OSError:
                 return False
+            finally:
+                fd.seek(0)
         except OSError:
             return False
 
@@ -376,7 +382,7 @@ class InstanceSingletonManager:
             fcntl.flock(fd, fcntl.LOCK_UN)
         except ImportError:
             import msvcrt
-            fd.seek(0)
+            fd.seek(InstanceSingletonManager._WIN_LOCK_OFFSET)
             msvcrt.locking(fd.fileno(), msvcrt.LK_UNLCK, 1)
 
     def acquire(self, token: str) -> bool:
@@ -399,21 +405,22 @@ class InstanceSingletonManager:
 
         if not self._try_lock(fd):
             try:
-                fd.seek(0)
-                self.holder = json.loads(fd.read() or "{}")
+                with open(lock_file + ".json", "r", encoding="utf-8") as meta:
+                    self.holder = json.loads(meta.read() or "{}")
             except Exception:
                 self.holder = {}
             fd.close()
             return False
 
-        fd.seek(0)
-        fd.truncate()
-        fd.write(json.dumps({
-            "instance_id": self.instance_id,
-            "pid": os.getpid(),
-            "started": time.time(),
-        }))
-        fd.flush()
+        try:
+            with open(lock_file + ".json", "w", encoding="utf-8") as meta:
+                meta.write(json.dumps({
+                    "instance_id": self.instance_id,
+                    "pid": os.getpid(),
+                    "started": time.time(),
+                }))
+        except OSError:
+            pass
         self._fd = fd
         self.lock_file = lock_file
         return True
@@ -424,8 +431,6 @@ class InstanceSingletonManager:
         if fd is None:
             return
         try:
-            fd.seek(0)
-            fd.truncate()
             self._unlock(fd)
         except Exception:
             pass
@@ -433,4 +438,10 @@ class InstanceSingletonManager:
             fd.close()
         except Exception:
             pass
+        if self.lock_file:
+            try:
+                import os
+                os.remove(self.lock_file + ".json")
+            except OSError:
+                pass
         self.lock_file = None

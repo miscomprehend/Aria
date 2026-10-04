@@ -782,18 +782,113 @@ async function updateSparkline() {
 }
 
 // ── Toast Feed ─────────────────────────────────────────────────────────---
+function toastWhen(ev) {
+    if (ev && ev.time) return ev.time;
+    return fmtTs(ev && ev.ts);
+}
+
 async function updateToastFeed() {
     const feed = document.getElementById('toastFeed');
     if (!feed) return;
     const res = await fetchJSON('/api/dash/activity');
-    let timeline = (res && res.timeline) || [];
-    feed.innerHTML = '';
-    timeline.slice(-8).reverse().forEach(ev => {
+    let timeline = (res && res.runtime_events) || [];
+    if (!timeline.length) timeline = (res && res.timeline) || [];
+    if (!timeline.length) {
+        const pub = await fetchJSON('/api/public/activity');
+        timeline = ((pub && pub.events) || []).map(ev => ({
+            action: ev.kind || 'runtime',
+            details: ev.label || '',
+            time: ev.time || '',
+        }));
+    }
+    feed.replaceChildren();
+    if (!timeline.length) {
+        const empty = document.createElement('div');
+        empty.className = 'toast';
+        empty.textContent = 'No session events yet. Commands and gateway changes show up here.';
+        feed.appendChild(empty);
+        return;
+    }
+    timeline.slice(0, 8).forEach(ev => {
         const t = document.createElement('div');
         t.className = 'toast';
-        t.textContent = `[${fmtTs(ev.ts)}] ${ev.action}${ev.details ? ': '+ev.details : ''}`;
+        t.textContent = `[${toastWhen(ev)}] ${ev.action || 'event'}${ev.details ? ': ' + ev.details : ''}`;
         feed.appendChild(t);
     });
+}
+
+let quickTogglesReady = false;
+let lastRpcActivity = null;
+
+function setQuickToggle(id, checked) {
+    const input = document.getElementById(id);
+    if (!input) return;
+    input.dataset.syncing = '1';
+    input.checked = Boolean(checked);
+    delete input.dataset.syncing;
+}
+
+function setQuickToggleMsg(text) {
+    const msg = document.getElementById('quickToggleMsg');
+    if (msg) msg.textContent = text;
+}
+
+async function loadQuickToggles() {
+    const [afk, logger, rpc, tools] = await Promise.all([
+        fetchJSON('/api/afk'),
+        fetchJSON('/api/message-logger'),
+        fetchJSON('/api/rpc'),
+        fetchJSON('/api/command-tools'),
+    ]);
+    setQuickToggle('toggleAfk', afk && afk.active);
+    setQuickToggle('toggleLogger', logger && logger.config && logger.config.enabled);
+    setQuickToggle('toggleRpc', rpc && rpc.active);
+    setQuickToggle('toggleAntiGc', tools && tools.anti_gc && tools.anti_gc.enabled);
+    if (rpc && rpc.activity) lastRpcActivity = rpc.activity;
+}
+
+async function onQuickToggle(event) {
+    const input = event.target;
+    if (!input || input.dataset.syncing) return;
+    const wanted = input.checked;
+    let result = null;
+    if (input.id === 'toggleAfk') {
+        result = await postJSON('/api/afk', { action: wanted ? 'enable' : 'disable', message: 'AFK' });
+    } else if (input.id === 'toggleLogger') {
+        result = await postJSON('/api/message-logger', { action: 'config', config: { enabled: wanted } });
+    } else if (input.id === 'toggleAntiGc') {
+        result = await postJSON('/api/command-tools', { action: 'antigc_enabled', value: wanted });
+    } else if (input.id === 'toggleRpc') {
+        if (!wanted) {
+            if (lastRpcActivity) {
+                result = await postJSON('/api/rpc', { action: 'stop' });
+            } else {
+                result = await postJSON('/api/rpc', { action: 'stop' });
+            }
+        } else if (lastRpcActivity) {
+            result = await postJSON('/api/rpc', { action: 'set', activity: lastRpcActivity });
+        } else {
+            input.checked = false;
+            setQuickToggleMsg('Open Presence to set one first');
+            if (typeof navigateTo === 'function') navigateTo('rpc');
+            return;
+        }
+    }
+    if (!result || result.ok === false) {
+        input.checked = !wanted;
+        setQuickToggleMsg((result && result.error) || 'Could not update');
+        return;
+    }
+    setQuickToggleMsg('Updated');
+}
+
+function bindQuickToggles() {
+    if (quickTogglesReady) return;
+    const grid = document.querySelector('.quick-toggle-grid');
+    if (!grid) return;
+    quickTogglesReady = true;
+    grid.addEventListener('change', onQuickToggle);
+    loadQuickToggles();
 }
 
 function startLiveExampleDemo() {
@@ -843,13 +938,17 @@ function startLiveExampleDemo() {
     window.setInterval(updateTrack, 1000);
 }
 
-document.addEventListener('DOMContentLoaded', startLiveExampleDemo, { once: true });
+document.addEventListener('DOMContentLoaded', () => {
+    startLiveExampleDemo();
+    bindQuickToggles();
+}, { once: true });
 
 // ── Live Metrics Refresh ─────────────────────────────────────────────────-
 setInterval(() => {
     if (document.getElementById('section-overview')?.classList.contains('active')) {
         updateSparkline();
         updateToastFeed();
+        loadQuickToggles();
         // Optionally, update uptime ring
         const uptime = document.getElementById('uptime');
         if (uptime) updateUptimeRing(uptime.textContent);

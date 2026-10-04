@@ -736,7 +736,7 @@ class WebPanelControlTests(unittest.TestCase):
             project_root_text = str(project_root)
             self.assertIn(f"SOURCE_ROOT = {project_root_text!r}", runner)
             self.assertIn("for path in (SOURCE_ROOT, TEMP_DIR):", runner)
-            self.assertIn(str(Path(self.temp_dir.name, "hosted_test.json")), runner)
+            self.assertIn(repr(os.path.abspath("hosted_test.json")), runner)
             self.assertNotIn(token, runner)
             self.assertTrue(Path(project_root, "main.py").is_file())
             runner_ast = ast.parse(runner)
@@ -1693,9 +1693,7 @@ class WebPanelControlTests(unittest.TestCase):
 
     def test_dashboard_and_desktop_versions_match(self):
         package = json.loads((Path(__file__).parent / "package.json").read_text(encoding="utf-8"))
-        native_project = (Path(__file__).parent / "Aria.Native" / "Aria.Native.csproj").read_text(encoding="utf-8")
         self.assertEqual(package["version"], VERSION.removeprefix("v"))
-        self.assertIn(f"<Version>{package['version']}</Version>", native_project)
 
 
 if __name__ == "__main__":

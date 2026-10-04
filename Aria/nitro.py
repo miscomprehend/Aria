@@ -124,11 +124,14 @@ class NitroSniper:
 
         try:
             # Immediate API call - no delays, no rate limiting checks for nitro (prioritize speed)
-            response = self.api.request(
-                "POST",
-                f"/entitlements/gift-codes/{code}/redeem",
-                data={}
-            )
+            if hasattr(self.api, "redeem_gift_code"):
+                response = self.api.redeem_gift_code(code)
+            else:
+                response = self.api.request(
+                    "POST",
+                    f"/entitlements/gift-codes/{code}/redeem",
+                    data={}
+                )
 
             elapsed = (time.time() - start_time) * 1000
 
