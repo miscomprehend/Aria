@@ -5,7 +5,7 @@ A Discord selfbot with advanced features including activity control, analytics, 
 ## Download & Run
 
 Download the latest build from
-[GitHub Releases](https://github.com/misconsiderations/Aria/releases/latest).
+[GitHub Releases](https://github.com/miscomprehend/Aria/releases/latest).
 
 | Platform | Release file | Instructions |
 | --- | --- | --- |

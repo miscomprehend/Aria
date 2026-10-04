@@ -37,7 +37,7 @@ def _fetch_synced(title: str, artist: str, album: str, duration_s: int) -> list[
     try:
         req = _ur.Request(
             f"{_LRCLIB}?{params}",
-            headers={"User-Agent": "Aria/1.0 (+https://github.com/misconsiderations/Aria)"},
+            headers={"User-Agent": "Aria/1.0 (+https://github.com/miscomprehend/Aria)"},
         )
         with _ur.urlopen(req, timeout=8) as r:
             data = json.loads(r.read())
