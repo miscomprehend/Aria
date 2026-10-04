@@ -8,13 +8,22 @@ from datetime import datetime, timezone
 from typing import Dict, Optional, Tuple, List, Any
 
 # Import new quest system modules
-from .quest_system import (
-    QuestManager,
-    Quest as EnhancedQuest,
-    AllQuestsResponse,
-    Utils as QuestUtils,
-    Constants,
-)
+try:
+    from .quest_system import (
+        QuestManager,
+        Quest as EnhancedQuest,
+        AllQuestsResponse,
+        Utils as QuestUtils,
+        Constants,
+    )
+except ImportError:
+    from quest_system import (
+        QuestManager,
+        Quest as EnhancedQuest,
+        AllQuestsResponse,
+        Utils as QuestUtils,
+        Constants,
+    )
 
 # Logger
 logger = logging.getLogger(__name__)
@@ -262,37 +271,48 @@ class QuestSystem:
     # API Methods
     # =====================================================================
 
-    def fetch_quests(self, force: bool = False) -> bool:
+    def fetch_quests(self, force: bool = False) -> tuple[bool, str]:
         """Fetch quests from Discord API."""
         now = time.time()
         if not force and now - self.last_fetch < 30:
-            return False
+            return False, "Please wait before refreshing quests again."
         
         try:
             resp = self.api.request("GET", "/quests/@me")
             if resp and resp.status_code == 200:
                 data = resp.json()
-                
-                # Update legacy storage
-                self.quests = {}
-                if isinstance(data.get("quests"), list):
-                    for q in data["quests"]:
-                        if isinstance(q, dict) and q.get("id"):
-                            self.quests[q["id"]] = q
-                
-                # Update new quest manager
-                try:
-                    response = AllQuestsResponse.from_dict(data, self.user_id)
-                    self.quest_manager = QuestManager.from_response(response, self.user_id, False)
-                except (ValueError, KeyError) as e:
-                    logger.warning(f"Failed to parse quests with new system: {e}")
+                if not isinstance(data, dict):
+                    return False, "Discord returned an invalid quest response."
+
+                quest_entries = [
+                    quest for quest in data.get("quests", [])
+                    if isinstance(quest, dict)
+                    and quest.get("id")
+                    and (quest.get("config") or {}).get("grant_type") != "USER_MADE"
+                ]
+                filtered_data = dict(data)
+                filtered_data["quests"] = quest_entries
+                response = AllQuestsResponse.from_dict(filtered_data, self.user_id)
+                quest_manager = QuestManager.from_response(
+                    response, self.user_id, fetch_excluded=False
+                )
+                parsed_ids = {quest.id for quest in quest_manager}
+                quest_cache = {
+                    str(quest["id"]): quest
+                    for quest in quest_entries
+                    if str(quest["id"]) in parsed_ids
+                }
+
+                self.quest_manager = quest_manager
+                self.quests = quest_cache
                 
                 self.last_fetch = now
-                return True
+                return True, "Quest data updated."
+            status = getattr(resp, "status_code", "no response") if resp else "no response"
+            return False, f"Quest request failed (HTTP {status})."
         except Exception as e:
             logger.error(f"Failed to fetch quests: {e}")
-        
-        return False
+            return False, f"Quest request failed: {e}"
 
     def enroll(self, q: dict):
         """Enroll in a single quest."""

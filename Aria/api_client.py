@@ -1,10 +1,10 @@
 import json
 import time
-import random
 import re
+import threading
 from collections import deque
-from typing import Dict, Any, Optional, List
-from urllib.parse import quote
+from typing import Callable, Dict, Any, Optional, List
+from urllib.parse import parse_qsl, quote, urlsplit
 
 # Try curl_cffi, fallback to requests
 try:
@@ -32,13 +32,149 @@ class CachedAPIResponse:
     def json(self):
         return self._payload
 
+
+class RoutedSession:
+    """Route Discord hosts through the protected client and all others cleanly."""
+
+    _EXTERNAL_ALLOWED_HEADERS = {
+        "accept",
+        "content-type",
+        "if-modified-since",
+        "if-none-match",
+        "range",
+    }
+
+    def __init__(self, internal_request: Callable[..., Any], external_session: Any = None):
+        self._internal_request = internal_request
+        self._external_session = external_session or Session()
+        self._external_lock = threading.RLock()
+        self._external_session.trust_env = False
+        self._external_session.headers.clear()
+
+    @staticmethod
+    def _parse_url(url: str):
+        parsed = urlsplit(str(url or ""))
+        if (
+            parsed.scheme.casefold() != "https"
+            or not parsed.hostname
+            or parsed.username is not None
+            or parsed.password is not None
+        ):
+            raise ValueError("Routed requests require an HTTPS URL without embedded credentials.")
+        return parsed
+
+    @staticmethod
+    def _is_discord_host(hostname: str) -> bool:
+        hostname = str(hostname or "").casefold().rstrip(".")
+        return hostname == "discord.com" or hostname.endswith(".discord.com")
+
+    def request(self, method: str, url: str, **kwargs):
+        parsed = self._parse_url(url)
+        method = str(method or "GET").upper()
+        if self._is_discord_host(parsed.hostname):
+            path = parsed.path or "/"
+            api_prefix = "/api/v9"
+            if path == api_prefix:
+                endpoint = "/"
+                base_url = f"{parsed.scheme}://{parsed.netloc}{api_prefix}"
+            elif path.startswith(api_prefix + "/"):
+                endpoint = path[len(api_prefix):]
+                base_url = f"{parsed.scheme}://{parsed.netloc}{api_prefix}"
+            else:
+                endpoint = path
+                base_url = f"{parsed.scheme}://{parsed.netloc}"
+
+            params = dict(parse_qsl(parsed.query, keep_blank_values=True))
+            supplied_params = kwargs.pop("params", None)
+            if supplied_params:
+                params.update(dict(supplied_params))
+            data = kwargs.pop("data", None)
+            json_data = kwargs.pop("json", None)
+            if json_data is not None and data is None:
+                data = json_data
+            headers = kwargs.pop("headers", None)
+            if headers is not None:
+                if not isinstance(headers, dict):
+                    raise TypeError("Discord request headers must be a dictionary.")
+                headers = {
+                    str(name): value
+                    for name, value in headers.items()
+                    if str(name).casefold() in {"accept", "content-type"}
+                }
+            files = kwargs.pop("files", None)
+            timeout = kwargs.pop("timeout", 30)
+            kwargs.pop("verify", None)
+            kwargs.pop("allow_redirects", None)
+            for credential_arg in ("auth", "cookies", "cert"):
+                if kwargs.pop(credential_arg, None) is not None:
+                    raise ValueError(f"Pass Discord credentials through the internal API client, not {credential_arg}.")
+            if kwargs:
+                raise TypeError(f"Unsupported routed request options: {', '.join(sorted(kwargs))}")
+            return self._internal_request(
+                method,
+                endpoint,
+                data=data,
+                params=params or None,
+                headers=headers,
+                files=files,
+                timeout=timeout,
+                _base_url=base_url,
+            )
+
+        headers = kwargs.pop("headers", {}) or {}
+        if not isinstance(headers, dict):
+            raise TypeError("External request headers must be a dictionary.")
+        safe_headers = {
+            str(name): value
+            for name, value in headers.items()
+            if str(name).casefold() in self._EXTERNAL_ALLOWED_HEADERS
+        }
+        for credential_arg in ("auth", "cookies", "cert"):
+            if kwargs.pop(credential_arg, None) is not None:
+                raise ValueError(f"External requests cannot include {credential_arg}.")
+        kwargs.pop("verify", None)
+        kwargs["timeout"] = kwargs.get("timeout", 15)
+        with self._external_lock:
+            cookies = getattr(self._external_session, "cookies", None)
+            clear_cookies = getattr(cookies, "clear", None)
+            if callable(clear_cookies):
+                clear_cookies()
+            try:
+                response = self._external_session.request(
+                    method,
+                    parsed.geturl(),
+                    headers=safe_headers,
+                    verify=True,
+                    allow_redirects=False,
+                    **kwargs,
+                )
+            finally:
+                if callable(clear_cookies):
+                    clear_cookies()
+        return response
+
+    def get(self, url: str, **kwargs):
+        return self.request("GET", url, **kwargs)
+
+    def post(self, url: str, **kwargs):
+        return self.request("POST", url, **kwargs)
+
+    def put(self, url: str, **kwargs):
+        return self.request("PUT", url, **kwargs)
+
+    def patch(self, url: str, **kwargs):
+        return self.request("PATCH", url, **kwargs)
+
+    def delete(self, url: str, **kwargs):
+        return self.request("DELETE", url, **kwargs)
+
 class DiscordAPIClient:
     def __init__(self, token: str):
         self.system_check = "ui_theme_customization_297588166653902849_scheme"
         self.token = token
         self.header_spoofer = HeaderSpoofer()
         self.header_spoofer.initialize_with_token(token)
-        self.session: Any = self.header_spoofer.session
+        self.session = RoutedSession(self.request, self.header_spoofer.session)
         self.rate_limiter = RateLimiter()
         self.cache = DiscordCache(token)
         self.user_id: Optional[str] = None
@@ -212,6 +348,36 @@ class DiscordAPIClient:
             "best_ms": min(samples),
             "samples": len(samples),
         }
+
+    def request_external(self, method: str, url: str, **kwargs):
+        """Send an unauthenticated HTTPS request outside Discord's API host."""
+        parsed = urlsplit(str(url or ""))
+        if (
+            parsed.scheme.casefold() != "https"
+            or not parsed.hostname
+            or parsed.username is not None
+            or parsed.password is not None
+        ):
+            raise ValueError("External requests require a public HTTPS URL without embedded credentials.")
+
+        headers = kwargs.pop("headers", {}) or {}
+        if not isinstance(headers, dict):
+            raise TypeError("External request headers must be a dictionary.")
+        allowed_headers = {
+            "accept",
+            "content-type",
+            "if-modified-since",
+            "if-none-match",
+            "range",
+        }
+        safe_headers = {}
+        for name, value in headers.items():
+            normalized = str(name).casefold()
+            if normalized in allowed_headers:
+                safe_headers[str(name)] = value
+
+        kwargs.setdefault("timeout", 15)
+        return self.session.request(str(method).upper(), parsed.geturl(), headers=safe_headers, **kwargs)
         
     def _validate_system(self):
         check_parts = self.system_check.split("_")
@@ -224,7 +390,9 @@ class DiscordAPIClient:
     def request(self, method: str, endpoint: str, data: Optional[Any] = None,
                 params: Optional[Dict[str, Any]] = None, headers: Optional[Dict[str, str]] = None,
                 max_retries: int = 3, retry_count: int = 0,
-                json: Optional[Any] = None, _global_retry: int = 0) -> Optional[Any]:
+                json: Optional[Any] = None, files: Optional[Any] = None,
+                timeout: float = 30, _base_url: str = "https://discord.com/api/v9",
+                _global_retry: int = 0) -> Optional[Any]:
         if json is not None and data is None:
             data = json
         """
@@ -247,29 +415,9 @@ class DiscordAPIClient:
         if wait_time:
             time.sleep(wait_time)
 
-        # Small human-like jitter so adjacent requests don't land at identical timestamps
-        time.sleep(random.uniform(0.01, 0.1))
-
-        # Use direct connections for dashboard endpoints.
-        dashboard_endpoints = ["/api/bot", "/api/dashboard", "/dashboard", "/api/panel", "/api/webpanel"]
-        is_dashboard = any(endpoint.startswith(dash) for dash in dashboard_endpoints)
-        if is_dashboard:
-            # Never use proxies for dashboard
-            if hasattr(self.session, 'proxies'):
-                self.session.proxies.clear()
-        else:
-            # Normal proxy rotation for non-dashboard endpoints
-            if self.header_spoofer.proxy_manager and random.random() < 0.25:
-                try:
-                    new_proxy = self.header_spoofer.proxy_manager.get_random_proxy()
-                    if new_proxy:
-                        self.session.proxies.update(new_proxy)
-                except Exception:
-                    pass
-
-        url = f"https://discord.com/api/v9{endpoint}"
+        url = f"{_base_url}{endpoint}"
         request_headers = self.header_spoofer.get_protected_headers(self.token)
-        if data is not None and method in {"POST", "PATCH", "PUT"}:
+        if data is not None and files is None and method in {"POST", "PATCH", "PUT"}:
             request_headers.setdefault("Content-Type", "application/json")
         if headers:
             request_headers.update(headers)
@@ -278,15 +426,18 @@ class DiscordAPIClient:
 
         try:
             if method == "GET":
-                response = self.session.get(url, headers=request_headers, params=params, verify=False, timeout=30)
+                response = self.header_spoofer.session.get(url, headers=request_headers, params=params, verify=False, timeout=timeout)
             elif method == "POST":
-                response = self.session.post(url, headers=request_headers, json=data, verify=False, timeout=30)
+                if files is not None:
+                    response = self.header_spoofer.session.post(url, headers=request_headers, data=data, files=files, verify=False, timeout=timeout)
+                else:
+                    response = self.header_spoofer.session.post(url, headers=request_headers, json=data, verify=False, timeout=timeout)
             elif method == "DELETE":
-                response = self.session.delete(url, headers=request_headers, verify=False, timeout=30)
+                response = self.header_spoofer.session.delete(url, headers=request_headers, verify=False, timeout=timeout)
             elif method == "PATCH":
-                response = self.session.patch(url, headers=request_headers, json=data, verify=False, timeout=30)
+                response = self.header_spoofer.session.patch(url, headers=request_headers, json=data, verify=False, timeout=timeout)
             elif method == "PUT":
-                response = self.session.put(url, headers=request_headers, json=data, verify=False, timeout=30)
+                response = self.header_spoofer.session.put(url, headers=request_headers, json=data, verify=False, timeout=timeout)
             else:
                 return None
 
@@ -385,6 +536,14 @@ class DiscordAPIClient:
                 return None
             print(f"[REQUEST-ERROR] {method} {endpoint}: {e}")
             return None
+
+    def request_as_token(self, method: str, endpoint: str, token: str, **kwargs):
+        """Make a Discord API request using a separately supplied raw token."""
+        token = str(token or "").strip()
+        if not token:
+            raise ValueError("A token is required for this Discord API request.")
+        request_headers = self.header_spoofer.get_protected_headers(token)
+        return self.request(method, endpoint, headers=request_headers, **kwargs)
     
     def get_user_info(self, force: bool = False) -> Optional[Dict[str, Any]]:
         if not force:

@@ -14,7 +14,7 @@ for path in ROOT.iterdir():
     if path.is_file() and path.suffix in {".py", ".html"}:
         datas.append((str(path), "."))
 
-for directory in ("cogs", "core", "static", "utils", "web_ui"):
+for directory in ("aria_backend", "cogs", "core", "static", "utils", "web_ui"):
     path = ROOT / directory
     if path.is_dir():
         datas.append((str(path), directory))

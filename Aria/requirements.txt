@@ -4,6 +4,7 @@ discord.py>=2.6.0,<3.0
 Pillow>=10.0,<13.0
 psutil>=5.9,<8.0
 pymongo>=4.6,<5.0
+PyInstaller>=6.10,<7.0
 requests>=2.31,<3.0
 websocket-client>=1.7,<2.0
 websockets>=12.0,<16.0

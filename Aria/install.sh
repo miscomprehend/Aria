@@ -4,12 +4,38 @@ set -eu
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 cd "$SCRIPT_DIR"
 
-for command in node npm python3; do
+for command in node npm; do
   if ! command -v "$command" >/dev/null 2>&1; then
     printf 'Aria requires %s. Install it, then run this script again.\n' "$command" >&2
     exit 1
   fi
 done
+
+PYTHON_BIN=""
+for candidate in python3.12 python3.11 python3; do
+  if command -v "$candidate" >/dev/null 2>&1; then
+    PYTHON_BIN="$candidate"
+    break
+  fi
+done
+
+if [ -z "$PYTHON_BIN" ]; then
+  printf 'Aria requires Python 3.11 or later. Install it, then run this script again.\n' >&2
+  exit 1
+fi
+
+PYTHON_VERSION=$("$PYTHON_BIN" -c 'import sys; print("%d.%d" % sys.version_info[:2])')
+PYTHON_MAJOR=$(printf '%s\n' "$PYTHON_VERSION" | cut -d. -f1)
+PYTHON_MINOR=$(printf '%s\n' "$PYTHON_VERSION" | cut -d. -f2)
+if [ "$PYTHON_MAJOR" -lt 3 ] || { [ "$PYTHON_MAJOR" -eq 3 ] && [ "$PYTHON_MINOR" -lt 11 ]; }; then
+  printf 'Aria requires Python 3.11 or later (found %s).\n' "$PYTHON_VERSION" >&2
+  exit 1
+fi
+
+if ! "$PYTHON_BIN" -c 'import sysconfig; raise SystemExit(0 if sysconfig.get_config_var("Py_ENABLE_SHARED") else 1)' >/dev/null 2>&1; then
+  printf 'Aria requires a shared-library Python build (CPython) for PyInstaller. Install Python 3.11/3.12 from python.org or your distro package manager and rerun this script.\n' >&2
+  exit 1
+fi
 
 NODE_VERSION=$(node --version | sed 's/^v//')
 NODE_MAJOR=$(printf '%s\n' "$NODE_VERSION" | cut -d. -f1)
@@ -19,19 +45,12 @@ if [ "$NODE_MAJOR" -lt 22 ] || { [ "$NODE_MAJOR" -eq 22 ] && [ "$NODE_MINOR" -lt
   exit 1
 fi
 
-PYTHON_VERSION=$(python3 -c 'import sys; print("%d.%d" % sys.version_info[:2])')
-PYTHON_MAJOR=$(printf '%s\n' "$PYTHON_VERSION" | cut -d. -f1)
-PYTHON_MINOR=$(printf '%s\n' "$PYTHON_VERSION" | cut -d. -f2)
-if [ "$PYTHON_MAJOR" -lt 3 ] || { [ "$PYTHON_MAJOR" -eq 3 ] && [ "$PYTHON_MINOR" -lt 11 ]; }; then
-  printf 'Aria requires Python 3.11 or later (found %s).\n' "$PYTHON_VERSION" >&2
-  exit 1
-fi
-
 if [ ! -x .venv/bin/python ]; then
-  python3 -m venv .venv
+  "$PYTHON_BIN" -m venv .venv
 fi
 .venv/bin/python -m pip install --upgrade pip
 .venv/bin/python -m pip install -r requirements.txt
+.venv/bin/python -m pip install pyinstaller
 npm ci
 
 ARIA_PYTHON="$SCRIPT_DIR/.venv/bin/python" npm start

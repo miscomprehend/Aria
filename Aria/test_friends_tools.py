@@ -25,7 +25,7 @@ class FriendToolsTests(unittest.TestCase):
         self.tools = FriendsTools(self.api)
 
     def test_friend_commands_validate_and_use_one_user_id(self):
-        self.assertIn("numeric user ID", self.tools.add_friend("not-an-id"))
+        self.assertIn("username or numeric user ID", self.tools.add_friend(""))
         self.assertIn("Friend request sent", self.tools.add_friend("<@!12345>"))
         self.assertEqual(
             self.api.requests[-1],
@@ -33,6 +33,21 @@ class FriendToolsTests(unittest.TestCase):
         )
         self.assertIn("Removed friend", self.tools.remove_friend("12345"))
         self.assertEqual(self.api.requests[-1][0:2], ("DELETE", "/users/@me/relationships/12345"))
+
+    def test_friend_request_accepts_username_and_legacy_discriminator(self):
+        self.api.response = SimpleNamespace(status_code=201, json=lambda: {})
+        self.assertIn("Friend request sent", self.tools.add_friend("aria"))
+        self.assertEqual(
+            self.api.requests[-1],
+            ("POST", "/users/@me/relationships", {
+                "data": {"username": "aria", "discriminator": None},
+            }),
+        )
+        self.tools.add_friend("aria#1234")
+        self.assertEqual(
+            self.api.requests[-1][2]["data"],
+            {"username": "aria", "discriminator": 1234},
+        )
 
     def test_relationship_lists_filter_by_type_and_user(self):
         self.api.response = SimpleNamespace(
@@ -44,6 +59,29 @@ class FriendToolsTests(unittest.TestCase):
         )
         self.assertEqual(self.tools.relationship_list(3), ["incoming :: 12"])
         self.assertEqual(self.tools.relationship_list(4), ["outgoing :: 13"])
+
+    def test_counts_unblock_and_mass_unfriend_confirmation(self):
+        self.api.response = SimpleNamespace(
+            status_code=200,
+            json=lambda: [
+                {"type": 1, "user": {"id": "10"}},
+                {"type": 1, "user": {"id": "11"}},
+                {"type": 2, "user": {"id": "12"}},
+                {"type": 3, "user": {"id": "13"}},
+                {"type": 4, "user": {"id": "14"}},
+            ],
+        )
+        self.assertEqual(
+            self.tools.relationship_counts(),
+            {"friends": 2, "blocked": 1, "incoming": 1, "outgoing": 1},
+        )
+        self.assertIn("2 friends", self.tools.mass_unfriend())
+        self.assertEqual(len(self.api.requests), 2)
+        self.assertIn("Unblocked 12", self.tools.unblock("12"))
+        self.assertEqual(
+            self.api.requests[-1][0:2],
+            ("DELETE", "/users/@me/relationships/12"),
+        )
 
     def test_auto_reply_is_targeted_and_skips_self_and_bots(self):
         self.assertIn("Auto-reply enabled", self.tools.configure_autoreply("1234 Hello there"))
@@ -81,7 +119,7 @@ class FriendToolsTests(unittest.TestCase):
         self_api = self.api
         bot = DummyBot()
         setup_friends_tools(bot, lambda user_id: user_id == "owner")
-        for name in ("friend", "unfriend", "pending", "outgoing", "blocked", "autoreply", "autoreplystop", "friendlink"):
+        for name in ("friend", "unfriend", "pending", "outgoing", "blocked", "friendcount", "unblock", "massunfriend", "autoreply", "autoreplystop", "friendlink"):
             self.assertIn(name, bot.commands)
 
         bot.commands["friend"]({"author_id": "other", "api": self.api, "channel_id": "c"}, ["1234"])

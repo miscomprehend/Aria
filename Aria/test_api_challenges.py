@@ -16,11 +16,13 @@ def make_client(response):
     client.header_spoofer = Mock()
     client.header_spoofer.proxy_manager = None
     client.header_spoofer.get_protected_headers.return_value = {}
+    client.header_spoofer.session = Mock()
+    client.header_spoofer.session.post.return_value = response
     client.session = Mock()
-    client.session.post.return_value = response
     client._is_cacheable_get = Mock(return_value=False)
     client._record_latency = Mock()
     client._record_rate_limit_hit = Mock()
+    client.health_monitor = None
     client._rate_limit_log_times = {}
     client._get_cached_response = Mock(return_value=None)
     return client
@@ -34,17 +36,17 @@ class APIChallengeTests(unittest.TestCase):
         challenge.json.return_value = {"captcha_key": ["verification required"]}
         client = make_client(challenge)
 
-        with patch("api_client.time.sleep"), patch("api_client.random.uniform", return_value=0.05):
+        with patch("api_client.time.sleep"):
             response = client.request("POST", "/guilds/123/channels", data={"name": "test"})
 
         self.assertIs(response, challenge)
         self.assertTrue(client.verification_blocked)
         self.assertEqual(client.verification_endpoint, "/guilds/123/channels")
-        client.session.post.assert_called_once()
+        client.header_spoofer.session.post.assert_called_once()
         client.header_spoofer.rotate_profile.assert_not_called()
 
         self.assertIsNone(client.request("POST", "/channels/456/messages", data={"content": "later"}))
-        client.session.post.assert_called_once()
+        client.header_spoofer.session.post.assert_called_once()
 
     def test_403_captcha_challenge_blocks_without_header_rotation(self):
         challenge = Mock()
@@ -53,12 +55,12 @@ class APIChallengeTests(unittest.TestCase):
         challenge.json.return_value = {"captcha_sitekey": "site-key"}
         client = make_client(challenge)
 
-        with patch("api_client.time.sleep"), patch("api_client.random.uniform", return_value=0.05):
+        with patch("api_client.time.sleep"):
             response = client.request("POST", "/users/@me/settings", data={"status": "online"})
 
         self.assertIs(response, challenge)
         self.assertTrue(client.verification_blocked)
-        client.session.post.assert_called_once()
+        client.header_spoofer.session.post.assert_called_once()
         client.header_spoofer.rotate_profile.assert_not_called()
 
     def test_429_write_is_returned_without_automatic_replay(self):
@@ -68,18 +70,18 @@ class APIChallengeTests(unittest.TestCase):
         rate_limited.json.return_value = {"retry_after": 17, "global": True}
         client = make_client(rate_limited)
 
-        with patch("api_client.time.sleep") as sleep, patch("api_client.random.uniform", return_value=0.05):
+        with patch("api_client.time.sleep") as sleep:
             response = client.request("POST", "/channels/456/messages", data={"content": "hello"})
 
         self.assertIs(response, rate_limited)
-        client.session.post.assert_called_once()
+        client.header_spoofer.session.post.assert_called_once()
         client.rate_limiter.handle_429.assert_called_once_with(
             {"Retry-After": "17"},
             "/channels/456/messages",
             global_rate_limit=True,
             retry_after=17,
         )
-        self.assertEqual(sleep.call_args_list, [unittest.mock.call(0.05)])
+        sleep.assert_not_called()
         client._record_rate_limit_hit.assert_called_once()
 
 

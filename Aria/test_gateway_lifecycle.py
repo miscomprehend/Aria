@@ -54,6 +54,24 @@ def make_bot():
 
 
 class GatewayLifecycleTests(unittest.TestCase):
+    def test_group_chat_recipient_event_dispatches_to_security_manager(self):
+        bot = make_bot()
+        bot.user_id = "123"
+        dispatched = threading.Event()
+        received = []
+
+        class GroupChatManager:
+            def on_channel_recipient_add(self, event, current_user_id):
+                received.append((event, current_user_id))
+                dispatched.set()
+
+        bot.group_chat_tools = GroupChatManager()
+        event = {"channel_id": "42", "user": {"id": "456"}}
+        bot._handle_group_chat_recipient_event("on_channel_recipient_add", event)
+
+        self.assertTrue(dispatched.wait(1))
+        self.assertEqual(received, [(event, "123")])
+
     def test_coalesces_triggers_and_retries_until_ready(self):
         bot = make_bot()
         first_attempt = threading.Event()

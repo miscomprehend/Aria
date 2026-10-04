@@ -63,6 +63,7 @@ class QuestSystemTests(unittest.TestCase):
 
         self.assertTrue(success)
         self.assertEqual(list(quests.quests), ["quest-active"])
+        self.assertEqual(len(quests.quest_manager), 1)
         self.assertEqual(quests.get_quest_state(quests.quests["quest-active"]), "In progress")
         self.assertEqual(quests._get_progress(quests.quests["quest-active"]), ("WATCH_VIDEO", 25, 100))
         self.assertEqual(api.calls, [("GET", "/quests/@me", None)])
