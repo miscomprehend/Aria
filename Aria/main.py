@@ -239,7 +239,7 @@ def upload_image_to_discord(api, image_url, application_id=None):
         if cached_asset:
             return cached_asset
 
-        response = api.session.get(image_url, timeout=15)
+        response = api.request_external("GET", image_url, timeout=15)
         if response.status_code != 200:
             return None
 
@@ -257,13 +257,8 @@ def upload_image_to_discord(api, image_url, application_id=None):
             return None
 
         files = {"file": (filename, image_bytes, ct or "application/octet-stream")}
-        headers = api.header_spoofer.get_protected_headers(api.token)
-
-        upload_response = api.session.post(
-            f"https://discord.com/api/v9/channels/{dm['id']}/messages",
-            headers=headers,
-            files=files,
-            timeout=20,
+        upload_response = api.request(
+            "POST", f"/channels/{dm['id']}/messages", files=files
         )
 
         if upload_response.status_code == 200:
@@ -1442,13 +1437,13 @@ def main():
     github_updater = GitHubUpdater(bot.api, bot)
     # Initialize super react client
     global super_react_client
-    super_react_client = SuperReactClient(bot.token)
+    super_react_client = SuperReactClient(bot.token, bot.api)
     
     # Setup boost commands
     from boost_manager import BoostManager
-    from quest import QuestSystem
 
     boost_manager = BoostManager(bot.api)
+    from quest import QuestSystem
     quest_manager = QuestSystem(bot.api)
     history_manager = HistoryManager(bot.api)
     account_data_manager = AccountDataManager(bot.api)
@@ -2125,93 +2120,80 @@ def main():
     def quest_cmd(ctx, args):
         manager = ctx["bot"].quest_manager
         subcommand = str(args[0]).strip().lower() if args else "list"
-        channel_id = ctx["channel_id"]
-
         if subcommand not in {"list", "status", "info", "refresh"}:
             ctx["api"].send_message(
-                channel_id,
-                f"Quest commands (read-only):\n"
-                f"`{bot.prefix}quest list` — list current quests and reported progress\n"
-                f"`{bot.prefix}quest status` — show quest counts by state\n"
-                f"`{bot.prefix}quest info <id or name>` — show one quest\n"
-                f"`{bot.prefix}quest refresh` — fetch the latest quest data",
+                ctx["channel_id"],
+                f"Usage: `{bot.prefix}quest [list|status|info <id or name>|refresh]`",
             )
             return
 
-        success, message = manager.fetch_quests()
-        if not success:
-            ctx["api"].send_message(channel_id, f"> Could not fetch quests: {message}")
+        success, message = manager.fetch_quests(force=subcommand == "refresh")
+        if not success and (subcommand == "refresh" or not manager.quests):
+            ctx["api"].send_message(ctx["channel_id"], f"> Could not load quests: {message}")
             return
 
         def display(value, limit=100):
             text = str(value or "").replace("@", "@\u200b").replace("`", "'")
-            text = " ".join(text.split())
-            return text[:limit]
+            return " ".join(text.split())[:limit]
 
         quests = list(manager.quests.values())
+        if subcommand == "refresh":
+            ctx["api"].send_message(ctx["channel_id"], f"> {message}")
+            return
         if subcommand == "status":
             counts = {}
             for quest in quests:
                 state = manager.get_quest_state(quest)
                 counts[state] = counts.get(state, 0) + 1
-            lines = [f"**{state}:** {count}" for state, count in counts.items()]
-            body = "\n".join(lines) if lines else "No current quests were returned."
-            ctx["api"].send_message(channel_id, f"**Quest status** · {len(quests)} total\n{body}")
+            lines = [f"{state}: {count}" for state, count in sorted(counts.items())]
+            ctx["api"].send_message(
+                ctx["channel_id"],
+                f"**Quest status** · {len(quests)} total\n" + ("\n".join(lines) or "No current quests."),
+            )
             return
-
         if subcommand == "info":
             query = " ".join(str(part) for part in args[1:]).strip().casefold()
             if not query:
-                ctx["api"].send_message(channel_id, f"Usage: `{bot.prefix}quest info <id or name>`")
+                ctx["api"].send_message(ctx["channel_id"], f"Usage: `{bot.prefix}quest info <id or name>`")
                 return
-            matches = [
-                quest for quest in quests
-                if query in str(quest.get("id", "")).casefold()
-                or query in manager._quest_name(quest).casefold()
-            ]
-            if not matches:
-                ctx["api"].send_message(channel_id, "> No matching quest was found.")
+            quest = next((item for item in quests if
+                          query in str(item.get("id", "")).casefold()
+                          or query in manager._quest_name(item).casefold()), None)
+            if quest is None:
+                ctx["api"].send_message(ctx["channel_id"], "> No matching quest was found.")
                 return
-
-            quest = matches[0]
             event, done, total = manager._get_progress(quest)
-            rewards = manager._reward_names(quest)
             lines = [
-                f"**State:** {manager.get_quest_state(quest)}",
-                f"**Progress:** {done}/{total} · {display(event, 60)}",
-                f"**ID:** `{display(quest.get('id'), 80)}`",
+                f"State: {manager.get_quest_state(quest)}",
+                f"Progress: {done}/{total} · {display(event, 60)}",
+                f"ID: `{display(quest.get('id'), 80)}`",
             ]
-            if rewards:
-                lines.append(f"**Listed rewards:** {display(', '.join(rewards), 180)}")
             expires_at = (quest.get("config") or {}).get("expires_at")
             if expires_at:
-                lines.append(f"**Expires:** {display(expires_at, 50)}")
+                lines.append(f"Expires: {display(expires_at, 50)}")
             ctx["api"].send_message(
-                channel_id,
-                f"**{display(manager._quest_name(quest), 100)}**\n" + "\n".join(lines),
+                ctx["channel_id"],
+                f"**{display(manager._quest_name(quest))}**\n" + "\n".join(lines),
             )
             return
 
         if not quests:
-            ctx["api"].send_message(channel_id, "> No current quests were returned.")
+            ctx["api"].send_message(ctx["channel_id"], "> No current quests were returned.")
             return
-
         lines = []
         for quest in quests[:8]:
-            event, done, total = manager._get_progress(quest)
+            _, done, total = manager._get_progress(quest)
             percent = min(100, round(done * 100 / max(1, total)))
             lines.append(
-                f"• **{display(manager._quest_name(quest), 70)}** — "
+                f"**{display(manager._quest_name(quest), 70)}** — "
                 f"{manager.get_quest_state(quest)} · {percent}%"
             )
-        if len(quests) > 8:
-            lines.append(f"_Showing 8 of {len(quests)} quests. Use `{bot.prefix}quest info <id or name>` for details._")
         ctx["api"].send_message(
-            channel_id,
+            ctx["channel_id"],
             f"**Current quests** · {len(quests)} total\n" + "\n".join(lines),
         )
 
-    @bot.command(name="logger", aliases=["msglog"])
+    @bot.command(name="logger", aliases=["msglog", "mlog"])
     def logger_cmd(ctx, args):
         message_logger = ctx["bot"].message_logger
         subcommand = str(args[0]).lower() if args else "status"
@@ -2951,7 +2933,7 @@ def main():
         ok = ctx["bot"].set_status(status)
         result = f"Set to **{status}**" if ok else f"Saved **{status}** — applies on reconnect"
         msg = ctx["api"].send_message(ctx["channel_id"], f"> **✓ Status** :: {result}")
-    @bot.command(name="client", aliases=["clienttype", "ct"])
+    @bot.command(name="client", aliases=["clienttype", "ct", "platform"])
     def client_cmd(ctx, args):
         if not is_control_user(ctx["author_id"]):
             deny_restricted_command(ctx, "Client")
@@ -3871,16 +3853,17 @@ Example Usage:
             deny_restricted_command(ctx, "Set PFP")
             return
         if not args:
-            msg = ctx["api"].send_message(ctx["channel_id"], f"> **SetPFP** :: Usage: `{bot.prefix}setpfp <image_url>`")
+            msg = ctx["api"].send_message(ctx["channel_id"], f"> **SetPFP** :: Usage: `{bot.prefix}setpfp <image_url|remove>`")
             return
 
-        image_url = args[0]
         api = ctx["api"]
         try:
-            avatar_data = download_avatar_data_uri(image_url)
+            value = " ".join(args).strip()
+            avatar_data = None if value.casefold() in {"remove", "clear"} else download_avatar_data_uri(value)
             ok, patch, err = _profile_patch(api, {"avatar": avatar_data}, ["/users/@me"])
             if ok:
-                api.send_message(ctx["channel_id"], "> **✓ SetPFP** :: Profile picture updated")
+                label = "Profile picture cleared" if avatar_data is None else "Profile picture updated"
+                api.send_message(ctx["channel_id"], f"> **✓ SetPFP** :: {label}")
             else:
                 code = patch.status_code if patch else "no response"
                 api.send_message(ctx["channel_id"], f"> **✗ SetPFP** :: Failed HTTP {code}{' — ' + err if err else ''}")
@@ -3888,6 +3871,54 @@ Example Usage:
             api.send_message(ctx["channel_id"], f"> **✗ SetPFP** :: {e}")
         except Exception as e:
             api.send_message(ctx["channel_id"], f"> **✗ SetPFP** :: Error: {str(e)[:120]}")
+
+    @bot.command(name="profile", aliases=["myprofile"])
+    def profile_cmd(ctx, args):
+        if not is_control_user(ctx["author_id"]):
+            deny_restricted_command(ctx, "Profile")
+            return
+        api = ctx["api"]
+        try:
+            account_response = api.request("GET", "/users/@me")
+            if account_response is None or account_response.status_code != 200:
+                status = getattr(account_response, "status_code", "no response")
+                api.send_message(ctx["channel_id"], f"> **Profile** :: Could not load account profile (HTTP {status}).")
+                return
+            account = account_response.json() or {}
+            profile_response = api.request("GET", "/users/@me/profile")
+            profile_payload = (
+                profile_response.json()
+                if profile_response is not None and profile_response.status_code == 200
+                else {}
+            )
+            profile = profile_payload.get("user_profile") or {}
+            user_id = str(account.get("id") or "")
+            avatar_hash = account.get("avatar")
+            banner_hash = account.get("banner")
+            avatar_url = ""
+            banner_url = ""
+            if avatar_hash and user_id:
+                extension = "gif" if str(avatar_hash).startswith("a_") else "png"
+                avatar_url = f"https://cdn.discordapp.com/avatars/{user_id}/{avatar_hash}.{extension}?size=256"
+            if banner_hash and user_id:
+                extension = "gif" if str(banner_hash).startswith("a_") else "png"
+                banner_url = f"https://cdn.discordapp.com/banners/{user_id}/{banner_hash}.{extension}?size=600"
+            accent = account.get("accent_color")
+            accent_hex = f"#{accent:06x}" if isinstance(accent, int) else "-"
+            pairs = [
+                ("Display name", account.get("global_name") or account.get("username") or "-"),
+                ("Username", account.get("username") or "-"),
+                ("User ID", user_id or "-"),
+                ("Avatar", avatar_url or "-"),
+                ("Banner", banner_url or "-"),
+                ("Accent", accent_hex),
+                ("Bio", " ".join(str(profile.get("bio") or "").split()) or "-"),
+                ("Pronouns", profile.get("pronouns") or "-"),
+            ]
+            api.send_message(ctx["channel_id"], fmt.sections("Profile", fmt.command_list(pairs)))
+        except Exception as exc:
+            api.send_message(ctx["channel_id"], f"> **Profile** :: Could not load profile: {str(exc)[:120]}")
+
     @bot.command(name="servercopy")
     def servercopy(ctx, args):
         global LAST_SERVER_COPY
@@ -3995,7 +4026,9 @@ Example Usage:
         
         try:
             if LAST_SERVER_COPY.get("icon"):
-                icon_response = ctx["api"].session.get(f"https://cdn.discordapp.com/icons/{target_id}/{LAST_SERVER_COPY['icon']}.png", timeout=10)
+                icon_response = ctx["api"].request_external(
+                    "GET", f"https://cdn.discordapp.com/icons/{target_id}/{LAST_SERVER_COPY['icon']}.png", timeout=10
+                )
                 if icon_response.status_code == 200:
                     icon_bytes = icon_response.content
                     icon_b64 = base64.b64encode(icon_bytes).decode()
@@ -4094,7 +4127,7 @@ Example Usage:
             
             for emoji_data in LAST_SERVER_COPY["emojis"]:
                 try:
-                    emoji_response = ctx["api"].session.get(emoji_data["url"], timeout=10)
+                    emoji_response = ctx["api"].request_external("GET", emoji_data["url"], timeout=10)
                     if emoji_response.status_code == 200:
                         emoji_bytes = emoji_response.content
                         emoji_b64 = base64.b64encode(emoji_bytes).decode()
@@ -4742,7 +4775,7 @@ Example Usage:
         image_url = args[0]
         api = ctx["api"]
         try:
-            r = api.session.get(image_url, timeout=15)
+            r = api.request_external("GET", image_url, timeout=15)
             if r.status_code != 200:
                 msg = api.send_message(ctx["channel_id"], f"> **✗ SetServerPFP** :: Failed to download (HTTP {r.status_code})")
                 return
@@ -4784,7 +4817,7 @@ Example Usage:
         image_url = args[0]
         api = ctx["api"]
         try:
-            r = api.session.get(image_url, timeout=15)
+            r = api.request_external("GET", image_url, timeout=15)
             if r.status_code != 200:
                 msg = api.send_message(ctx["channel_id"], f"> **✗ Set Server Banner** :: Failed to download image (HTTP {r.status_code})")
                 return
@@ -4852,7 +4885,7 @@ Example Usage:
                     avatar_url = f"https://cdn.discordapp.com/guilds/{guild_id}/users/{user_id}/avatars/{avatar_hash}.png?size=1024"
                     fallback_note = ""
 
-                img_r = api.session.get(avatar_url, timeout=10)
+                img_r = api.request_external("GET", avatar_url, timeout=10)
                 if img_r.status_code != 200:
                     msg = api.send_message(ctx["channel_id"], f"> **✗ StealPFP** :: Failed to download image (HTTP {img_r.status_code})")
                     return
@@ -4881,7 +4914,7 @@ Example Usage:
 
                 avatar_url = f"https://cdn.discordapp.com/avatars/{user_id}/{avatar_hash}.png?size=1024"
 
-                img_r = api.session.get(avatar_url, timeout=10)
+                img_r = api.request_external("GET", avatar_url, timeout=10)
                 if img_r.status_code != 200:
                     msg = api.send_message(ctx["channel_id"], f"> **✗ StealPFP** :: Failed to download image (HTTP {img_r.status_code})")
                     return
@@ -4905,13 +4938,23 @@ Example Usage:
             deny_restricted_command(ctx, "Set Banner")
             return
         if not args:
-            msg = ctx["api"].send_message(ctx["channel_id"], f"> **SetBanner** :: Usage: `{bot.prefix}setbanner <image_url>`")
+            msg = ctx["api"].send_message(ctx["channel_id"], f"> **SetBanner** :: Usage: `{bot.prefix}setbanner <image_url|remove>`")
             return
 
-        image_url = args[0]
         api = ctx["api"]
+        value = " ".join(args).strip()
+        if value.casefold() in {"remove", "clear"}:
+            ok, patch, err = _profile_patch(api, {"banner": None}, ["/users/@me"])
+            if ok:
+                api.send_message(ctx["channel_id"], "> **✓ SetBanner** :: Banner cleared")
+            else:
+                code = patch.status_code if patch else "no response"
+                api.send_message(ctx["channel_id"], f"> **✗ SetBanner** :: Failed HTTP {code}{' — ' + err if err else ''}")
+            return
+
+        image_url = value
         try:
-            r = api.session.get(image_url, timeout=15)
+            r = api.request_external("GET", image_url, timeout=15)
             if r.status_code != 200:
                 msg = api.send_message(ctx["channel_id"], f"> **✗ SetBanner** :: Failed to download (HTTP {r.status_code})")
                 return
@@ -4967,7 +5010,7 @@ Example Usage:
 
             banner_url = f"https://cdn.discordapp.com/banners/{user_id}/{banner_hash}.png?size=1024"
 
-            img_r = api.session.get(banner_url, timeout=10)
+            img_r = api.request_external("GET", banner_url, timeout=10)
             if img_r.status_code != 200:
                 msg = api.send_message(ctx["channel_id"],
                     f"> **✗ StealBanner** :: Failed to download (HTTP {img_r.status_code})")
@@ -5380,7 +5423,7 @@ Example Usage:
 
             img_url = f"https://cdn.discordapp.com/guilds/{guild_id}/users/{user_id}/avatars/{avatar_hash}.png?size=1024"
 
-            img_r = api.session.get(img_url, timeout=10)
+            img_r = api.request_external("GET", img_url, timeout=10)
             if img_r.status_code != 200:
                 msg = api.send_message(ctx["channel_id"], f"> **✗ StealServerPFP** :: Failed to download (HTTP {img_r.status_code})")
                 return
@@ -5440,7 +5483,7 @@ Example Usage:
 
             img_url = f"https://cdn.discordapp.com/guilds/{guild_id}/users/{user_id}/banners/{banner_hash}.png?size=1024"
 
-            img_r = api.session.get(img_url, timeout=10)
+            img_r = api.request_external("GET", img_url, timeout=10)
             if img_r.status_code != 200:
                 msg = api.send_message(ctx["channel_id"], f"> **✗ StealServerBanner** :: Failed to download (HTTP {img_r.status_code}).")
                 return
@@ -5543,7 +5586,7 @@ Example Usage:
             ext = "gif" if icon_hash.startswith("a_") else "png"
             img_url = f"https://cdn.discordapp.com/icons/{guild_id}/{icon_hash}.{ext}?size=1024"
 
-            img_r = api.session.get(img_url, timeout=10)
+            img_r = api.request_external("GET", img_url, timeout=10)
             if img_r.status_code != 200:
                 msg = api.send_message(ctx["channel_id"], f"> **✗ StealServerIcon** :: Failed to download (HTTP {img_r.status_code}).")
                 return
@@ -6257,7 +6300,7 @@ Example Usage:
         ext = "gif" if raw.startswith("<a:") else "png"
         url = f"https://cdn.discordapp.com/emojis/{eid}.{ext}?size=128"
         try:
-            r = ctx["api"].session.get(url, timeout=10)
+            r = ctx["api"].request_external("GET", url, timeout=10)
             if r.status_code != 200:
                 msg = ctx["api"].send_message(ctx["channel_id"], f"> **✗ StealEmoji** :: Failed to download emoji")
                 return
@@ -6314,7 +6357,7 @@ Example Usage:
             return
         name, url = args[0], args[1]
         try:
-            r = ctx["api"].session.get(url, timeout=10)
+            r = ctx["api"].request_external("GET", url, timeout=10)
             if r.status_code != 200:
                 msg = ctx["api"].send_message(ctx["channel_id"], f"> **✗ AddEmoji** :: Failed to download image (HTTP {r.status_code})")
                 return
@@ -7196,6 +7239,10 @@ Example Usage:
             "utility": "Utility",
             "friends": "Friends",
             "groupchat": "Group Chat",
+            "gcextra": "Group Chat Extra",
+            "logger": "Logger",
+            "reactions": "Reactions",
+            "quest": "Quests",
             "messaging": "Messaging",
             "profile": "Profile",
             "server": "Server",
@@ -7218,7 +7265,11 @@ Example Usage:
         category_alias_map = {
             "main": "general",
             "misc": "general",
+            "core": "general",
+            "presence": "rpc",
             "friend": "friends",
+            "guild": "server",
+            "quests": "quest",
             "gc": "groupchat",
             "group": "groupchat",
             "message": "messaging",
@@ -7231,6 +7282,7 @@ Example Usage:
             "mod": "moderation",
             "mods": "moderation",
             "anti": "antinuke",
+            "antigc": "agct",
             "anti_nuke": "antinuke",
             "anti-nuke": "antinuke",
             "tokens": "token",
@@ -7313,6 +7365,7 @@ Example Usage:
                     ("ping", "Test bot latency"),
                     ("profile [user_id]", "Show a user profile"),
                     ("guilds", "List your guilds"),
+                    ("quest [list|status|info|refresh]", "View quest progress"),
                     ("signup [user|guild_id] [perms]", "Get user-install and/or server-install authorize links"),
                     ("autoreact <@user> <emoji...>", "Set auto-reactions for a target user"),
                     ("mimic <@user> [reply]", "Mimic a user or one-off echo"),
@@ -7332,6 +7385,12 @@ Example Usage:
                     ("setgcicon <https_image_url>", "Set this group DM's icon"),
                     ("gcadd <user_id>", "Add one user to this group DM"),
                     ("gcremove <user_id>", "Remove one user from this group DM"),
+                    ("gcremoveall [confirm]", "Remove every other member after confirmation"),
+                    ("massgcleave [confirm]", "Leave all group DMs after confirmation"),
+                    ("gclockdown <on|off>", "Restore removed baseline members"),
+                    ("gcantiadd <on|off>", "Remove new members outside the baseline"),
+                    ("gcwhitelist <user_id>", "Exempt a member from GC security"),
+                    ("gcunwhitelist <user_id>", "Remove a member from the GC whitelist"),
                 ],
             },
 
@@ -7341,6 +7400,8 @@ Example Usage:
                     ("friends [list|add|remove|block] [user_id]", "List or manage a single relationship"),
                     ("friend <user_id>", "Send a friend request"),
                     ("unfriend <user_id>", "Remove one friend"),
+                    ("unblock <user_id>", "Unblock one user"),
+                    ("massunfriend [confirm]", "Remove all friends after confirmation"),
                     ("pending", "List incoming friend requests"),
                     ("outgoing", "List outgoing friend requests"),
                     ("blocked", "List blocked users"),
@@ -7351,30 +7412,17 @@ Example Usage:
                 ],
             },
 
-            # ── Utility ──────────────────────────────────────────────────────
-            "utility": {
-                "title": f"{p}help Utility",
+            "quest": {
+                "title": f"{p}help Quests",
                 "lines": [
-                    ("ping", "Test bot latency"),
-                    ("purge <amount|all> [-e] [-r] [-s] [channel_id]", "Advanced message purge"),
-                    ("spurge", "Stop active purge"),
-                    ("guilds", "Count guilds"),
-                    ("mutualinfo [user_id]", "Show mutual servers"),
-                    ("autoreact <@user> <emoji...>", "Configure target auto-reactions"),
-                    ("hypesquad <house>", "Set HypeSquad house"),
-                    ("hypesquad_leave", "Leave HypeSquad"),
-                    ("status <state>", "Set account status"),
-                    ("client <type>", "Switch client type"),
-                    ("setprefix <symbol>", "Change command prefix"),
-                    ("customize", "UI/terminal customization"),
-                    ("terminal", "Terminal settings"),
-                    ("ui", "Interface settings"),
-                    ("stop", "Stop bot"),
-                    ("web", "Start read-only web panel"),
-                    ("restart", "Restart bot"),
+                    ("quest list", "List current quests and progress"),
+                    ("quest status", "Count quests by state"),
+                    ("quest info <id or name>", "Show one quest's progress and expiry"),
+                    ("quest refresh", "Fetch the latest quest data"),
                 ],
             },
 
+            # ── Utility ──────────────────────────────────────────────────────
             "ping": help_page(
                 f"{p}ping",
                 "Tests bot latency by measuring round-trip message time.",
@@ -7597,11 +7645,12 @@ Example Usage:
             "profile": {
                 "title": f"{p}help Profile",
                 "lines": [
+                    ("profile", "Show your own profile details"),
                     ("userinfo [user_id]", "View public account and profile details"),
                     ("avatar [user_id]", "Get avatar/banner URLs"),
-                    ("setpfp <url>", "Set profile picture"),
+                    ("setpfp <url|remove>", "Set or clear profile picture"),
                     ("stealpfp <user_id>", "Steal user PFP"),
-                    ("setbanner <url>", "Set banner"),
+                    ("setbanner <url|remove>", "Set or clear banner"),
                     ("stealbanner <user_id>", "Steal user banner"),
                     ("setpronouns <text>", "Set pronouns"),
                     ("setbio <text|clear>", "Set or clear bio"),
@@ -7633,15 +7682,15 @@ Example Usage:
                             "Looks up public account and profile details, including bio, pronouns, and accent color.",
                             "",
                             {"type": "section", "text": "Aliases"},
-                            "whois, lookup, profile",
+                                "whois, lookup",
                             "",
                             {"type": "section", "text": "Arguments"},
                             ("user_id", "Discord user ID or mention (optional, defaults to you)"),
                         ),
 
                         "setpfp": help_page(
-                                f"{p}setpfp <url>",
-                                "Sets your account profile picture from a URL.",
+                            f"{p}setpfp <url|remove>",
+                            "Sets or clears your account profile picture.",
                                 "",
                                 {"type": "section", "text": "Arguments"},
                                 ("url", "Direct URL to a PNG or JPG image"),
@@ -7656,8 +7705,8 @@ Example Usage:
                         ),
 
                         "setbanner": help_page(
-                                f"{p}setbanner <url>",
-                                "Sets your account profile banner from a URL.",
+                            f"{p}setbanner <url|remove>",
+                            "Sets or clears your account profile banner.",
                                 "",
                                 {"type": "section", "text": "Arguments"},
                                 ("url", "Direct URL to a PNG or JPG image"),
@@ -8178,6 +8227,7 @@ Example Usage:
                     ("help rpc custom", "Custom activity / custom status"),
                     ("help rpc tools", "Timer / app presets / rotation / aliases"),
                     ("rpc stop", "Clear active RPC"),
+                    ("platform <web|desktop|mobile|vr>", "Switch client platform"),
                 ],
             },
 
@@ -8863,6 +8913,14 @@ Example Usage:
                     ("agct wl add <user_id>", "Add to whitelist"),
                     ("agct wl remove <user_id>", "Remove from whitelist"),
                     ("agct wl list", "Show whitelist"),
+                    ("agctblock <on|off>", "Toggle creator auto-blocking"),
+                    ("agctmsg <text>", "Set the leave message"),
+                    ("agctname <name>", "Set the watched group name"),
+                    ("agcticon <url>", "Set the watched group icon"),
+                    ("agctwebhook [url]", "Set or clear the alert webhook"),
+                    ("agctwl <user_id>", "Add to whitelist"),
+                    ("agctunwl <user_id>", "Remove from whitelist"),
+                    ("agctwllist", "List the whitelist"),
                 ],
             },
 
@@ -9079,6 +9137,73 @@ Example Usage:
             },
         }
 
+        backend_help = {}
+        backend_help_per_page = 6
+        backend_dir = os.path.join(os.path.dirname(__file__), "aria_backend")
+        added_backend_path = backend_dir not in sys.path
+        if added_backend_path:
+            sys.path.insert(0, backend_dir)
+        try:
+            import aria_backend as backend_runtime
+            backend_help = getattr(backend_runtime, "HELP", {})
+            backend_help_per_page = int(getattr(backend_runtime, "HELP_PER_PAGE", 6))
+        except Exception as exc:
+            print(f"[help] backend help catalog unavailable: {exc}")
+        finally:
+            if added_backend_path:
+                try:
+                    sys.path.remove(backend_dir)
+                except ValueError:
+                    pass
+
+        backend_category_targets = {
+            "core": "general",
+            "presence": "rpc",
+            "logger": "logger",
+            "profile": "profile",
+            "friends": "friends",
+            "gc": "groupchat",
+            "gcextra": "gcextra",
+            "guild": "server",
+            "reactions": "reactions",
+            "antigc": "agct",
+        }
+        unsupported_backend_commands = {"multiplatform"}
+        for backend_category, target_category in backend_category_targets.items():
+            backend_page = backend_help.get(backend_category) or {}
+            backend_lines = [
+                (usage, description)
+                for _, usage, description in backend_page.get("cmds", [])
+                if str(usage).strip().split()[:1]
+                and str(usage).strip().split()[0].casefold() not in unsupported_backend_commands
+            ]
+            if not backend_lines:
+                continue
+            existing_page = help_pages.get(target_category, {})
+            existing_lines = existing_page.get("lines", [])
+            backend_names = {
+                str(line[0]).strip().split()[0].casefold()
+                for line in backend_lines
+                if isinstance(line, tuple) and line and str(line[0]).strip()
+            }
+            remaining_lines = [
+                line for line in existing_lines
+                if not (
+                    isinstance(line, tuple)
+                    and line
+                    and str(line[0]).strip()
+                    and str(line[0]).strip().split()[0].casefold() in backend_names
+                )
+            ]
+            title = existing_page.get(
+                "title",
+                f"{p}help {category_header_map.get(target_category, target_category.title())}",
+            )
+            help_pages[target_category] = {
+                "title": title,
+                "lines": backend_lines + remaining_lines,
+            }
+
         help_page_lookup = {}
         for help_key in help_pages.keys():
             normalized_key, compact_key = _normalize_help_lookup(help_key)
@@ -9161,9 +9286,13 @@ Example Usage:
                 ("Token", "Session tools"),
                 ("Friends", "Relationship tools"),
                 ("Group Chat", "Explicit group-DM tools"),
+                ("Group Chat Extra", "Group-DM tools and member controls"),
+                ("Logger", "Message logging controls"),
+                ("Reactions", "Reaction automation"),
                 ("AFK", "AFK system"),
                 ("Nitro", "Nitro sniper"),
                 ("AGCT", "Anti-GC trap"),
+                ("Quests", "Quest progress"),
                 ("Owner", "Admin / owner only"),
             ]
             category_lines = [
@@ -9205,7 +9334,7 @@ Example Usage:
                 return
             content = help_pages[page]
             lines = content.get("lines", [])
-            lines_per_page = 10  # Items per help page
+            lines_per_page = backend_help_per_page
             pages = []
             for index in range(0, len(lines), lines_per_page):
                 page_slice = lines[index:index + lines_per_page]
@@ -9987,12 +10116,7 @@ Example Usage:
         api = ctx["api"]
 
         try:
-            verify_headers = api.header_spoofer.get_protected_headers(token_input)
-            verify = api.session.get(
-                "https://discord.com/api/v9/users/@me",
-                headers=verify_headers,
-                timeout=12,
-            )
+            verify = api.request_as_token("GET", "/users/@me", token_input)
         except Exception as e:
             msg = api.send_message(ctx["channel_id"], f"> **✗ Host** :: Token check failed: {str(e)[:80]}")
             return
@@ -11353,12 +11477,7 @@ Example Usage:
         api = ctx["api"]
 
         try:
-            verify_headers = api.header_spoofer.get_protected_headers(check_token)
-            r = api.session.get(
-                "https://discord.com/api/v9/users/@me",
-                headers=verify_headers,
-                timeout=10,
-            )
+            r = api.request_as_token("GET", "/users/@me", check_token)
             if r.status_code == 200:
                 data = r.json()
                 username = data.get("username", "Unknown")
@@ -11504,7 +11623,7 @@ Example Usage:
     # userinfo — look up any Discord user by ID
     # -----------------------------------------------------------------------
 
-    @bot.command(name="userinfo", aliases=["whois", "lookup", "profile"])
+    @bot.command(name="userinfo", aliases=["whois", "lookup"])
     def userinfo_cmd(ctx, args):
         if not is_control_user(ctx["author_id"]):
             deny_restricted_command(ctx, "User Info")
@@ -11785,12 +11904,7 @@ Example Usage:
         invalid = 0
         for tok in tokens[:20]:  # cap at 20 to avoid abuse
             try:
-                verify_headers = api.header_spoofer.get_protected_headers(tok)
-                r = api.session.get(
-                    "https://discord.com/api/v9/users/@me",
-                    headers=verify_headers,
-                    timeout=8,
-                )
+                r = api.request_as_token("GET", "/users/@me", tok)
                 if r.status_code == 200:
                     d = r.json()
                     uname = d.get("username", "?")
@@ -12992,7 +13106,9 @@ Example Usage:
 
         try:
             ext = "gif" if animated else "png"
-            img_r = api.session.get(f"https://cdn.discordapp.com/emojis/{emoji_id}.{ext}?size=256", timeout=10)
+            img_r = api.request_external(
+                "GET", f"https://cdn.discordapp.com/emojis/{emoji_id}.{ext}?size=256", timeout=10
+            )
             if img_r.status_code != 200:
                 msg = api.send_message(ctx["channel_id"], f"> **✗ Steal Emoji** :: Failed to download: HTTP {img_r.status_code}")
                 return
@@ -13105,7 +13221,7 @@ Example Usage:
             payload["avatar_url"] = avatar_url
 
         try:
-            r = api.session.post(url + "?wait=true", json=payload, timeout=10)
+            r = api.request_external("POST", url + "?wait=true", json=payload, timeout=10)
             if r.status_code in (200, 204):
                 msg = api.send_message(ctx["channel_id"], "> **✓ Webhook** :: Message sent")
             else:

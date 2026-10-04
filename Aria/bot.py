@@ -566,6 +566,16 @@ class DiscordBot:
 
                 elif t == "CHANNEL_CREATE":
                     self._handle_channel_create(data["d"])
+
+                elif t == "CHANNEL_RECIPIENT_ADD":
+                    self._handle_group_chat_recipient_event(
+                        "on_channel_recipient_add", data["d"]
+                    )
+
+                elif t == "CHANNEL_RECIPIENT_REMOVE":
+                    self._handle_group_chat_recipient_event(
+                        "on_channel_recipient_remove", data["d"]
+                    )
                     
                 elif t == "GUILD_UPDATE":
                     self._handle_guild_update(data["d"])
@@ -1680,6 +1690,18 @@ class DiscordBot:
             self.anti_gc_trap.check_gc_creation(trap_data)
         except Exception:
             pass
+
+    def _handle_group_chat_recipient_event(self, handler_name: str, event: dict) -> None:
+        tools = getattr(self, "group_chat_tools", None)
+        handler = getattr(tools, handler_name, None)
+        if not callable(handler):
+            return
+        threading.Thread(
+            target=handler,
+            args=(event, str(self.user_id or "")),
+            daemon=True,
+            name="group-chat-security",
+        ).start()
 
     def _handle_guild_update(self, guild_data: dict):
         """Handle GUILD_UPDATE — detect boost count changes."""

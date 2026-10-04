@@ -20,21 +20,28 @@ if ([int]($sdkVersion.Split(".")[0]) -lt 8) {
 
 $python = $null
 $pythonArguments = @()
-if (Get-Command py -ErrorAction SilentlyContinue) {
-    & py -3.11 --version *> $null
-    if ($LASTEXITCODE -eq 0) {
-        $python = "py"
-        $pythonArguments = @("-3.11")
-    }
-}
-if (-not $python -and (Get-Command python -ErrorAction SilentlyContinue)) {
-    $pythonVersion = (& python -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')").Trim()
-    if ([version]$pythonVersion -ge [version]"3.11") {
-        $python = "python"
+foreach ($candidate in @(@("py", @("-3.12")), @("py", @("-3.11")), @("python", @()))) {
+    $cmd = $candidate[0]
+    $args = $candidate[1..($candidate.Length - 1)]
+    if (Get-Command $cmd -ErrorAction SilentlyContinue) {
+        & $cmd @args -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')" *> $null
+        if ($LASTEXITCODE -eq 0) {
+            $pythonVersion = (& $cmd @args -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')").Trim()
+            if ([version]$pythonVersion -ge [version]"3.11") {
+                $python = $cmd
+                $pythonArguments = $args
+                break
+            }
+        }
     }
 }
 if (-not $python) {
     throw "Python 3.11 or later is required to run the Aria backend."
+}
+
+& $python @pythonArguments -c "import sysconfig; raise SystemExit(0 if sysconfig.get_config_var('Py_ENABLE_SHARED') else 1)" *> $null
+if ($LASTEXITCODE -ne 0) {
+    throw "Aria requires a shared-library Python build for PyInstaller. Install Python 3.11/3.12 from python.org or a supported package manager, then rerun this script."
 }
 
 $venvPython = Join-Path $PSScriptRoot ".venv\Scripts\python.exe"
@@ -52,6 +59,11 @@ if ($LASTEXITCODE -ne 0) {
 & $venvPython -m pip install -r (Join-Path $PSScriptRoot "requirements.txt")
 if ($LASTEXITCODE -ne 0) {
     throw "Could not install Aria's Python dependencies."
+}
+
+& $venvPython -m pip install pyinstaller
+if ($LASTEXITCODE -ne 0) {
+    throw "Could not install PyInstaller for the backend package build."
 }
 
 & npm ci

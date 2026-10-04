@@ -5,11 +5,8 @@ import queue
 import threading
 import time
 import websocket
-import requests
 from typing import Optional
 from urllib.parse import quote as url_quote
-from requests.adapters import HTTPAdapter
-from urllib3.util.retry import Retry
 from discord_api_types import GatewayOpcodes
 
 # logger = Logger("Superreact")
@@ -20,19 +17,9 @@ class SuperReactClient:
     """WebSocket-based super react client from Aria"""
 
     API_GW = "wss://gateway.discord.gg/?v=9&encoding=json"
-    API_REST = "https://discord.com/api/v9"
-    
-    BASE_HEADERS = {
-        "authorization": None,
-        "user-agent": "Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) discord/1.0.9198 Chrome/120.0.6099.291 Electron/28.4.9 Safari/537.36",
-        "x-super-properties": "eyJvcyI6IldpbmRvd3MiLCJicm93c2VyIjoiRGlzY29yZCBDbGllbnQiLCJyZWxlYXNlX2NoYW5uZWwiOiJzdGFibGUiLCJjbGllbnRfdmVyc2lvbiI6IjEuMC45MTk4Iiwib3NfdmVyc2lvbiI6IjEwLjAuMjYxMDAiLCJvc19hcmNoIjoieDY0Iiwic3lzdGVtX2xvY2FsZSI6ImVuLVVTIiwiY2xpZW50X2J1aWxkX251bWJlciI6NDE1NzE0LCJuYXRpdmVfYnVpbGRfbnVtYmVyIjo2OTQyMCwiY2xpZW50X2V2ZW50X3NvdXJjZSI6bnVsbH0=",
-        "x-context-properties": "eyJsb2NhdGlvbiI6IkNoYW5uZWwgdGFiLCBUZXh0IENoYW5uZWwifQ==",
-        "x-track": "", "x-discord-locale": "en-US", "x-discord-timezone": "America/Chicago",
-        "x-debug-options": "bugReporterEnabled", "content-type": "application/json",
-    }
-
-    def __init__(self, token: str):
+    def __init__(self, token: str, api_client=None):
         self.token = token
+        self.api_client = api_client
         self.user_id = None
         self.fingerprint = None
         self.last_seq = None
@@ -47,23 +34,13 @@ class SuperReactClient:
         self.ready_event = threading.Event()
         self.reaction_queue = queue.Queue(maxsize=500)
         self.worker_threads = []
-        self.http_session = None
         self.emoji_path_cache = {}
-        
-        self.BASE_HEADERS["authorization"] = self.token
 
     def is_running(self) -> bool:
         return bool(self.thread and self.thread.is_alive())
 
     def is_ready(self) -> bool:
         return self.ready_event.is_set()
-
-    def _build_http_session(self):
-        session = requests.Session()
-        adapter = HTTPAdapter(pool_connections=50, pool_maxsize=100, max_retries=Retry(total=0))
-        session.mount("https://", adapter)
-        session.mount("http://", adapter)
-        self.http_session = session
 
     def _start_workers(self, count: int = 4):
         if self.worker_threads:
@@ -107,51 +84,19 @@ class SuperReactClient:
             finally:
                 self.reaction_queue.task_done()
 
-    def get_fingerprint(self) -> bool:
-        try:
-            exp_headers = {"user-agent": self.BASE_HEADERS["user-agent"]}
-            res_exp = requests.get(f"{self.API_REST}/experiments", headers=exp_headers)
-            res_exp.raise_for_status()
-            self.fingerprint = res_exp.json()["fingerprint"]
-            print("[Super React] Got fingerprint.")
-            return True
-        except Exception as e:
-            print(f"[Super React] Could not get fingerprint: {e}")
-            return False
-
     def send_super_reaction_rest(self, guild_id, channel_id, message_id, emoji):
+        if self.api_client is None:
+            raise RuntimeError("SuperReact requires the shared Discord API client.")
         path = self._format_emoji_path(emoji)
-        g_id = guild_id or "@me"
-        
-        headers = self.BASE_HEADERS.copy()
-        headers.update({ "x-fingerprint": self.fingerprint, "origin": "https://discord.com", "referer": f"https://discord.com/channels/{g_id}/{channel_id}" })
-        
-        url = f"{self.API_REST}/channels/{channel_id}/messages/{message_id}/reactions/{path}/@me"
-        params = {"location": "Message Reaction Picker", "type": 1}
-        session = self.http_session or requests
-        
-        for attempt in range(3):
-            try:
-                response = session.put(url, headers=headers, params=params, timeout=5)
-                response.raise_for_status()
-                return
-            except requests.exceptions.HTTPError as e:
-                if response.status_code == 429:
-                    retry_after = float(response.headers.get('Retry-After', 1))
-                    print(f"[Super React] Rate limited, retrying after {retry_after}s")
-                    time.sleep(retry_after)
-                    continue
-                else:
-                    details = ""
-                    try:
-                        details = response.text[:500]
-                    except Exception:
-                        pass
-                    raise RuntimeError(f"HTTP {response.status_code} during super reaction: {details}") from e
-            except Exception:
-                if attempt == 2:
-                    raise
-                time.sleep(0.5 * (attempt + 1))
+        endpoint = f"/channels/{channel_id}/messages/{message_id}/reactions/{path}/@me"
+        response = self.api_client.request(
+            "PUT",
+            endpoint,
+            params={"location": "Message Reaction Picker", "type": 1},
+        )
+        if response is None or response.status_code not in (200, 204):
+            status = getattr(response, "status_code", "no response")
+            raise RuntimeError(f"HTTP {status} during super reaction")
 
     def _heartbeat(self, interval):
         while self.ws and self.ws.sock and self.ws.sock.connected:
@@ -233,13 +178,8 @@ class SuperReactClient:
         if self.is_running():
             return self.is_ready()
 
-        if not self.get_fingerprint():
-            print("[Super React] Aborting start: could not get fingerprint.")
-            return False
-
         self.stop_event.clear()
         self.ready_event.clear()
-        self._build_http_session()
         self._start_workers()
             
         self.ws = websocket.WebSocketApp(
@@ -277,12 +217,6 @@ class SuperReactClient:
         self.worker_threads = []
         self.heartbeat_thread = None
         self.thread = None
-        if self.http_session:
-            try:
-                self.http_session.close()
-            except Exception:
-                pass
-            self.http_session = None
         print("[Super React] Client stopping.")
 
     def add_target(self, user_id: str, emoji: str):

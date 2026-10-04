@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import threading
+import time
 from typing import Any, Callable
 
 
@@ -42,14 +43,39 @@ class FriendsTools:
                 lines.append(f"{name} :: {user_id}")
         return lines
 
+    def relationship_counts(self) -> dict[str, int]:
+        relationships = self._relationships()
+        return {
+            "friends": sum(item.get("type") == 1 for item in relationships),
+            "blocked": sum(item.get("type") == 2 for item in relationships),
+            "incoming": sum(item.get("type") == 3 for item in relationships),
+            "outgoing": sum(item.get("type") == 4 for item in relationships),
+        }
+
     def add_friend(self, value: str) -> str:
         try:
-            user_id = self._user_id(value)
-            response = self.api.request(
-                "PUT", f"/users/@me/relationships/{user_id}", data={}
-            )
+            target = str(value or "").strip().strip("<@!>")
+            if not target:
+                return "Provide a username or numeric user ID."
+            if target.isdigit():
+                response = self.api.request(
+                    "PUT", f"/users/@me/relationships/{target}", data={}
+                )
+            else:
+                username, separator, discriminator = target.partition("#")
+                if separator and not discriminator.isdigit():
+                    return "The legacy discriminator must be numeric."
+                payload = {
+                    "username": username.strip(),
+                    "discriminator": int(discriminator) if separator else None,
+                }
+                if not payload["username"]:
+                    return "Provide a username or numeric user ID."
+                response = self.api.request(
+                    "POST", "/users/@me/relationships", data=payload
+                )
             if response is not None and response.status_code in (200, 201, 204):
-                return f"Friend request sent to {user_id}."
+                return f"Friend request sent to {target}."
             status = getattr(response, "status_code", "no response")
             return f"Friend request failed (HTTP {status})."
         except (ValueError, RuntimeError) as exc:
@@ -69,6 +95,47 @@ class FriendsTools:
             return str(exc)
         except Exception as exc:
             return f"Friend removal failed: {exc}"
+
+    def unblock(self, value: str) -> str:
+        try:
+            user_id = self._user_id(value)
+            response = self.api.request("DELETE", f"/users/@me/relationships/{user_id}")
+            if response is not None and response.status_code in (200, 204):
+                return f"Unblocked {user_id}."
+            status = getattr(response, "status_code", "no response")
+            return f"Unblock failed (HTTP {status})."
+        except (ValueError, RuntimeError) as exc:
+            return str(exc)
+        except Exception as exc:
+            return f"Unblock failed: {exc}"
+
+    def mass_unfriend(self, confirm: bool = False) -> str:
+        try:
+            friends = [item for item in self._relationships() if item.get("type") == 1]
+        except Exception as exc:
+            return f"Could not load friends: {exc}"
+        if not friends:
+            return "There are no friends to remove."
+        if not confirm:
+            return f"This will remove {len(friends)} friends. Run massunfriend confirm to continue."
+
+        removed = failed = 0
+        for index, relationship in enumerate(friends):
+            user_id = str((relationship.get("user") or {}).get("id") or "")
+            if not user_id:
+                failed += 1
+                continue
+            try:
+                response = self.api.request("DELETE", f"/users/@me/relationships/{user_id}")
+                if response is not None and response.status_code in (200, 204):
+                    removed += 1
+                else:
+                    failed += 1
+            except Exception:
+                failed += 1
+            if index + 1 < len(friends):
+                time.sleep(0.6)
+        return f"Mass unfriend complete: {removed} removed, {failed} failed."
 
     def configure_autoreply(self, value: str) -> str:
         parts = str(value or "").split(maxsplit=1)
@@ -136,20 +203,41 @@ def setup_friends_tools(bot: Any, is_control_user: Callable[[str], bool]) -> Fri
         _send(ctx, "Owner/Admin only.")
         return False
 
-    @bot.command(name="friend")
+    @bot.command(name="friend", aliases=["add", "addfriend"])
     def friend_cmd(ctx, args):
         if _authorized(ctx):
             _send(ctx, tools.add_friend(args[0] if args else ""))
 
-    @bot.command(name="unfriend")
+    @bot.command(name="unfriend", aliases=["unadd", "removefriend"])
     def unfriend_cmd(ctx, args):
         if _authorized(ctx):
             _send(ctx, tools.remove_friend(args[0] if args else ""))
 
-    for command_name, relationship_type, label in (
-        ("pending", 3, "Incoming friend requests"),
-        ("outgoing", 4, "Outgoing friend requests"),
-        ("blocked", 2, "Blocked users"),
+    @bot.command(name="unblock")
+    def unblock_cmd(ctx, args):
+        if _authorized(ctx):
+            _send(ctx, tools.unblock(args[0] if args else ""))
+
+    @bot.command(name="friendcount", aliases=["fc"])
+    def friendcount_cmd(ctx, args):
+        if not _authorized(ctx):
+            return
+        try:
+            counts = tools.relationship_counts()
+            _send(ctx, "Friends: {friends} · Incoming: {incoming} · Outgoing: {outgoing} · Blocked: {blocked}".format(**counts))
+        except Exception as exc:
+            _send(ctx, f"Friend counts could not be loaded: {exc}")
+
+    @bot.command(name="massunfriend", aliases=["unfriendall"])
+    def massunfriend_cmd(ctx, args):
+        if _authorized(ctx):
+            confirmed = bool(args and args[0].casefold() == "confirm")
+            _send(ctx, tools.mass_unfriend(confirm=confirmed))
+
+    for command_name, relationship_type, label, aliases in (
+        ("pending", 3, "Incoming friend requests", ["incoming"]),
+        ("outgoing", 4, "Outgoing friend requests", []),
+        ("blocked", 2, "Blocked users", []),
     ):
         def _list_cmd(ctx, args, relationship_type=relationship_type, label=label):
             if not _authorized(ctx):
@@ -161,7 +249,7 @@ def setup_friends_tools(bot: Any, is_control_user: Callable[[str], bool]) -> Fri
                 return
             _send(ctx, f"{label} ({len(lines)}):\n" + ("\n".join(lines[:20]) or "None"))
 
-        bot.command(name=command_name)(_list_cmd)
+        bot.command(name=command_name, aliases=aliases)(_list_cmd)
 
     @bot.command(name="autoreply")
     def autoreply_cmd(ctx, args):

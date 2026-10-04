@@ -1237,7 +1237,7 @@ class WebPanel:
 
         try:
             # Download source image
-            resp = api.session.get(image_url, timeout=15)
+            resp = api.request_external("GET", image_url, timeout=15)
             if resp.status_code != 200:
                 return None
             image_bytes = resp.content
@@ -1267,19 +1267,9 @@ class WebPanel:
             if not dm or "id" not in dm:
                 return None
 
-            # Get protected headers for API request
-            try:
-                headers = api.header_spoofer.get_protected_headers(api.token)
-            except Exception:
-                # If header_spoofer is not available, use basic auth header
-                headers = {"Authorization": f"Bearer {api.token}"}
-            
             files = {"file": (filename, image_bytes, content_type)}
-            msg_resp = api.session.post(
-                f"https://discord.com/api/v9/channels/{dm['id']}/messages",
-                headers=headers,
-                files=files,
-                timeout=20,
+            msg_resp = api.request(
+                "POST", f"/channels/{dm['id']}/messages", files=files
             )
             if msg_resp.status_code != 200:
                 return None
