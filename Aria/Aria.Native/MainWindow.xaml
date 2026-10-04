@@ -23,8 +23,8 @@
                         <Image x:Name="TitleBrandIcon" Width="22" Height="22" HorizontalAlignment="Center" VerticalAlignment="Center" />
                     </Border>
                     <StackPanel VerticalAlignment="Center" Spacing="1">
-                        <TextBlock Text="ARIA DESKTOP" FontSize="12" FontWeight="600" Foreground="#e6edf4" />
-                        <TextBlock Text="NATIVE CONTROL CENTER" FontSize="8" FontWeight="500" Foreground="#7a8896" />
+                        <TextBlock Text="ARIA DESKTOP" FontSize="12" FontWeight="SemiBold" Foreground="#e6edf4" />
+                        <TextBlock Text="NATIVE CONTROL CENTER" FontSize="8" FontWeight="Medium" Foreground="#7a8896" />
                     </StackPanel>
                 </StackPanel>
 
@@ -33,7 +33,7 @@
                     <Border Background="#0d1b28" BorderBrush="#1a3650" BorderThickness="1" CornerRadius="8" Padding="12,6">
                         <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
                             <Ellipse x:Name="StatusIndicator" Width="8" Height="8" Fill="#62d39a" />
-                            <TextBlock x:Name="StatusText" Text="CONNECTED" FontSize="10" FontWeight="600" Foreground="#a5d8ff" />
+                            <TextBlock x:Name="StatusText" Text="CONNECTED" FontSize="10" FontWeight="SemiBold" Foreground="#a5d8ff" />
                         </StackPanel>
                     </Border>
                     <Button x:Name="BrowserDashboardButton" Content="🌐 Web Panel" Click="BrowserDashboard_Click" Style="{StaticResource AriaActionButtonStyle}" />
@@ -68,8 +68,8 @@
                                 <Image x:Name="SidebarBrandIcon" Width="30" Height="30" HorizontalAlignment="Center" VerticalAlignment="Center" />
                             </Border>
                             <StackPanel Grid.Column="1" Margin="12,0,0,0" VerticalAlignment="Center" Spacing="4">
-                                <TextBlock Text="Aria Workspace" FontSize="13" FontWeight="600" Foreground="#e6edf4" />
-                                <TextBlock Text="NATIVE DESKTOP" FontSize="8" FontWeight="500" Foreground="#7a8896" />
+                                <TextBlock Text="Aria Workspace" FontSize="13" FontWeight="SemiBold" Foreground="#e6edf4" />
+                                <TextBlock Text="NATIVE DESKTOP" FontSize="8" FontWeight="Medium" Foreground="#7a8896" />
                             </StackPanel>
                         </Grid>
                     </Border>
@@ -77,7 +77,7 @@
                     <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" Margin="0,0,0,0">
                         <StackPanel x:Name="Navigation" Spacing="2">
                             <!-- HOME SECTION -->
-                            <TextBlock Text="HOME" FontSize="10" FontWeight="700" Foreground="#5a6f84" Margin="12,12,0,8" />
+                            <TextBlock Text="HOME" FontSize="10" FontWeight="Bold" Foreground="#5a6f84" Margin="12,12,0,8" />
                             <Button Tag="overview" Click="Navigation_Click" HorizontalContentAlignment="Stretch" HorizontalAlignment="Stretch" Height="40" Style="{StaticResource AriaNavigationButtonStyle}">
                                 <Grid>
                                     <Grid.ColumnDefinitions>
@@ -85,7 +85,7 @@
                                         <ColumnDefinition Width="*" />
                                     </Grid.ColumnDefinitions>
                                     <FontIcon Glyph="&#xE80F;" FontSize="16" Foreground="#69b7ff" />
-                                    <TextBlock Grid.Column="1" Text="Overview" FontSize="13" FontWeight="500" Foreground="#e6edf4" Margin="14,0,0,0" VerticalAlignment="Center" />
+                                    <TextBlock Grid.Column="1" Text="Overview" FontSize="13" FontWeight="Medium" Foreground="#e6edf4" Margin="14,0,0,0" VerticalAlignment="Center" />
                                 </Grid>
                             </Button>
                             <Button Tag="hosted" Click="Navigation_Click" HorizontalContentAlignment="Stretch" HorizontalAlignment="Stretch" Height="40" Style="{StaticResource AriaNavigationButtonStyle}">
@@ -95,12 +95,12 @@
                                         <ColumnDefinition Width="*" />
                                     </Grid.ColumnDefinitions>
                                     <FontIcon Glyph="&#xE7EF;" FontSize="16" Foreground="#69b7ff" />
-                                    <TextBlock Grid.Column="1" Text="Instances" FontSize="13" FontWeight="500" Foreground="#e6edf4" Margin="14,0,0,0" VerticalAlignment="Center" />
+                                    <TextBlock Grid.Column="1" Text="Instances" FontSize="13" FontWeight="Medium" Foreground="#e6edf4" Margin="14,0,0,0" VerticalAlignment="Center" />
                                 </Grid>
                             </Button>
 
                             <!-- ACCOUNT SECTION -->
-                            <TextBlock Text="ACCOUNT" FontSize="10" FontWeight="700" Foreground="#5a6f84" Margin="12,16,0,8" />
+                            <TextBlock Text="ACCOUNT" FontSize="10" FontWeight="Bold" Foreground="#5a6f84" Margin="12,16,0,8" />
                             <Button Tag="profile" Click="Navigation_Click" HorizontalContentAlignment="Stretch" HorizontalAlignment="Stretch" Height="40" Style="{StaticResource AriaNavigationButtonStyle}">
                                 <Grid>
                                     <Grid.ColumnDefinitions>
@@ -108,7 +108,7 @@
                                         <ColumnDefinition Width="*" />
                                     </Grid.ColumnDefinitions>
                                     <FontIcon Glyph="&#xE77B;" FontSize="16" Foreground="#69b7ff" />
-                                    <TextBlock Grid.Column="1" Text="Profile" FontSize="13" FontWeight="500" Foreground="#e6edf4" Margin="14,0,0,0" VerticalAlignment="Center" />
+                                    <TextBlock Grid.Column="1" Text="Profile" FontSize="13" FontWeight="Medium" Foreground="#e6edf4" Margin="14,0,0,0" VerticalAlignment="Center" />
                                 </Grid>
                             </Button>
                             <Button Tag="friends" Click="Navigation_Click" HorizontalContentAlignment="Stretch" HorizontalAlignment="Stretch" Height="40" Style="{StaticResource AriaNavigationButtonStyle}">
@@ -118,7 +118,7 @@
                                         <ColumnDefinition Width="*" />
                                     </Grid.ColumnDefinitions>
                                     <FontIcon Glyph="&#xE716;" FontSize="16" Foreground="#69b7ff" />
-                                    <TextBlock Grid.Column="1" Text="Friends" FontSize="13" FontWeight="500" Foreground="#e6edf4" Margin="14,0,0,0" VerticalAlignment="Center" />
+                                    <TextBlock Grid.Column="1" Text="Friends" FontSize="13" FontWeight="Medium" Foreground="#e6edf4" Margin="14,0,0,0" VerticalAlignment="Center" />
                                 </Grid>
                             </Button>
                             <Button Tag="access" Click="Navigation_Click" HorizontalContentAlignment="Stretch" HorizontalAlignment="Stretch" Height="40" Style="{StaticResource AriaNavigationButtonStyle}">
@@ -128,12 +128,12 @@
                                         <ColumnDefinition Width="*" />
                                     </Grid.ColumnDefinitions>
                                     <FontIcon Glyph="&#xE72E;" FontSize="16" Foreground="#69b7ff" />
-                                    <TextBlock Grid.Column="1" Text="Access" FontSize="13" FontWeight="500" Foreground="#e6edf4" Margin="14,0,0,0" VerticalAlignment="Center" />
+                                    <TextBlock Grid.Column="1" Text="Access" FontSize="13" FontWeight="Medium" Foreground="#e6edf4" Margin="14,0,0,0" VerticalAlignment="Center" />
                                 </Grid>
                             </Button>
 
                             <!-- WORKSPACE SECTION -->
-                            <TextBlock Text="WORKSPACE" FontSize="10" FontWeight="700" Foreground="#5a6f84" Margin="12,16,0,8" />
+                            <TextBlock Text="WORKSPACE" FontSize="10" FontWeight="Bold" Foreground="#5a6f84" Margin="12,16,0,8" />
                             <Button Tag="presence" Click="Navigation_Click" HorizontalContentAlignment="Stretch" HorizontalAlignment="Stretch" Height="40" Style="{StaticResource AriaNavigationButtonStyle}">
                                 <Grid>
                                     <Grid.ColumnDefinitions>
@@ -141,7 +141,7 @@
                                         <ColumnDefinition Width="*" />
                                     </Grid.ColumnDefinitions>
                                     <FontIcon Glyph="&#xE7F8;" FontSize="16" Foreground="#69b7ff" />
-                                    <TextBlock Grid.Column="1" Text="Status" FontSize="13" FontWeight="500" Foreground="#e6edf4" Margin="14,0,0,0" VerticalAlignment="Center" />
+                                    <TextBlock Grid.Column="1" Text="Status" FontSize="13" FontWeight="Medium" Foreground="#e6edf4" Margin="14,0,0,0" VerticalAlignment="Center" />
                                 </Grid>
                             </Button>
                             <Button Tag="rpc" Click="Navigation_Click" HorizontalContentAlignment="Stretch" HorizontalAlignment="Stretch" Height="40" Style="{StaticResource AriaNavigationButtonStyle}">
@@ -151,7 +151,7 @@
                                         <ColumnDefinition Width="*" />
                                     </Grid.ColumnDefinitions>
                                     <FontIcon Glyph="&#xE734;" FontSize="16" Foreground="#69b7ff" />
-                                    <TextBlock Grid.Column="1" Text="Rich Presence" FontSize="13" FontWeight="500" Foreground="#e6edf4" Margin="14,0,0,0" VerticalAlignment="Center" />
+                                    <TextBlock Grid.Column="1" Text="Rich Presence" FontSize="13" FontWeight="Medium" Foreground="#e6edf4" Margin="14,0,0,0" VerticalAlignment="Center" />
                                 </Grid>
                             </Button>
                             <Button Tag="commands" Click="Navigation_Click" HorizontalContentAlignment="Stretch" HorizontalAlignment="Stretch" Height="40" Style="{StaticResource AriaNavigationButtonStyle}">
@@ -161,7 +161,7 @@
                                         <ColumnDefinition Width="*" />
                                     </Grid.ColumnDefinitions>
                                     <FontIcon Glyph="&#xE756;" FontSize="16" Foreground="#69b7ff" />
-                                    <TextBlock Grid.Column="1" Text="Commands" FontSize="13" FontWeight="500" Foreground="#e6edf4" Margin="14,0,0,0" VerticalAlignment="Center" />
+                                    <TextBlock Grid.Column="1" Text="Commands" FontSize="13" FontWeight="Medium" Foreground="#e6edf4" Margin="14,0,0,0" VerticalAlignment="Center" />
                                 </Grid>
                             </Button>
                             <Button Tag="history" Click="Navigation_Click" HorizontalContentAlignment="Stretch" HorizontalAlignment="Stretch" Height="40" Style="{StaticResource AriaNavigationButtonStyle}">
@@ -171,7 +171,7 @@
                                         <ColumnDefinition Width="*" />
                                     </Grid.ColumnDefinitions>
                                     <FontIcon Glyph="&#xE81C;" FontSize="16" Foreground="#69b7ff" />
-                                    <TextBlock Grid.Column="1" Text="History" FontSize="13" FontWeight="500" Foreground="#e6edf4" Margin="14,0,0,0" VerticalAlignment="Center" />
+                                    <TextBlock Grid.Column="1" Text="History" FontSize="13" FontWeight="Medium" Foreground="#e6edf4" Margin="14,0,0,0" VerticalAlignment="Center" />
                                 </Grid>
                             </Button>
                             <Button Tag="analytics" Click="Navigation_Click" HorizontalContentAlignment="Stretch" HorizontalAlignment="Stretch" Height="40" Style="{StaticResource AriaNavigationButtonStyle}">
@@ -181,12 +181,12 @@
                                         <ColumnDefinition Width="*" />
                                     </Grid.ColumnDefinitions>
                                     <FontIcon Glyph="&#xE9D2;" FontSize="16" Foreground="#69b7ff" />
-                                    <TextBlock Grid.Column="1" Text="Analytics" FontSize="13" FontWeight="500" Foreground="#e6edf4" Margin="14,0,0,0" VerticalAlignment="Center" />
+                                    <TextBlock Grid.Column="1" Text="Analytics" FontSize="13" FontWeight="Medium" Foreground="#e6edf4" Margin="14,0,0,0" VerticalAlignment="Center" />
                                 </Grid>
                             </Button>
 
                             <!-- TOOLS SECTION -->
-                            <TextBlock Text="TOOLS" FontSize="10" FontWeight="700" Foreground="#5a6f84" Margin="12,16,0,8" />
+                            <TextBlock Text="TOOLS" FontSize="10" FontWeight="Bold" Foreground="#5a6f84" Margin="12,16,0,8" />
                             <Button Tag="boost" Click="Navigation_Click" HorizontalContentAlignment="Stretch" HorizontalAlignment="Stretch" Height="40" Style="{StaticResource AriaNavigationButtonStyle}">
                                 <Grid>
                                     <Grid.ColumnDefinitions>
@@ -194,7 +194,7 @@
                                         <ColumnDefinition Width="*" />
                                     </Grid.ColumnDefinitions>
                                     <FontIcon Glyph="&#xE735;" FontSize="16" Foreground="#e9bd68" />
-                                    <TextBlock Grid.Column="1" Text="Nitro Manager" FontSize="13" FontWeight="500" Foreground="#e6edf4" Margin="14,0,0,0" VerticalAlignment="Center" />
+                                    <TextBlock Grid.Column="1" Text="Nitro Manager" FontSize="13" FontWeight="Medium" Foreground="#e6edf4" Margin="14,0,0,0" VerticalAlignment="Center" />
                                 </Grid>
                             </Button>
                             <Button Tag="logger" Click="Navigation_Click" HorizontalContentAlignment="Stretch" HorizontalAlignment="Stretch" Height="40" Style="{StaticResource AriaNavigationButtonStyle}">
@@ -203,8 +203,8 @@
                                         <ColumnDefinition Width="Auto" />
                                         <ColumnDefinition Width="*" />
                                     </Grid.ColumnDefinitions>
-                                    <FontIcon Glyph="&#xE8A5;" FontSize="16" Forecolor="#62d39a" />
-                                    <TextBlock Grid.Column="1" Text="Message Logger" FontSize="13" FontWeight="500" Foreground="#e6edf4" Margin="14,0,0,0" VerticalAlignment="Center" />
+                                    <FontIcon Glyph="&#xE8A5;" FontSize="16" Foreground="#62d39a" />
+                                    <TextBlock Grid.Column="1" Text="Message Logger" FontSize="13" FontWeight="Medium" Foreground="#e6edf4" Margin="14,0,0,0" VerticalAlignment="Center" />
                                 </Grid>
                             </Button>
                             <Button Tag="automation" Click="Navigation_Click" HorizontalContentAlignment="Stretch" HorizontalAlignment="Stretch" Height="40" Style="{StaticResource AriaNavigationButtonStyle}">
@@ -214,7 +214,7 @@
                                         <ColumnDefinition Width="*" />
                                     </Grid.ColumnDefinitions>
                                     <FontIcon Glyph="&#xE713;" FontSize="16" Foreground="#62d39a" />
-                                    <TextBlock Grid.Column="1" Text="Automation" FontSize="13" FontWeight="500" Foreground="#e6edf4" Margin="14,0,0,0" VerticalAlignment="Center" />
+                                    <TextBlock Grid.Column="1" Text="Automation" FontSize="13" FontWeight="Medium" Foreground="#e6edf4" Margin="14,0,0,0" VerticalAlignment="Center" />
                                 </Grid>
                             </Button>
                             <Button Tag="settings" Click="Navigation_Click" HorizontalContentAlignment="Stretch" HorizontalAlignment="Stretch" Height="40" Style="{StaticResource AriaNavigationButtonStyle}">
@@ -224,7 +224,7 @@
                                         <ColumnDefinition Width="*" />
                                     </Grid.ColumnDefinitions>
                                     <FontIcon Glyph="&#xE713;" FontSize="16" Foreground="#9d9d9d" />
-                                    <TextBlock Grid.Column="1" Text="Settings" FontSize="13" FontWeight="500" Foreground="#e6edf4" Margin="14,0,0,0" VerticalAlignment="Center" />
+                                    <TextBlock Grid.Column="1" Text="Settings" FontSize="13" FontWeight="Medium" Foreground="#e6edf4" Margin="14,0,0,0" VerticalAlignment="Center" />
                                 </Grid>
                             </Button>
                             <Button Tag="logs" Click="Navigation_Click" HorizontalContentAlignment="Stretch" HorizontalAlignment="Stretch" Height="40" Style="{StaticResource AriaNavigationButtonStyle}">
@@ -234,7 +234,7 @@
                                         <ColumnDefinition Width="*" />
                                     </Grid.ColumnDefinitions>
                                     <FontIcon Glyph="&#xE9D9;" FontSize="16" Foreground="#9d9d9d" />
-                                    <TextBlock Grid.Column="1" Text="Runtime Logs" FontSize="13" FontWeight="500" Foreground="#e6edf4" Margin="14,0,0,0" VerticalAlignment="Center" />
+                                    <TextBlock Grid.Column="1" Text="Runtime Logs" FontSize="13" FontWeight="Medium" Foreground="#e6edf4" Margin="14,0,0,0" VerticalAlignment="Center" />
                                 </Grid>
                             </Button>
                             <Button x:Name="OwnerNavigationButton" Tag="owner" Click="Navigation_Click" HorizontalContentAlignment="Stretch" HorizontalAlignment="Stretch" Height="40" Style="{StaticResource AriaNavigationButtonStyle}" Visibility="Collapsed">
@@ -244,34 +244,8 @@
                                         <ColumnDefinition Width="*" />
                                     </Grid.ColumnDefinitions>
                                     <FontIcon Glyph="&#xE7EF;" FontSize="16" Foreground="#ff7e87" />
-                                    <TextBlock Grid.Column="1" Text="Owner Tools" FontSize="13" FontWeight="500" Foreground="#e6edf4" Margin="14,0,0,0" VerticalAlignment="Center" />
+                                    <TextBlock Grid.Column="1" Text="Owner Tools" FontSize="13" FontWeight="Medium" Foreground="#e6edf4" Margin="14,0,0,0" VerticalAlignment="Center" />
                                 </Grid>
-                            </Button>
-                        </StackPanel>
-                    </ScrollViewer>Activity feed" VerticalAlignment="Center" /></StackPanel>
-                            </Button>
-                            <Button Tag="analytics" Click="Navigation_Click" HorizontalContentAlignment="Left" Style="{StaticResource AriaNavigationButtonStyle}">
-                                <StackPanel Orientation="Horizontal" Spacing="12"><FontIcon Glyph="&#xE9D2;" FontSize="15" /><TextBlock Text="Analytics" VerticalAlignment="Center" /></StackPanel>
-                            </Button>
-
-                            <TextBlock Text="TOOLS" FontSize="9" FontWeight="Bold" Foreground="{StaticResource AriaSectionBrush}" Margin="9,15,0,5" />
-                            <Button Tag="boost" Click="Navigation_Click" HorizontalContentAlignment="Left" Style="{StaticResource AriaNavigationButtonStyle}">
-                                <StackPanel Orientation="Horizontal" Spacing="12"><FontIcon Glyph="&#xE735;" FontSize="15" /><TextBlock Text="Nitro" VerticalAlignment="Center" /></StackPanel>
-                            </Button>
-                            <Button Tag="logger" Click="Navigation_Click" HorizontalContentAlignment="Left" Style="{StaticResource AriaNavigationButtonStyle}">
-                                <StackPanel Orientation="Horizontal" Spacing="12"><FontIcon Glyph="&#xE8A5;" FontSize="15" /><TextBlock Text="Message logger" VerticalAlignment="Center" /></StackPanel>
-                            </Button>
-                            <Button Tag="automation" Click="Navigation_Click" HorizontalContentAlignment="Left" Style="{StaticResource AriaNavigationButtonStyle}">
-                                <StackPanel Orientation="Horizontal" Spacing="12"><FontIcon Glyph="&#xE713;" FontSize="15" /><TextBlock Text="Command controls" VerticalAlignment="Center" /></StackPanel>
-                            </Button>
-                            <Button Tag="settings" Click="Navigation_Click" HorizontalContentAlignment="Left" Style="{StaticResource AriaNavigationButtonStyle}">
-                                <StackPanel Orientation="Horizontal" Spacing="12"><FontIcon Glyph="&#xE713;" FontSize="15" /><TextBlock Text="Settings" VerticalAlignment="Center" /></StackPanel>
-                            </Button>
-                            <Button Tag="logs" Click="Navigation_Click" HorizontalContentAlignment="Left" Style="{StaticResource AriaNavigationButtonStyle}">
-                                <StackPanel Orientation="Horizontal" Spacing="12"><FontIcon Glyph="&#xE9D9;" FontSize="15" /><TextBlock Text="Runtime logs" VerticalAlignment="Center" /></StackPanel>
-                            </Button>
-                            <Button x:Name="OwnerNavigationButton" Tag="owner" Click="Navigation_Click" HorizontalContentAlignment="Left" Style="{StaticResource AriaNavigationButtonStyle}" Visibility="Collapsed">
-                                <StackPanel Orientation="Horizontal" Spacing="12"><FontIcon Glyph="&#xE7EF;" FontSize="15" /><TextBlock Text="Owner tools" VerticalAlignment="Center" /></StackPanel>
                             </Button>
                         </StackPanel>
                     </ScrollViewer>
@@ -281,11 +255,11 @@
                         <StackPanel Spacing="10">
                             <StackPanel Orientation="Horizontal" Spacing="8">
                                 <Ellipse x:Name="SessionStatusDot" Width="8" Height="8" Fill="#e9bd68" VerticalAlignment="Center" />
-                                <TextBlock x:Name="SessionStatusText" Text="CONNECTING" FontSize="9" FontWeight="600" Foreground="#e9bd68" VerticalAlignment="Center" />
+                                <TextBlock x:Name="SessionStatusText" Text="CONNECTING" FontSize="9" FontWeight="SemiBold" Foreground="#e9bd68" VerticalAlignment="Center" />
                             </StackPanel>
-                            <TextBlock x:Name="SessionIdentity" Text="Connecting…" FontSize="12" FontWeight="600" TextTrimming="CharacterEllipsis" Foreground="#e6edf4" />
+                            <TextBlock x:Name="SessionIdentity" Text="Connecting…" FontSize="12" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" Foreground="#e6edf4" />
                             <Border Height="1" Background="#1a3d52" />
-                            <TextBlock Text="WINDOWS NATIVE APP" FontSize="8" FontWeight="500" Foreground="#7a8896" />
+                            <TextBlock Text="WINDOWS NATIVE APP" FontSize="8" FontWeight="Medium" Foreground="#7a8896" />
                         </StackPanel>
                     </Border>
                 </Grid>
@@ -305,12 +279,12 @@
                         <ColumnDefinition Width="Auto" />
                     </Grid.ColumnDefinitions>
                     <StackPanel VerticalAlignment="Center" Spacing="6">
-                        <TextBlock x:Name="PageTitle" Text="Overview" FontSize="32" FontWeight="700" Foreground="#e6edf4" />
+                        <TextBlock x:Name="PageTitle" Text="Overview" FontSize="32" FontWeight="Bold" Foreground="#e6edf4" />
                         <TextBlock x:Name="PageSubtitle" Text="Your Aria runtime at a glance" FontSize="13" Foreground="#a6b4c3" />
                     </StackPanel>
                     <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
                         <Border Background="#0f1b28" BorderBrush="#1a3650" BorderThickness="1" CornerRadius="8" Padding="12,6">
-                            <TextBlock x:Name="PageStatus" Text="● READY" FontSize="10" FontWeight="600" Foreground="#62d39a" VerticalAlignment="Center" />
+                            <TextBlock x:Name="PageStatus" Text="● READY" FontSize="10" FontWeight="SemiBold" Foreground="#62d39a" VerticalAlignment="Center" />
                         </Border>
                         <Button x:Name="RefreshButton" Content="🔄 Refresh" Click="Refresh_Click" Style="{StaticResource AriaActionButtonStyle}" />
                     </StackPanel>
@@ -335,13 +309,13 @@
                                 <Image x:Name="SetupBrandIcon" Width="32" Height="32" HorizontalAlignment="Center" VerticalAlignment="Center" />
                             </Border>
                             <StackPanel VerticalAlignment="Center" Spacing="2">
-                                <TextBlock Text="ARIA DESKTOP" FontSize="11" FontWeight="700" Foreground="#e6edf4" />
-                                <TextBlock Text="NATIVE SETUP" FontSize="9" FontWeight="500" Foreground="#7a8896" />
+                                <TextBlock Text="ARIA DESKTOP" FontSize="11" FontWeight="Bold" Foreground="#e6edf4" />
+                                <TextBlock Text="NATIVE SETUP" FontSize="9" FontWeight="Medium" Foreground="#7a8896" />
                             </StackPanel>
                         </StackPanel>
 
                         <!-- Title -->
-                        <TextBlock Text="Connecting to your Aria runtime" FontSize="20" FontWeight="700" TextWrapping="Wrap" Margin="0,6,0,0" Foreground="#e6edf4" />
+                        <TextBlock Text="Connecting to your Aria runtime" FontSize="20" FontWeight="Bold" TextWrapping="Wrap" Margin="0,6,0,0" Foreground="#e6edf4" />
 
                         <!-- Message -->
                         <TextBlock x:Name="StatusMessage" Text="Signing in to the local dashboard service…" Foreground="#a6b4c3" TextWrapping="Wrap" FontSize="13" />
@@ -365,7 +339,7 @@
                             <PasswordBox x:Name="SetupToken" Header="Discord Account Token" />
                             <CheckBox x:Name="RememberToken" Content="Remember token on this device" IsChecked="True" Foreground="#e6edf4" />
                             <TextBlock Text="Tokens are stored encrypted. Uncheck to use only this session." Foreground="#a6b4c3" TextWrapping="Wrap" FontSize="12" Margin="0,2,0,0" />
-                            <Button x:Name="SetupSubmitButton" Content="Verify & Continue" Click="SetupToken_Click" HorizontalAlignment="Left" Style="{StaticResource AriaPrimaryButtonStyle}" Margin="0,4,0,0" />
+                            <Button x:Name="SetupSubmitButton" Content="Verify &amp; Continue" Click="SetupToken_Click" HorizontalAlignment="Left" Style="{StaticResource AriaPrimaryButtonStyle}" Margin="0,4,0,0" />
                         </StackPanel>
                     </StackPanel>
                 </Border>
