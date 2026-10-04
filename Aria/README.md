@@ -60,6 +60,11 @@ chmod +x Aria-Linux-x86_64-<version>.AppImage
 ./Aria-Linux-x86_64-<version>.AppImage
 ```
 
+The release packages include Electron; you do not need to install Electron
+separately. For a source checkout, the manual setup below installs the
+project's local Electron dependency with `npm ci` and starts it with
+`npm start`.
+
 On first launch, enter your account token in Aria's setup window. Releases are
 built by [`release.yml`](../.github/workflows/release.yml) when a `v*` tag is
 pushed.
@@ -128,9 +133,19 @@ unless you intend to work on those components.
 
 ## Quick start: desktop app
 
-Run all commands in this section from the **application directory**, which
-contains `package.json` and `requirements.txt`. In a fresh repository clone,
-that directory is usually `Aria/Aria`.
+This is the complete setup from a fresh source checkout. Install Python 3.11+
+and Node.js 22.12+ with npm first. Windows also requires the .NET 8 SDK or
+later for its native dashboard. Clone the repository and enter the inner
+application directory, which contains `package.json` and `requirements.txt`:
+
+```bash
+git clone https://github.com/miscomprehend/Aria.git
+cd Aria/Aria
+```
+
+Then follow the setup steps for your operating system below. The setup scripts
+install the Python and npm dependencies and launch the Electron desktop app;
+they do not install system prerequisites such as Python or Node.js.
 
 ### Windows PowerShell
 
@@ -195,6 +210,10 @@ python -m pip install -r requirements.txt
 npm ci
 npm start
 ```
+
+`npm ci` installs Electron into this project's `node_modules`; it does not
+install Electron system-wide. Remove `node_modules` as described in **B** if
+you want to remove the source checkout's Electron and other npm dependencies.
 
 ### Start without the desktop shell
 
@@ -824,8 +843,17 @@ not delete `package-lock.json`.
      select the menu beside it, choose **Uninstall**, and follow the prompts.
      If Aria is not listed, open its installation folder and run its
      uninstaller. Delete any leftover shortcuts separately if desired.
+       For the Windows portable build, quit Aria and delete the downloaded
+       `Aria-Windows-x64-Portable-<version>.exe` file and any shortcuts you
+       created.
    - **macOS:** Open **Applications** in Finder, drag **Aria** to the Trash,
      then empty the Trash if you want to permanently remove the app.
+    - **Linux `.deb`:** Remove the installed package:
+
+       ```bash
+       sudo apt remove aria-desktop
+       ```
+
    - **Linux AppImage:** Delete the downloaded Aria `.AppImage` file. Also
      remove any shortcut you created.
 3. If you only want to uninstall the app, stop here. Continue to **D** only
