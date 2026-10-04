@@ -4,8 +4,8 @@ A Discord selfbot with advanced features including activity control, analytics, 
 
 ## Download & Run
 
-Download the latest build from
-[GitHub Releases](https://github.com/miscomprehend/Aria/releases/latest).
+Download the latest Electron desktop app from
+[GitHub Releases](https://github.com/miscomprehend/Aria/releases/latest), then choose the installer for your platform:
 
 | Platform | Release file | Instructions |
 | --- | --- | --- |

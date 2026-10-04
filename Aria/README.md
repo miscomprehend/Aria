@@ -1,8 +1,8 @@
 # Aria
 
-Aria is a Python Discord client with a local browser dashboard, a native
-Windows desktop dashboard, hosted-instance management, presence tools,
-analytics, and message logging.
+Aria is a Python Discord client with an Electron desktop app, a local browser
+dashboard, hosted-instance management, presence tools, analytics, and message
+logging.
 
 > **Account and platform notice:** Aria connects with account credentials.
 > Use it only with accounts you control, follow Discord's current terms and
@@ -17,7 +17,7 @@ analytics, and message logging.
 - [Quick start: desktop app](#quick-start-desktop-app)
 - [Run the Python runtime directly](#run-the-python-runtime-directly)
 - [Dashboard guide](#dashboard-guide)
-- [Windows installer: build step by step](#windows-installer-build-step-by-step)
+- [Build a Windows Electron installer](#build-a-windows-electron-installer)
 - [Test and verify changes](#test-and-verify-changes)
 - [Configuration and local data](#configuration-and-local-data)
 - [Optional MongoDB storage](#optional-mongodb-storage)
@@ -30,8 +30,8 @@ analytics, and message logging.
 
 ## Download & Run
 
-Download the latest build from
-[GitHub Releases](https://github.com/miscomprehend/Aria/releases/latest).
+Download the latest Electron desktop app from
+[GitHub Releases](https://github.com/miscomprehend/Aria/releases/latest), then choose the package for your platform:
 
 | Platform | Release file | Instructions |
 | --- | --- | --- |
@@ -60,9 +60,9 @@ chmod +x Aria-Linux-x86_64-<version>.AppImage
 ./Aria-Linux-x86_64-<version>.AppImage
 ```
 
-The release packages include Electron; you do not need to install Electron
-separately. For a source checkout, the manual setup below installs the
-project's local Electron dependency with `npm ci` and starts it with
+Every download above is the Electron desktop app. Electron is bundled, so you
+do not need to install it separately. For a source checkout, install the
+project's local Electron dependency with `npm ci` and start it with
 `npm start`.
 
 On first launch, enter your account token in Aria's setup window. Releases are
@@ -109,12 +109,13 @@ exposed in the main command surface.
 - Internet access for first-time dependency installation and account
   connection.
 
-The Windows native dashboard additionally needs the .NET 8 SDK or later to
-build. Linux and macOS do not build the WinUI dashboard.
+On Windows, `install.ps1` currently checks for the .NET 8 SDK or later as a
+preflight requirement. The Electron app and packaged releases do not use .NET;
+manual source setup does not require it.
 
-The packaged Windows installer contains its Python runtime/backend and native
-dashboard. End users do not need to install Python, Node.js, or .NET to run an
-already-built installer.
+The packaged desktop releases include Electron and the Python backend. End
+users do not need to install Python, Node.js, Electron, or .NET to run a
+release build.
 
 ### Runtime and optional component dependencies
 
@@ -134,8 +135,7 @@ unless you intend to work on those components.
 ## Quick start: desktop app
 
 This is the complete setup from a fresh source checkout. Install Python 3.11+
-and Node.js 22.12+ with npm first. Windows also requires the .NET 8 SDK or
-later for its native dashboard. Clone the repository and enter the inner
+and Node.js 22.12+ with npm first. Clone the repository and enter the inner
 application directory, which contains `package.json` and `requirements.txt`:
 
 ```bash
@@ -149,7 +149,8 @@ they do not install system prerequisites such as Python or Node.js.
 
 ### Windows PowerShell
 
-1. Install Python 3.11+, Node.js 22.12+, and the .NET 8 SDK or later.
+1. Install Python 3.11+ and Node.js 22.12+. If you use `install.ps1`, also
+   install the .NET 8 SDK or later for its preflight check.
 2. Open PowerShell in the application directory.
 3. Run the development setup script. If your PowerShell policy blocks local
    scripts, the process-scoped bypass below does not change the machine policy:
@@ -160,13 +161,14 @@ they do not install system prerequisites such as Python or Node.js.
    ```
 
    The script creates `.venv`, installs Python and npm dependencies, builds
-   the native dashboard, and starts the desktop app. It does not install
+   Electron dependencies, and starts the desktop app. It does not install
    system packages or request administrator access.
 4. On first launch, enter the account token in Aria's setup window. Choose
    whether to remember it on this device. Aria verifies the account before
    starting the runtime.
-5. When startup completes, use the native dashboard. Select **Browser panel**
-   or **Website** to open those separate pages in the system browser.
+5. When startup completes, use the Electron desktop app. Open the browser
+   dashboard from its menu when you need the full browser-based control
+   surface.
 
 To perform setup manually instead of running the script:
 
@@ -179,9 +181,8 @@ npm ci
 npm start
 ```
 
-`npm start` invokes the native build script before starting Electron. On
-Windows that script publishes the WinUI app; the Electron launcher then starts
-or discovers the local service and launches the native UI.
+`npm start` starts the Electron desktop app, which starts or discovers the
+local service and opens the dashboard.
 
 ### Linux or macOS
 
@@ -245,41 +246,8 @@ dashboard account for that instance. Public pages such as the home page and
 documentation are separate from the protected dashboard.
 
 The browser dashboard remains HTML-based and can be used independently of the
-desktop app. It provides the wider web control surface; the native Windows
-dashboard does not render its HTML inside the app.
-
-### Windows native dashboard
-
-The Windows shell starts a local Python service and opens the native WinUI
-dashboard. Its pages use authenticated local API requests. If Aria started
-the service itself, it uses a short-lived one-time localhost token to create
-the desktop owner session. The one-time token is removed from the environment
-after use and is not written to the desktop log.
-
-If the app discovers a service already running on the machine, it does not
-silently bypass that service's login. Sign in with that service's dashboard
-account instead.
-
-Native sections:
-
-| Section | What it does |
-| --- | --- |
-| Overview | Shows runtime connection, uptime, command, account, and hosted-client summaries. |
-| Hosted instances | Connects, views, restarts, and disconnects hosted clients. |
-| Profile and friends | Shows the signed-in dashboard profile and available friend data. |
-| Access | Shows hosted-account access and offers actions permitted to the signed-in user. |
-| Status | Updates presence status, client appearance, and AFK mode. |
-| Presence studio | Displays the current activity and applies or stops a composed activity. |
-| Commands | Lists available commands, descriptions, aliases, and recent-use badges. |
-| Activity feed | Shows recent command entries with status and duration indicators. |
-| Analytics and Nitro | Displays the data returned by the corresponding local APIs. |
-| Message logger | Configures logging and displays recent in-memory events. |
-| Command controls | Updates supported anti-GC and auto-reply controls. |
-| Settings and runtime logs | Updates prefix/response cleanup settings and displays recent log output. |
-| Owner tools | Provides owner account and password-reset actions to authorized owners. |
-
-Lists in the native UI are intentionally bounded for responsiveness. Use the
-browser dashboard for the complete or more advanced web surfaces.
+Electron desktop app. The desktop app opens this dashboard in its own window;
+use the in-app menu to open it in your system browser when needed.
 
 ### Where account tokens are stored
 
@@ -289,12 +257,10 @@ save it in `config.json`. Treat the application-data directory as private
 regardless: it contains account and runtime state. Do not send its contents to
 other people.
 
-## Windows installer: build step by step
+## Build a Windows Electron installer
 
-Build the WinUI application and Windows installer on a Windows PC. The WinUI
-XAML compiler is Windows-specific. Running `npm run build:native` on Linux or
-macOS intentionally skips the native build; it is not evidence that the
-Windows app compiled successfully.
+Build the Electron installer on Windows. The installer bundles the Electron
+desktop app and its Python backend; no separate dashboard build is needed.
 
 ### 1. Install build tools
 
@@ -303,7 +269,6 @@ Install:
 - Git for Windows, if you need to clone the repository.
 - Node.js 22.12 or later (npm is included).
 - Python 3.11 and the Python Launcher (`py`).
-- The .NET 8 SDK or later.
 
 Open a new PowerShell window and verify the tools:
 
@@ -311,7 +276,6 @@ Open a new PowerShell window and verify the tools:
 node --version
 npm --version
 py -3.11 --version
-dotnet --version
 ```
 
 ### 2. Clone the repository and enter the application directory
@@ -369,18 +333,9 @@ install` and commit both files.
 npm run dist
 ```
 
-The script builds the PyInstaller backend, publishes the self-contained
-Windows WinUI app, and asks electron-builder to create the NSIS installer. The
-first build may download dependencies and take several minutes.
-
-To build only the native WinUI app:
-
-```powershell
-npm run build:native
-```
-
-The native output is placed in `build\native`. To build only the Python
-backend:
+The script builds the Python backend with PyInstaller and packages the
+Electron app with electron-builder. The first build may download dependencies
+and take several minutes. To build only the Python backend:
 
 ```powershell
 npm run build:backend
@@ -401,8 +356,8 @@ and desktop shortcuts. An unsigned personal build can display a Windows
 publisher warning; install only builds you trust.
 
 Launch Aria from a shortcut. On first launch, complete token setup. The
-installed application includes its Python backend and native dashboard; the
-build tools are not required on the target PC.
+installed application includes Electron and its Python backend; the build
+tools are not required on the target PC.
 
 ### Automated Windows build
 
@@ -442,9 +397,6 @@ Check Electron JavaScript syntax:
 ```bash
 node --check electron/main.cjs
 node --check electron/preload.cjs
-node --check electron/startup.js
-node --check electron/token-setup.js
-node --check scripts/build-native.cjs
 ```
 
 Check the web dashboard JavaScript:
@@ -454,9 +406,7 @@ node --check web_ui/static/js/script.js
 node --check web_ui/static/js/docs_index.js
 ```
 
-On Windows, `npm run build:native` builds the WinUI app, and `npm run dist`
-validates the full packaged installer path. On non-Windows systems the native
-build script reports that it skipped WinUI.
+On Windows, `npm run dist` builds and packages the Electron desktop app.
 
 Before sending changes for review, inspect the working tree and check patch
 whitespace:
@@ -908,8 +858,7 @@ instead.
 | Electron cannot find Python | Set `ARIA_PYTHON` to the absolute path of the project's virtual-environment interpreter before `npm start`. |
 | Dashboard does not start | Check whether ports 8080–8084 are in use, then inspect the terminal or `aria-desktop.log`. |
 | Dashboard opens but requires login | This is expected when Aria connects to an already-running service. Sign in with that service's dashboard account. |
-| Native window is missing from a Windows build | On Windows, run `npm run build:native` and inspect its output. Linux/macOS intentionally skip WinUI compilation. |
-| WinUI XAML compiler fails | Build on Windows with the .NET 8 SDK or later; the WinUI compiler cannot be run on Linux or macOS. |
+| Electron window does not open | Check the terminal output or `aria-desktop.log`, then confirm the release package finished building successfully. |
 | Hosted account remains offline after restart | Refresh Hosted instances, read the instance's connection error, and inspect `hosted_logs/hosted_<id>.log`. |
 | Installer is missing | Confirm `npm run dist` completed successfully, then inspect `build/` and `release/` for build errors or output. |
 
@@ -931,7 +880,6 @@ repository/
     ├── webpanel.py          Local dashboard API and web routes
     ├── web_ui/              Browser dashboard and static assets
     ├── electron/            Desktop launcher, setup, and preload
-    ├── Aria.Native/         Native Windows WinUI application
     ├── aria_backend/        Separate backend components
     ├── host.py              Hosted process manager
     ├── install.ps1          Windows development setup and launch
