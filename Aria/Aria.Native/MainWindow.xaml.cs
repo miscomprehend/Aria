@@ -1910,5 +1910,3 @@ public sealed partial class MainWindow : Window
 }
 
 internal sealed record CommandHit(string Name, string Description, string Prefix);
-
-internal sealed record CommandHit(string Name, string Description, string Prefix);
