@@ -405,21 +405,22 @@ class InstanceSingletonManager:
 
         if not self._try_lock(fd):
             try:
-                fd.seek(0)
-                self.holder = json.loads(fd.read() or "{}")
+                with open(lock_file + ".json", "r", encoding="utf-8") as meta:
+                    self.holder = json.loads(meta.read() or "{}")
             except Exception:
                 self.holder = {}
             fd.close()
             return False
 
-        fd.seek(0)
-        fd.truncate()
-        fd.write(json.dumps({
-            "instance_id": self.instance_id,
-            "pid": os.getpid(),
-            "started": time.time(),
-        }))
-        fd.flush()
+        try:
+            with open(lock_file + ".json", "w", encoding="utf-8") as meta:
+                meta.write(json.dumps({
+                    "instance_id": self.instance_id,
+                    "pid": os.getpid(),
+                    "started": time.time(),
+                }))
+        except OSError:
+            pass
         self._fd = fd
         self.lock_file = lock_file
         return True
@@ -430,8 +431,6 @@ class InstanceSingletonManager:
         if fd is None:
             return
         try:
-            fd.seek(0)
-            fd.truncate()
             self._unlock(fd)
         except Exception:
             pass
@@ -439,4 +438,10 @@ class InstanceSingletonManager:
             fd.close()
         except Exception:
             pass
+        if self.lock_file:
+            try:
+                import os
+                os.remove(self.lock_file + ".json")
+            except OSError:
+                pass
         self.lock_file = None
