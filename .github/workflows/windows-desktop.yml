@@ -57,6 +57,9 @@ jobs:
                   if image.format != 'ICO':
                       raise SystemExit(f'{path} must be an ICO')
           "
+      - name: Run Python tests
+        working-directory: Aria
+        run: python -m unittest discover -v
       - name: Build Windows installer and native dashboard
         working-directory: Aria
         run: npm run dist

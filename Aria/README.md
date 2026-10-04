@@ -396,9 +396,10 @@ build tools are not required on the target PC.
 The repository workflow at
 [`../.github/workflows/windows-desktop.yml`](../.github/workflows/windows-desktop.yml)
 runs on Windows for relevant pushes, pull requests, or manual dispatch. It
-checks icon assets, runs `npm run dist`, and uploads the generated installer
-as a workflow artifact. Inspect the workflow run and download the artifact
-from its **Artifacts** section.
+checks icon assets, runs the Python unittest suite, builds the installer with
+`npm run dist`, and uploads the generated installer as a workflow artifact.
+Inspect the workflow run and download the artifact from its **Artifacts**
+section.
 
 ## Test and verify changes
 
