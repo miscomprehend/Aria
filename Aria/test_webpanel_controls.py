@@ -247,12 +247,12 @@ class WebPanelControlTests(unittest.TestCase):
             {
                 "sha": latest_commit,
                 "commit": {"message": "Improve dashboard version display", "author": {"date": "2026-10-02T00:00:00Z"}},
-                "html_url": f"https://github.com/misconsiderations/Aria/commit/{latest_commit}",
+                "html_url": f"https://github.com/miscomprehend/Aria/commit/{latest_commit}",
             },
             {
                 "sha": local_commit,
                 "commit": {"message": "Previous commit", "author": {"date": "2026-10-01T00:00:00Z"}},
-                "html_url": f"https://github.com/misconsiderations/Aria/commit/{local_commit}",
+                "html_url": f"https://github.com/miscomprehend/Aria/commit/{local_commit}",
             },
         ]
         panel._update_info_cache = None

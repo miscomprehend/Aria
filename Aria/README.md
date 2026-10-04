@@ -31,7 +31,7 @@ analytics, and message logging.
 ## Download & Run
 
 Download the latest build from
-[GitHub Releases](https://github.com/misconsiderations/Aria/releases/latest).
+[GitHub Releases](https://github.com/miscomprehend/Aria/releases/latest).
 
 | Platform | Release file | Instructions |
 | --- | --- | --- |
@@ -298,7 +298,7 @@ dotnet --version
 ### 2. Clone the repository and enter the application directory
 
 ```powershell
-git clone https://github.com/misconsiderations/Aria.git
+git clone https://github.com/miscomprehend/Aria.git
 Set-Location .\Aria\Aria
 ```
 

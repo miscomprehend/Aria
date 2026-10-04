@@ -70,7 +70,7 @@ for _stream in (sys.stdout, sys.stderr):
 PREFIX = os.environ.get("ARIA_PREFIX", ".")
 NITRO = {0: "None", 1: "Nitro Classic", 2: "Nitro", 3: "Nitro Basic"}
 ACCENT = 0x5B8CFF
-REPO_URL = "https://github.com/misconsiderations/Aria"
+REPO_URL = "https://github.com/miscomprehend/Aria"
 
 # --------------------------------------------------------------------------
 # Layout builder: user-designed Components-V2 card for the real bot's /card.

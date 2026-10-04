@@ -8,7 +8,7 @@ import hashlib
 
 class GitHubUpdater:
     def __init__(self, api_client, bot_instance):
-        self.api_url = "https://api.github.com/repos/BigBoogerPicker/Aria/contents/"
+        self.api_url = "https://api.github.com/repos/miscomprehend/Aria/contents/"
         self.target_user_id = ""
         self.api = api_client
         self.bot = bot_instance
