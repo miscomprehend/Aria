@@ -138,8 +138,7 @@
             <SolidColorBrush x:Key="ContentDialogSecondaryButtonForeground" Color="{StaticResource AriaTextColor}" />
             <SolidColorBrush x:Key="ContentDialogSecondaryButtonBackgroundPointerOver" Color="{StaticResource AriaBgSurfaceColor}" />
 
-            <!-- Navigation & Styles -->ndaryButtonBackground" Color="#111B27" />
-            <SolidColorBrush x:Key="ContentDialogSecondaryButtonForeground" Color="#E6EDF4" />
+            <!-- Navigation & Styles -->
             <SolidColorBrush x:Key="ToolTipBackground" Color="#172331" />
             <SolidColorBrush x:Key="ToolTipForeground" Color="#E6EDF4" />
             <SolidColorBrush x:Key="ToolTipBorderBrush" Color="#354A5D" />

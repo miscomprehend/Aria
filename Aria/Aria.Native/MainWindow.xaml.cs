@@ -811,7 +811,7 @@ public sealed partial class MainWindow : Window
         PageContent.Children.Add(CreatePanel("Recent activity", rows));
     }
 
-    private static Border CreateBadge(string text, Microsoft.UI.Color color) => new()
+    private static Border CreateBadge(string text, Windows.UI.Color color) => new()
     {
         Background = new Microsoft.UI.Xaml.Media.SolidColorBrush(color),
         BorderBrush = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["AriaBorderBrush"],
