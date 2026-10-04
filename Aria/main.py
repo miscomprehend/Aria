@@ -1300,8 +1300,23 @@ def main():
         print(f"Edit {config.config_file} and add your token")
         print("Web panel is running at http://127.0.0.1:8080 for configuration")
         os.makedirs(os.path.dirname(config.config_file), exist_ok=True)
-        with open(config.config_file, 'w') as f:
-            json.dump({"token": "token here", "prefix": ";"}, f, indent=4)
+        starter = {}
+        try:
+            with open(config.config_file, 'r', encoding='utf-8') as f:
+                starter = json.load(f)
+        except (OSError, ValueError):
+            pass
+        if not isinstance(starter, dict):
+            starter = {}
+        for key, value in (
+            ("token", "token here"),
+            ("prefix", ";"),
+            ("captcha_api_key", ""),
+            ("captcha_provider", "nocaptchaai"),
+        ):
+            starter.setdefault(key, value)
+        with open(config.config_file, 'w', encoding='utf-8') as f:
+            json.dump(starter, f, indent=4)
             print(f"Created {config.config_file} - edit it with your token")
         return
     
