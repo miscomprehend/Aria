@@ -1,4 +1,7 @@
+import contextlib
+import io
 import json
+import os
 import time
 import re
 import threading
@@ -188,6 +191,7 @@ class DiscordAPIClient:
         self._latency_samples = deque(maxlen=25)
         # Global message rate limiter: 30 messages per minute (more conservative)
         self.message_timestamps = deque(maxlen=60)
+        self._self_throttle_until = 0.0
         # Global reaction rate limiter: 60 reactions per minute (more conservative)
         self.reaction_timestamps = deque(maxlen=60)
         # Circuit breaker for safety
@@ -196,6 +200,176 @@ class DiscordAPIClient:
         self.circuit_open = False
         # Health monitor reference (set by bot after initialization)
         self.health_monitor = None
+        self._captcha_provider_name: Optional[str] = None
+
+    def _extract_captcha_challenge(self, response_data: Dict[str, Any]) -> Optional[Dict[str, str]]:
+        if not isinstance(response_data, dict):
+            return None
+        sitekey = str(response_data.get("captcha_sitekey") or "").strip()
+        if not sitekey:
+            return None
+        service = str(response_data.get("captcha_service") or "hcaptcha").strip().lower()
+        return {
+            "service": service,
+            "sitekey": sitekey,
+            "rqdata": str(response_data.get("captcha_rqdata") or "").strip(),
+            "rqtoken": str(response_data.get("captcha_rqtoken") or "").strip(),
+            "session_id": str(response_data.get("captcha_session_id") or "").strip(),
+        }
+
+    def _has_captcha_indicators(self, response_data: Dict[str, Any]) -> bool:
+        if not isinstance(response_data, dict):
+            return False
+        verification_fields = (
+            "captcha_key",
+            "captcha_sitekey",
+            "captcha_service",
+            "captcha_rqdata",
+            "captcha_rqtoken",
+            "captcha_required",
+        )
+        return any(response_data.get(field) for field in verification_fields)
+
+    def _get_captcha_provider_candidates(self) -> List[Dict[str, str]]:
+        providers: List[Dict[str, str]] = []
+        configured_key = ""
+        configured_provider = "nocaptchaai"
+        try:
+            import config as aria_config
+            with contextlib.redirect_stdout(io.StringIO()):
+                settings = aria_config.Config()
+            configured_key = str(settings.get("captcha_api_key") or "").strip()
+            configured_provider = str(settings.get("captcha_provider") or "nocaptchaai").strip().lower()
+        except Exception:
+            pass
+        nocaptcha_key = str(os.environ.get("NOCAPTCHAAI_API_KEY") or "").strip()
+        yescaptcha_key = str(os.environ.get("YES_CAPTCHA_API_KEY") or "").strip()
+        if configured_key:
+            if configured_provider == "yescaptcha":
+                yescaptcha_key = yescaptcha_key or configured_key
+            else:
+                nocaptcha_key = nocaptcha_key or configured_key
+        if nocaptcha_key:
+            providers.append({
+                "name": "NoCaptchaAI",
+                "base_url": "https://api.nocaptchaai.com",
+                "client_key": nocaptcha_key,
+            })
+        if yescaptcha_key:
+            providers.append({
+                "name": "YesCaptcha",
+                "base_url": "https://api.yescaptcha.com",
+                "client_key": yescaptcha_key,
+            })
+        return providers
+
+    def _create_captcha_task(self, provider: Dict[str, str], challenge: Dict[str, str]) -> Optional[str]:
+        payload = {
+            "clientKey": provider["client_key"],
+            "task": {
+                "type": "HCaptchaTaskProxyless",
+                "websiteURL": "https://discord.com",
+                "websiteKey": challenge["sitekey"],
+                "userAgent": self.header_spoofer.profile.user_agent,
+                "isInvisible": False,
+            },
+        }
+        if challenge.get("rqdata"):
+            payload["task"]["rqdata"] = challenge["rqdata"]
+        try:
+            response = self.session.post(
+                f'{provider["base_url"]}/createTask',
+                json=payload,
+                headers={"Content-Type": "application/json", "Accept": "application/json"},
+                timeout=30,
+            )
+        except Exception as exc:
+            print(f'[CAPTCHA] {provider["name"]} createTask request failed: {exc}')
+            return None
+
+        if not response or getattr(response, "status_code", 0) != 200:
+            print(f'[CAPTCHA] {provider["name"]} createTask failed with HTTP {getattr(response, "status_code", "no response")}')
+            return None
+
+        try:
+            payload_data = response.json()
+        except Exception as exc:
+            print(f'[CAPTCHA] {provider["name"]} createTask invalid JSON response: {exc}')
+            return None
+
+        if payload_data.get("errorId"):
+            print(f'[CAPTCHA] {provider["name"]} createTask error: {payload_data}')
+            return None
+
+        task_id = str(payload_data.get("taskId") or "").strip()
+        if not task_id:
+            print(f'[CAPTCHA] {provider["name"]} createTask missing taskId: {payload_data}')
+            return None
+        return task_id
+
+    def _poll_captcha_result(self, provider: Dict[str, str], task_id: str, timeout_seconds: float = 120.0) -> Optional[str]:
+        deadline = time.time() + timeout_seconds
+        while time.time() < deadline:
+            payload = {
+                "clientKey": provider["client_key"],
+                "taskId": task_id,
+            }
+            try:
+                response = self.session.post(
+                    f'{provider["base_url"]}/getTaskResult',
+                    json=payload,
+                    headers={"Content-Type": "application/json", "Accept": "application/json"},
+                    timeout=30,
+                )
+            except Exception as exc:
+                print(f'[CAPTCHA] {provider["name"]} getTaskResult request failed: {exc}')
+                time.sleep(3)
+                continue
+
+            if not response or getattr(response, "status_code", 0) != 200:
+                print(f'[CAPTCHA] {provider["name"]} getTaskResult failed with HTTP {getattr(response, "status_code", "no response")}')
+                time.sleep(3)
+                continue
+
+            try:
+                payload_data = response.json()
+            except Exception as exc:
+                print(f'[CAPTCHA] {provider["name"]} getTaskResult invalid JSON response: {exc}')
+                time.sleep(3)
+                continue
+
+            if payload_data.get("errorId"):
+                print(f'[CAPTCHA] {provider["name"]} getTaskResult error: {payload_data}')
+                return None
+
+            status = str(payload_data.get("status") or "").strip().lower()
+            if status == "ready":
+                solution = payload_data.get("solution") or {}
+                token = str(solution.get("gRecaptchaResponse") or solution.get("token") or "").strip()
+                if token:
+                    return token
+                print(f'[CAPTCHA] {provider["name"]} returned ready status without token')
+                return None
+
+            time.sleep(3)
+
+        print(f'[CAPTCHA] {provider["name"]} timed out waiting for task {task_id}')
+        return None
+
+    def _solve_captcha_challenge(self, challenge: Dict[str, str]) -> Optional[str]:
+        if challenge.get("service") not in {"hcaptcha", ""}:
+            print(f'[CAPTCHA] Unsupported captcha service: {challenge.get("service")}')
+            return None
+
+        for provider in self._get_captcha_provider_candidates():
+            self._captcha_provider_name = provider["name"]
+            task_id = self._create_captcha_task(provider, challenge)
+            if not task_id:
+                continue
+            token = self._poll_captcha_result(provider, task_id)
+            if token:
+                return token
+        return None
 
     def _check_circuit_breaker(self) -> bool:
         """Check if circuit breaker should open due to excessive rate limiting."""
@@ -218,6 +392,20 @@ class DiscordAPIClient:
     def _record_rate_limit_hit(self):
         """Record a rate limit hit for circuit breaker."""
         self.circuit_breaker_hits += 1
+
+    def _self_throttle_wait(self, now: float) -> float:
+        """Pause after a short burst so command spam does not trip automod.
+
+        Eight sends inside ten seconds starts a thirty-second cooldown. A
+        cooldown already in progress returns the time still remaining.
+        """
+        if now < self._self_throttle_until:
+            return self._self_throttle_until - now
+        recent = [stamp for stamp in self.message_timestamps if now - stamp <= 10.0]
+        if len(recent) >= 8:
+            self._self_throttle_until = now + 30.0
+            return 30.0
+        return 0.0
 
     def _get_exponential_backoff_wait(self, timestamps: deque, limit: int, base_wait: float = 1.0) -> Optional[float]:
         """Calculate exponential backoff wait time."""
@@ -249,6 +437,7 @@ class DiscordAPIClient:
             "circuit_breaker_hits": self.circuit_breaker_hits,
             "verification_blocked": self.verification_blocked,
             "messages_last_minute": len([t for t in self.message_timestamps if current_time - t <= 60]),
+            "self_throttle_remaining": max(0.0, self._self_throttle_until - current_time),
             "reactions_last_minute": len([t for t in self.reaction_timestamps if current_time - t <= 60]),
             "time_since_circuit_reset": current_time - self.last_circuit_reset
         }
@@ -466,27 +655,51 @@ class DiscordAPIClient:
                 except Exception:
                     response_data = {}
 
-            # Do not solve, spoof, or continue sending after Discord requests verification.
             if response.status_code in {400, 403}:
                 try:
-                    verification_fields = {
-                        "captcha_key",
-                        "captcha_sitekey",
-                        "captcha_service",
-                        "captcha_rqdata",
-                        "captcha_rqtoken",
-                        "captcha_required",
-                    }
-                    if any(response_data.get(field) for field in verification_fields):
+                    challenge = self._extract_captcha_challenge(response_data)
+                    if challenge:
+                        if retry_count < max_retries:
+                            solved_token = self._solve_captcha_challenge(challenge)
+                            if solved_token:
+                                captcha_headers = dict(headers or {})
+                                captcha_headers["X-Captcha-Key"] = solved_token
+                                if challenge.get("rqtoken"):
+                                    captcha_headers["X-Captcha-Rqtoken"] = challenge["rqtoken"]
+                                if challenge.get("session_id"):
+                                    captcha_headers["X-Captcha-Session-Id"] = challenge["session_id"]
+
+                                provider_name = self._captcha_provider_name or "captcha provider"
+                                print(f"[CAPTCHA] Solved with {provider_name}; retrying {endpoint} ({retry_count + 1}/{max_retries})")
+                                return self.request(
+                                    method,
+                                    endpoint,
+                                    data=data,
+                                    params=params,
+                                    headers=captcha_headers,
+                                    max_retries=max_retries,
+                                    retry_count=retry_count + 1,
+                                    json=json,
+                                    files=files,
+                                    timeout=timeout,
+                                    _base_url=_base_url,
+                                    _global_retry=_global_retry + 1,
+                                )
+
                         self.verification_blocked = True
                         self.verification_endpoint = endpoint
-                        print(f"[AUTH-CHALLENGE] Discord requires verification for {endpoint}; request was not retried.")
+                        print(f"[AUTH-CHALLENGE] Discord requires verification for {endpoint}; captcha solve failed or unavailable.")
                         return response
-                    else:
-                        if response.status_code == 400:
-                            error_code = response_data.get("code", 0)
-                            error_msg = response_data.get("message", str(response_data))
-                            print(f"[API-ERROR] {endpoint}: [{error_code}] {error_msg}")
+                    if self._has_captcha_indicators(response_data):
+                        self.verification_blocked = True
+                        self.verification_endpoint = endpoint
+                        print(f"[AUTH-CHALLENGE] Discord requires verification for {endpoint}; challenge is missing sitekey.")
+                        return response
+
+                    if response.status_code == 400:
+                        error_code = response_data.get("code", 0)
+                        error_msg = response_data.get("message", str(response_data))
+                        print(f"[API-ERROR] {endpoint}: [{error_code}] {error_msg}")
                 except Exception:
                     pass
 
@@ -577,8 +790,16 @@ class DiscordAPIClient:
             print("[CIRCUIT-BREAKER] Message blocked - circuit is open")
             return None
         
-        # Global message rate limiting: max 30 messages per minute with exponential backoff
+        # Burst pause: 8 messages inside 10s is enough to trip Discord automod
+        # even when the per-minute cap has not been reached yet.
         current_time = time.time()
+        burst_wait = self._self_throttle_wait(current_time)
+        if burst_wait:
+            print(f"[SELF-THROTTLE] Pausing outbound messages for {burst_wait:.1f}s")
+            time.sleep(burst_wait)
+            current_time = time.time()
+
+        # Global message rate limiting: max 30 messages per minute with exponential backoff
         wait_time = self._get_exponential_backoff_wait(self.message_timestamps, 30, 1.0)
         if wait_time:
             print(f"[GLOBAL-RATE-LIMIT] Message rate limit reached, waiting {wait_time:.1f}s")
@@ -682,8 +903,23 @@ class DiscordAPIClient:
         self.reaction_timestamps.append(current_time)
         
         encoded_emoji = quote(emoji)
-        response = self.request("PUT", f"/channels/{channel_id}/messages/{message_id}/reactions/{encoded_emoji}/@me")
+        response = self.request(
+            "PUT",
+            f"/channels/{channel_id}/messages/{message_id}/reactions/{encoded_emoji}/@me",
+            headers={"referer": f"https://discord.com/channels/@me/{channel_id}"},
+        )
         return response.status_code == 204 if response else False
+
+    def redeem_gift_code(self, code: str) -> Optional[Any]:
+        code = str(code or "").strip()
+        if not code:
+            return None
+        return self.request(
+            "POST",
+            f"/entitlements/gift-codes/{code}/redeem",
+            data={},
+            headers={"referer": "https://discord.com/store"},
+        )
     
     def create_dm(self, user_id: str) -> Optional[Dict[str, Any]]:
         for channel in self.get_dm_channels(force=False):

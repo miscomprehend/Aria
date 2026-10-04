@@ -3,8 +3,11 @@ using System.Diagnostics;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Input;
 using Microsoft.UI;
 using Windows.Graphics;
+using Windows.System;
+using Windows.UI.Core;
 using System.IO;
 using Microsoft.UI.Xaml.Media.Imaging;
 
@@ -17,6 +20,8 @@ public sealed partial class MainWindow : Window
     private readonly string _baseUrl;
     private readonly bool _needsTokenSetup;
     private string _page = "overview";
+    private string _commandFilter = "";
+    private List<CommandHit> _commandCatalog = new();
 
     public MainWindow()
     {
@@ -43,7 +48,37 @@ public sealed partial class MainWindow : Window
         appWindow.Resize(_needsTokenSetup ? new SizeInt32(560, 640) : new SizeInt32(1360, 860));
         appWindow.SetIcon(Path.Combine(AppContext.BaseDirectory, "aria.ico"));
         _baseUrl = Environment.GetEnvironmentVariable("ARIA_DASHBOARD_URL") ?? "";
+        AnnotateShortcuts();
         _ = InitializeAsync();
+    }
+
+    private void AnnotateShortcuts()
+    {
+        var shortcuts = new Dictionary<string, string>
+        {
+            ["overview"] = "1",
+            ["logs"] = "2",
+            ["presence"] = "3",
+            ["commands"] = "4",
+            ["settings"] = ",",
+        };
+        foreach (var button in Navigation.Children.OfType<Button>())
+        {
+            if (button.Tag is not string tag || !shortcuts.TryGetValue(tag, out var shortcut))
+                continue;
+            if (button.Content is not Grid grid)
+                continue;
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            var hint = new TextBlock
+            {
+                Text = shortcut,
+                FontSize = 11,
+                VerticalAlignment = VerticalAlignment.Center,
+                Foreground = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["AriaMutedBrush"],
+            };
+            Grid.SetColumn(hint, grid.ColumnDefinitions.Count - 1);
+            grid.Children.Add(hint);
+        }
     }
 
     private async Task InitializeAsync()
@@ -415,7 +450,7 @@ public sealed partial class MainWindow : Window
             ("Registration", ReadBoolean(root, "registration_enabled") ? "Open" : "Restricted"),
             ("Access", ReadBoolean(root, "is_owner") ? "Owner" : "Account owner")));
 
-        var registerToken = new PasswordBox { Header = "Discord token", PasswordRevealMode = PasswordRevealMode.Peek };
+        var registerToken = new PasswordBox { Header = "Discord token", PasswordRevealMode = PasswordRevealMode.Visible };
         var prefix = new TextBox { Header = "Command prefix", Text = ";", Width = 130 };
         var register = new Button { Content = "Register account", HorizontalAlignment = HorizontalAlignment.Left };
         register.Click += async (_, _) =>
@@ -699,8 +734,24 @@ public sealed partial class MainWindow : Window
             ("Commands", ReadText(data, "total", commands.GetArrayLength().ToString())),
             ("Prefix", ReadText(data, "prefix", "—"))));
 
+        var filterBox = new TextBox
+        {
+            PlaceholderText = "Filter commands",
+            Text = _commandFilter,
+        };
+        PageContent.Children.Add(filterBox);
+
         var cards = new StackPanel { Spacing = 10 };
-        foreach (var command in commands.EnumerateArray().Take(150))
+        var catalog = commands.EnumerateArray().ToList();
+        void RenderCatalog()
+        {
+            cards.Children.Clear();
+            var needle = _commandFilter.Trim();
+            var filtered = catalog.Where(command =>
+                needle.Length == 0
+                || ReadText(command, "name", "").Contains(needle, StringComparison.OrdinalIgnoreCase)
+                || ReadText(command, "description", "").Contains(needle, StringComparison.OrdinalIgnoreCase));
+            foreach (var command in filtered.Take(150))
         {
             var name = ReadText(command, "name", "command");
             var header = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
@@ -743,13 +794,22 @@ public sealed partial class MainWindow : Window
             }
             cards.Children.Add(CreatePanel(name, content));
         }
-        if (commands.GetArrayLength() == 0)
-            cards.Children.Add(new TextBlock
-            {
-                Text = ReadText(data, "error", "No commands are available."),
-                TextWrapping = TextWrapping.Wrap,
-                Foreground = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["AriaMutedBrush"],
-            });
+            if (cards.Children.Count == 0)
+                cards.Children.Add(new TextBlock
+                {
+                    Text = catalog.Count == 0
+                        ? ReadText(data, "error", "No commands are available.")
+                        : "No commands match that filter.",
+                    TextWrapping = TextWrapping.Wrap,
+                    Foreground = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["AriaMutedBrush"],
+                });
+        }
+        filterBox.TextChanged += (_, _) =>
+        {
+            _commandFilter = filterBox.Text;
+            RenderCatalog();
+        };
+        RenderCatalog();
         PageContent.Children.Add(CreatePanel("Command catalog", cards));
     }
 
@@ -927,34 +987,382 @@ public sealed partial class MainWindow : Window
     {
         using var summary = await _client.GetAsync("/api/max/system-summary");
         using var bot = await _client.GetAsync("/api/bot");
-        var summaryData = summary.RootElement.GetProperty("summary");
-        var botData = bot.RootElement.GetProperty("data");
+        JsonDocument? logs = null;
+        try
+        {
+            logs = await _client.GetAsync("/api/logs?lines=8");
+        }
+        catch (Exception)
+        {
+            logs = null;
+        }
 
-        var connected = ReadBoolean(summaryData, "connected");
-        PageContent.Children.Add(CreateMetricGrid(
-            ("Gateway", connected ? "Connected" : "Disconnected"),
-            ("Uptime", ReadText(summaryData, "uptime", "—")),
-            ("Commands", ReadText(summaryData, "commands_total", "0")),
-            ("Hosted clients", $"{ReadText(summaryData, "hosted_active", "0")} / {ReadText(summaryData, "hosted_total", "0")}")));
-        PageContent.Children.Add(CreateCard("Account", new[]
+        using (logs)
         {
-            ("Username", ReadText(botData, "username", "Aria")),
-            ("Account ID", ReadText(botData, "user_id", "—")),
-            ("Connection", connected ? "Gateway session active" : "Waiting for gateway connection"),
-        }));
-        PageContent.Children.Add(CreateCard("Desktop dashboard", new[]
+            var summaryData = summary.RootElement.GetProperty("summary");
+            var botData = bot.RootElement.GetProperty("data");
+            var connected = ReadBoolean(summaryData, "connected") || ReadBoolean(botData, "connected");
+            var username = ReadText(botData, "username", "there");
+            var prefix = ReadText(botData, "prefix", ";");
+            var latency = ReadText(botData, "gateway_latency_ms", "—");
+            if (latency != "—")
+                latency += " ms";
+
+            var welcome = new Grid();
+            welcome.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            welcome.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            var greeting = new StackPanel { Spacing = 4 };
+            greeting.Children.Add(new TextBlock
+            {
+                Text = $"Welcome back, {username}",
+                FontSize = 22,
+                FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+            });
+            greeting.Children.Add(new TextBlock
+            {
+                Text = connected
+                    ? $"Gateway is up · prefix {prefix}"
+                    : "Waiting for the gateway · commands still stay searchable",
+                Foreground = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["AriaMutedBrush"],
+            });
+            welcome.Children.Add(greeting);
+            var search = new Button
+            {
+                Content = "Search commands    Ctrl+K",
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+            search.Click += async (_, _) => await OpenCommandSearchAsync();
+            Grid.SetColumn(search, 1);
+            welcome.Children.Add(search);
+            PageContent.Children.Add(welcome);
+
+            PageContent.Children.Add(CreateMetricGrid(
+                ("Gateway", connected ? "Connected" : "Disconnected"),
+                ("Uptime", ReadText(summaryData, "uptime", ReadText(botData, "uptime", "—"))),
+                ("Latency", latency),
+                ("Commands", ReadText(summaryData, "commands_total", ReadText(botData, "commands_registered", "0")))));
+
+            var layout = new Grid { ColumnSpacing = 12 };
+            layout.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1.2, GridUnitType.Star) });
+            layout.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+
+            var account = CreateCard("Account", new[]
+            {
+                ("Username", username),
+                ("Account ID", ReadText(botData, "user_id", "—")),
+                ("Prefix", prefix),
+                ("Client", ReadText(botData, "client_type", "desktop")),
+                ("Version", ReadText(botData, "ui_version", "—")),
+                ("Hosted", $"{ReadText(summaryData, "hosted_active", "0")} / {ReadText(summaryData, "hosted_total", "0")}"),
+            });
+            layout.Children.Add(account);
+
+            var side = new StackPanel { Spacing = 12 };
+            side.Children.Add(CreateCard("Session", new[]
+            {
+                ("Success rate", $"{ReadDouble(summaryData, "success_rate", 0):0.#}%"),
+                ("Avg response", $"{ReadDouble(summaryData, "avg_response_ms", 0):0.#} ms"),
+                ("Reconnects", ReadText(botData, "reconnect_attempts", "0")),
+                ("Quality", ReadText(botData, "connection_quality", "—")),
+            }));
+
+            var jumps = new StackPanel { Spacing = 8 };
+            jumps.Children.Add(CreateJumpButton("Instances", "hosted"));
+            jumps.Children.Add(CreateJumpButton("Presence", "presence"));
+            jumps.Children.Add(CreateJumpButton("Commands", "commands"));
+            jumps.Children.Add(CreateJumpButton("Settings", "settings"));
+            side.Children.Add(CreatePanel("Quick jumps", jumps));
+
+            var console = new StackPanel { Spacing = 4 };
+            var lines = logs?.RootElement.TryGetProperty("lines", out var logLines) == true
+                && logLines.ValueKind == JsonValueKind.Array
+                ? logLines.EnumerateArray().TakeLast(6).Select(line =>
+                    line.ValueKind == JsonValueKind.String ? line.GetString() ?? "" : line.ToString()).ToList()
+                : new List<string>();
+            if (lines.Count == 0)
+                console.Children.Add(new TextBlock
+                {
+                    Text = "No console lines yet.",
+                    Foreground = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["AriaMutedBrush"],
+                });
+            foreach (var line in lines)
+                console.Children.Add(new TextBlock
+                {
+                    Text = line.Length > 180 ? line[..177] + "..." : line,
+                    FontFamily = new Microsoft.UI.Xaml.Media.FontFamily("Cascadia Mono, Consolas"),
+                    FontSize = 11,
+                    TextTrimming = TextTrimming.CharacterEllipsis,
+                });
+            console.Children.Add(CreateJumpButton("Open full console", "logs"));
+            side.Children.Add(CreatePanel("Console", console));
+
+            side.Children.Add(await CreateQuickTogglesAsync());
+            Grid.SetColumn(side, 1);
+            layout.Children.Add(side);
+            PageContent.Children.Add(layout);
+        }
+    }
+
+    private async Task<Border> CreateQuickTogglesAsync()
+    {
+        var status = new TextBlock
         {
-            ("Interface", "Native WinUI"),
-            ("Backend", new Uri(_baseUrl).Host),
-            ("Rendering", "Windows controls and XAML"),
-        }));
+            Text = "Saved controls only. Presence turns back on with the last activity.",
+            TextWrapping = TextWrapping.Wrap,
+            Foreground = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["AriaMutedBrush"],
+        };
+        var afk = new ToggleSwitch { Header = "AFK", OnContent = "On", OffContent = "Off" };
+        var logger = new ToggleSwitch { Header = "Message logger", OnContent = "On", OffContent = "Off" };
+        var presence = new ToggleSwitch { Header = "Presence", OnContent = "On", OffContent = "Off" };
+        var antiGc = new ToggleSwitch { Header = "Anti group-chat", OnContent = "On", OffContent = "Off" };
+        JsonElement? lastActivity = null;
+        var syncing = true;
+        try
+        {
+            using var afkState = await _client.GetAsync("/api/afk");
+            afk.IsOn = ReadBoolean(afkState.RootElement, "active");
+            using var loggerState = await _client.GetAsync("/api/message-logger");
+            logger.IsOn = loggerState.RootElement.TryGetProperty("config", out var config)
+                && ReadBoolean(config, "enabled");
+            using var rpcState = await _client.GetAsync("/api/rpc");
+            presence.IsOn = ReadBoolean(rpcState.RootElement, "active");
+            if (rpcState.RootElement.TryGetProperty("activity", out var activity) && activity.ValueKind == JsonValueKind.Object)
+                lastActivity = activity.Clone();
+            using var tools = await _client.GetAsync("/api/command-tools");
+            antiGc.IsOn = tools.RootElement.TryGetProperty("anti_gc", out var anti)
+                && ReadBoolean(anti, "enabled");
+        }
+        catch (Exception)
+        {
+            status.Text = "Some controls are unavailable until the runtime is connected.";
+        }
+
+        afk.Toggled += async (_, _) =>
+        {
+            if (syncing) return;
+            await PostQuickToggleAsync(status, "/api/afk", new { action = afk.IsOn ? "enable" : "disable", message = "AFK" });
+        };
+        logger.Toggled += async (_, _) =>
+        {
+            if (syncing) return;
+            await PostQuickToggleAsync(status, "/api/message-logger", new { action = "config", config = new { enabled = logger.IsOn } });
+        };
+        antiGc.Toggled += async (_, _) =>
+        {
+            if (syncing) return;
+            await PostQuickToggleAsync(status, "/api/command-tools", new { action = "antigc_enabled", value = antiGc.IsOn });
+        };
+        presence.Toggled += async (_, _) =>
+        {
+            if (syncing) return;
+            if (!presence.IsOn)
+            {
+                await PostQuickToggleAsync(status, "/api/rpc", new { action = "stop" });
+                return;
+            }
+            if (lastActivity is null)
+            {
+                syncing = true;
+                presence.IsOn = false;
+                syncing = false;
+                status.Text = "Open Presence and save an activity first.";
+                return;
+            }
+            await PostQuickToggleAsync(status, "/api/rpc", new { action = "set", activity = lastActivity.Value });
+        };
+        syncing = false;
+
+        var stack = new StackPanel { Spacing = 8 };
+        stack.Children.Add(status);
+        stack.Children.Add(afk);
+        stack.Children.Add(logger);
+        stack.Children.Add(presence);
+        stack.Children.Add(antiGc);
+        return CreatePanel("Quick controls", stack);
+    }
+
+    private async Task PostQuickToggleAsync(TextBlock status, string path, object body)
+    {
+        try
+        {
+            using var response = await _client.PostAsync(path, body);
+            status.Text = response.RootElement.TryGetProperty("error", out var error)
+                ? error.ToString()
+                : "Updated";
+        }
+        catch (Exception ex)
+        {
+            status.Text = ex.Message;
+        }
+    }
+
+    private Button CreateJumpButton(string label, string page)
+    {
+        var button = new Button
+        {
+            Content = label,
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+        };
+        button.Click += async (_, _) => await LoadPageAsync(page);
+        return button;
+    }
+
+    private async void RootLayout_PreviewKeyDown(object sender, KeyRoutedEventArgs e)
+    {
+        if (StatusOverlay.Visibility == Visibility.Visible)
+            return;
+
+        var ctrl = (Microsoft.UI.Input.InputKeyboardSource.GetKeyStateForCurrentThread(VirtualKey.Control)
+            & CoreVirtualKeyStates.Down) == CoreVirtualKeyStates.Down;
+        if (ctrl && e.Key == VirtualKey.K)
+        {
+            e.Handled = true;
+            await OpenCommandSearchAsync();
+            return;
+        }
+
+        if (CommandSearchOverlay.Visibility == Visibility.Visible && e.Key == VirtualKey.Escape)
+        {
+            e.Handled = true;
+            CloseCommandSearch();
+            return;
+        }
+
+        if (IsTypingInField() || CommandSearchOverlay.Visibility == Visibility.Visible)
+            return;
+
+        var page = e.Key switch
+        {
+            VirtualKey.Number1 or VirtualKey.NumberPad1 => "overview",
+            VirtualKey.Number2 or VirtualKey.NumberPad2 => "logs",
+            VirtualKey.Number3 or VirtualKey.NumberPad3 => "presence",
+            VirtualKey.Number4 or VirtualKey.NumberPad4 => "commands",
+            VirtualKey.OemComma => "settings",
+            _ => "",
+        };
+        if (page.Length == 0)
+            return;
+        e.Handled = true;
+        await LoadPageAsync(page);
+    }
+
+    private bool IsTypingInField()
+    {
+        if (RootLayout.XamlRoot is null)
+            return false;
+        var focused = FocusManager.GetFocusedElement(RootLayout.XamlRoot);
+        return focused is TextBox or PasswordBox or RichEditBox or AutoSuggestBox;
+    }
+
+    private async Task OpenCommandSearchAsync()
+    {
+        CommandSearchOverlay.Visibility = Visibility.Visible;
+        CommandSearchBox.Text = _commandFilter;
+        await EnsureCommandCatalogAsync();
+        RenderCommandSearch(_commandFilter);
+        CommandSearchBox.Focus(FocusState.Programmatic);
+        CommandSearchBox.SelectAll();
+    }
+
+    private void CloseCommandSearch()
+    {
+        CommandSearchOverlay.Visibility = Visibility.Collapsed;
+        CommandSearchResults.Children.Clear();
+    }
+
+    private async Task EnsureCommandCatalogAsync()
+    {
+        if (_commandCatalog.Count > 0)
+            return;
+        using var result = await _client.GetAsync("/api/commands");
+        var data = result.RootElement.GetProperty("data");
+        var prefix = ReadText(data, "prefix", ";");
+        if (!data.TryGetProperty("commands", out var commands) || commands.ValueKind != JsonValueKind.Array)
+            return;
+        _commandCatalog = commands.EnumerateArray().Select(command => new CommandHit(
+            ReadText(command, "name", ""),
+            ReadText(command, "description", ""),
+            prefix)).Where(hit => hit.Name.Length > 0).ToList();
+    }
+
+    private void RenderCommandSearch(string query)
+    {
+        CommandSearchResults.Children.Clear();
+        var needle = query.Trim();
+        var matches = _commandCatalog.Where(hit =>
+            needle.Length == 0
+            || hit.Name.Contains(needle, StringComparison.OrdinalIgnoreCase)
+            || hit.Description.Contains(needle, StringComparison.OrdinalIgnoreCase)).Take(12);
+        foreach (var hit in matches)
+        {
+            var button = new Button
+            {
+                HorizontalAlignment = HorizontalAlignment.Stretch,
+                HorizontalContentAlignment = HorizontalAlignment.Left,
+                Tag = hit.Name,
+            };
+            var label = new StackPanel { Spacing = 2 };
+            label.Children.Add(new TextBlock
+            {
+                Text = hit.Prefix + hit.Name,
+                FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+            });
+            if (hit.Description.Length > 0)
+                label.Children.Add(new TextBlock
+                {
+                    Text = hit.Description,
+                    FontSize = 12,
+                    TextWrapping = TextWrapping.Wrap,
+                    Foreground = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["AriaMutedBrush"],
+                });
+            button.Content = label;
+            button.Click += async (_, _) =>
+            {
+                _commandFilter = hit.Name;
+                CloseCommandSearch();
+                await LoadPageAsync("commands");
+            };
+            CommandSearchResults.Children.Add(button);
+        }
+        if (CommandSearchResults.Children.Count == 0)
+            CommandSearchResults.Children.Add(new TextBlock
+            {
+                Text = "No matching commands.",
+                Foreground = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["AriaMutedBrush"],
+            });
+    }
+
+    private async void CommandSearchBox_TextChanged(object sender, TextChangedEventArgs e)
+    {
+        if (CommandSearchOverlay.Visibility != Visibility.Visible)
+            return;
+        await EnsureCommandCatalogAsync();
+        RenderCommandSearch(CommandSearchBox.Text);
+    }
+
+    private async void CommandSearchBox_KeyDown(object sender, KeyRoutedEventArgs e)
+    {
+        if (e.Key == VirtualKey.Escape)
+        {
+            e.Handled = true;
+            CloseCommandSearch();
+            return;
+        }
+        if (e.Key != VirtualKey.Enter)
+            return;
+        if (CommandSearchResults.Children.OfType<Button>().FirstOrDefault() is not Button first)
+            return;
+        e.Handled = true;
+        _commandFilter = first.Tag as string ?? CommandSearchBox.Text;
+        CloseCommandSearch();
+        await LoadPageAsync("commands");
     }
 
     private async Task LoadHostedAsync()
     {
         using var result = await _client.GetAsync("/api/hosted");
         var hosted = result.RootElement.GetProperty("hosted");
-        var tokenBox = new PasswordBox { Header = "Discord account token", PasswordRevealMode = PasswordRevealMode.Peek };
+        var tokenBox = new PasswordBox { Header = "Discord account token", PasswordRevealMode = PasswordRevealMode.Visible };
         var prefixBox = new TextBox { Header = "Command prefix", Text = ";", Width = 140 };
         var fields = new Grid { ColumnSpacing = 12 };
         fields.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(3, GridUnitType.Star) });
@@ -1500,3 +1908,7 @@ public sealed partial class MainWindow : Window
             ? result
             : fallback;
 }
+
+internal sealed record CommandHit(string Name, string Description, string Prefix);
+
+internal sealed record CommandHit(string Name, string Description, string Prefix);

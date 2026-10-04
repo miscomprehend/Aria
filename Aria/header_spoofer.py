@@ -4,6 +4,7 @@ import json
 import base64
 import ssl
 import re
+import hashlib
 from typing import Dict, Any, Optional
 
 # Try to import curl_cffi, fallback to requests if not available
@@ -323,6 +324,7 @@ class HeaderSpoofer:
         self.profile = BrowserProfile()
         self.build_number = get_latest_build()  # Fetched live; falls back to 305124
         self._cached_super_properties: Optional[str] = None  # Stable per session
+        self._cached_super_properties_hash: Optional[str] = None
         self.session: Any = self._create_session()
         self.proxy_manager = None
         self._init_proxy_manager()
@@ -477,7 +479,19 @@ class HeaderSpoofer:
 
         props_json = json.dumps(props, separators=(',', ':'), ensure_ascii=True)
         self._cached_super_properties = base64.b64encode(props_json.encode()).decode()
+        self._cached_super_properties_hash = hashlib.md5(props_json.encode()).hexdigest()[:8]
         return self._cached_super_properties
+
+    def _get_super_properties_hash(self) -> str:
+        if self._cached_super_properties_hash is not None:
+            return self._cached_super_properties_hash
+        self._generate_super_properties()
+        return self._cached_super_properties_hash or ""
+
+    def _generate_track_header(self, fingerprint: str) -> str:
+        window = int(time.time() // 30)
+        seed = f"{fingerprint}:{self.profile.browser_version}:{window}"
+        return hashlib.md5(seed.encode()).hexdigest()
 
     def _generate_context_properties(self) -> str:
         """Generate X-Context-Properties header for Discord API requests."""
@@ -495,7 +509,13 @@ class HeaderSpoofer:
         major_version = self.profile.browser_version.split('.')[0]
         return f'"Chromium";v="{major_version}", "Google Chrome";v="{major_version}", "Not(A:Brand";v="99"'
 
-    def get_protected_headers(self, token: Optional[str] = None, rq_token: Optional[str] = None, captcha_key: Optional[str] = None) -> Dict[str, str]:
+    def get_protected_headers(
+        self,
+        token: Optional[str] = None,
+        rq_token: Optional[str] = None,
+        captcha_key: Optional[str] = None,
+        captcha_session_id: Optional[str] = None,
+    ) -> Dict[str, str]:
         """Get fully protected headers for Discord API with modern spoofing"""
         if token:
             self.token = token
@@ -520,6 +540,8 @@ class HeaderSpoofer:
             ("X-Discord-Locale", self.profile.locale),
             ("X-Discord-Timezone", self.profile.timezone),
             ("X-Super-Properties", self._generate_super_properties()),
+            ("X-Super-Properties-Hash", self._get_super_properties_hash()),
+            ("X-Track", self._generate_track_header(fingerprint)),
             ("X-Context-Properties", self._generate_context_properties()),
             ("X-Fingerprint", fingerprint),
             ("Cookie", cookies),
@@ -574,6 +596,8 @@ class HeaderSpoofer:
             header_items.append(("X-Captcha-Rqtoken", rq_token))
         if captcha_key:
             header_items.append(("X-Captcha-Key", captcha_key))
+        if captcha_session_id:
+            header_items.append(("X-Captcha-Session-Id", captcha_session_id))
 
         random.shuffle(header_items)
         return {name: value for name, value in header_items if value is not None}
@@ -632,6 +656,7 @@ class HeaderSpoofer:
         self.cache_time = 0
         self.fingerprint = ""
         self._cached_super_properties = None  # Force rebuild with new profile
+        self._cached_super_properties_hash = None
         self._update_session_headers()
 
 

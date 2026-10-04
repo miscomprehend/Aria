@@ -13,6 +13,7 @@ body {
   margin: 0;
   min-width: 420px;
   min-height: 100vh;
+  overflow: auto;
   background: radial-gradient(ellipse at top, #121c28 0%, #0a1018 72%);
 }
 
@@ -131,6 +132,34 @@ button {
   cursor: pointer;
 }
 
+.connect-steps {
+  display: flex;
+  gap: 8px;
+  margin: 0 0 16px;
+  padding: 0;
+  list-style: none;
+}
+
+.connect-steps li {
+  flex: 1;
+  padding-bottom: 6px;
+  border-bottom: 2px solid rgba(177,197,219,.16);
+  color: #748394;
+  font-size: 11px;
+}
+
+.connect-steps .is-active,
+.connect-steps .is-done {
+  border-color: #69b7ff;
+  color: #edf3f9;
+}
+
+#reveal-token {
+  flex: 0 0 auto;
+  min-width: 64px;
+  z-index: 1;
+}
+
 #reveal-token,
 .secondary {
   border-color: rgba(177,197,219,.2);
@@ -201,3 +230,15 @@ button:disabled {
   padding-top: 12px;
   border-top: 1px solid rgba(177,197,219,.12);
 }
+
+#captcha-provider {
+  height: 42px;
+  padding: 0 10px;
+  border: 1px solid rgba(177,197,219,.2);
+  border-radius: 5px;
+  color: inherit;
+  background: #0a1018;
+  font: inherit;
+}
+
+label small { color: #748394; font-weight: 400; }

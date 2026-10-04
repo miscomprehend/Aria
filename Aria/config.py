@@ -18,6 +18,8 @@ class Config:
         self.config_dir = os.path.dirname(self.config_file)
         self.default_config = {
             "token": "token here",
+            "captcha_api_key": "",
+            "captcha_provider": "nocaptchaai",
             "prefix": ";",
             "owner_id": "REDACTED_OWNER_ID",
             "owner_username": "redacted",

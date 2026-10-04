@@ -1,6 +1,7 @@
 import unittest
 from unittest.mock import patch
 
+from api_client import DiscordAPIClient
 from rate_limit import RateLimiter
 
 
@@ -30,6 +31,24 @@ class RateLimitSafetyTests(unittest.TestCase):
             limiter.handle_429({"retry-after": "5"}, "/channels/1/messages")
         with patch("rate_limit.time.time", return_value=105.0):
             self.assertIsNone(limiter.get_wait_time("/channels/1/messages"))
+
+
+class SelfThrottleTests(unittest.TestCase):
+    def test_short_burst_starts_a_cooldown(self):
+        client = DiscordAPIClient.__new__(DiscordAPIClient)
+        client.message_timestamps = __import__("collections").deque([100.0] * 8)
+        client._self_throttle_until = 0.0
+
+        self.assertEqual(client._self_throttle_wait(105.0), 30.0)
+        self.assertEqual(client._self_throttle_until, 135.0)
+        self.assertEqual(client._self_throttle_wait(120.0), 15.0)
+
+    def test_spaced_messages_are_not_paused(self):
+        client = DiscordAPIClient.__new__(DiscordAPIClient)
+        client.message_timestamps = __import__("collections").deque([80.0, 90.0])
+        client._self_throttle_until = 0.0
+
+        self.assertEqual(client._self_throttle_wait(105.0), 0.0)
 
 
 if __name__ == "__main__":

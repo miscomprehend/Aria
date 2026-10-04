@@ -1767,6 +1767,49 @@ class WebPanel:
             return m.group(1).strip()
         return ""
 
+    def _session_runtime_events(self, limit: int = 8) -> list[dict[str, str]]:
+        """Recent runtime lines for the dashboard feed, with secrets removed."""
+        events: list[dict[str, str]] = []
+        for line in reversed(self._read_log_tail(240)):
+            normalized = self._strip_ansi(str(line or "")).strip()
+            if not normalized:
+                continue
+            lowered = normalized.lower()
+            if re.search(r"\[cmd\s*#\d+\]", lowered):
+                kind = "COMMAND"
+            elif any(tag in lowered for tag in ("[gateway]", "[connected]", "[reconnect]", "session resumed")):
+                kind = "GATEWAY"
+            elif any(tag in lowered for tag in ("[error", "[warning", "[warn]", "traceback", "exception")):
+                kind = "RUNTIME"
+            elif any(tag in lowered for tag in ("[afk]", "[rpc]", "[logger]", "message logger")):
+                kind = "CONTROL"
+            else:
+                continue
+            detail = re.sub(
+                r"(?i)(token|password|authorization|secret)(\s*[:=]\s*)\S+",
+                r"\1\2[redacted]",
+                normalized,
+            )
+            detail = re.sub(r"[\w-]{20,}\.[\w-]{5,}\.[\w-]{15,}", "[redacted]", detail)
+            events.append({
+                "action": kind,
+                "details": detail[:180],
+                "time": self._extract_log_time(normalized),
+            })
+            if len(events) >= limit:
+                break
+        if events:
+            return events
+        try:
+            connected = bool(self._bot_data().get("connected"))
+        except Exception:
+            connected = False
+        return [{
+            "action": "GATEWAY",
+            "details": "Gateway ready" if connected else "Waiting for gateway READY",
+            "time": "",
+        }]
+
     def _hosted_log_path_for_token(self, token_id: str) -> str:
         tid = str(token_id or "").strip()
         if not tid:
@@ -4203,9 +4246,14 @@ class WebPanel:
             if not isinstance(actions, list):
                 actions = []
             actions = actions[-30:]
+            try:
+                runtime_events = self._session_runtime_events()
+            except Exception:
+                runtime_events = []
             return jsonify({
                 "ok": True,
                 "timeline": actions,
+                "runtime_events": runtime_events,
                 "last_login_at": int((entry or {}).get("last_login_at", 0) or 0),
                 "last_seen_at": int((entry or {}).get("last_seen_at", 0) or 0),
             })

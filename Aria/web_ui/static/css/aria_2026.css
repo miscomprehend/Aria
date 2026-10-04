@@ -449,7 +449,16 @@ textarea.setting-input { min-height: 110px; resize: vertical; }
 .live-meter { height: 3px; overflow: hidden; border-radius: 2px; background: #202a35; }
 .live-meter-fill { height: 100%; width: 0; transition: width 600ms ease; }
 .live-meter-fill.alt { background: #9dcff8; }
-.toast-feed { display: flex; min-height: 35px; max-height: 80px; flex-direction: column-reverse; gap: 4px; overflow: auto; }
+.toast-feed { display: flex; min-height: 72px; max-height: 180px; flex-direction: column; gap: 4px; overflow: auto; }
+.quick-toggles { margin: 12px 0; }
+.quick-toggle-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.quick-toggle { display: flex; align-items: center; gap: 8px; min-height: 34px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 4px; color: var(--text); font-size: 11px; }
+.quick-toggle input { width: 14px; height: 14px; accent-color: #69b7ff; }
+.password-input-wrap { position: relative; display: inline-flex; align-items: center; min-width: 180px; }
+.password-input-wrap .setting-input { width: 100%; padding-right: 36px; }
+.password-toggle-icon { position: absolute; right: 6px; top: 50%; z-index: 2; display: inline-flex; width: 28px; height: 28px; align-items: center; justify-content: center; transform: translateY(-50%); border: 1px solid transparent; border-radius: 4px; background: #182433; color: #d7e4f0; cursor: pointer; }
+.password-toggle-icon svg { width: 14px; height: 14px; }
+.password-toggle-icon:hover, .password-toggle-icon.is-visible { border-color: rgba(105,183,255,.45); color: #69b7ff; }
 .toast { padding: 8px 10px; border: 1px solid var(--border); border-radius: 4px; background: #101820; color: var(--muted); font-size: 9px; }
 
 /* Purposeful page-specific composition */
@@ -969,7 +978,7 @@ textarea.setting-input { min-height: 110px; resize: vertical; }
   .main-content { margin-left: 0; }
   .topbar { min-height: 62px; padding-left: 62px; }
   .section { padding: 21px 18px 34px; }
-  .overview-live-row { grid-template-columns: 1fr; }
+  .overview-live-row, .quick-toggle-grid { grid-template-columns: 1fr; }
   .overview-demo-strip { grid-template-columns: minmax(0,1fr); gap: 15px; padding: 14px 0; }
   .rpc-studio-layout { grid-template-columns: minmax(0,1fr); }
   .rpc-discord-preview-wrap { position: static; }

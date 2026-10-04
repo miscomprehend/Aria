@@ -15,7 +15,7 @@ body {
   min-width: 500px;
   min-height: 360px;
   margin: 0;
-  overflow: hidden;
+  overflow: auto;
   background-color: #0a1018;
   background-image: linear-gradient(90deg, rgb(177 197 219 / 2%) 1px, transparent 1px),
     linear-gradient(rgb(177 197 219 / 2%) 1px, transparent 1px);
@@ -135,10 +135,51 @@ h1 {
 
 .startup-status {
   min-height: 22px;
-  margin: 12px 0 25px;
+  margin: 12px 0 8px;
   color: #a4b1bf;
   font-size: 13px;
   line-height: 1.6;
+}
+
+.boot-steps {
+  margin: 0 0 18px;
+  padding: 0;
+  list-style: none;
+}
+
+.boot-steps li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 0;
+  color: #748394;
+  font-size: 13px;
+}
+
+.boot-steps span {
+  display: grid;
+  width: 18px;
+  height: 18px;
+  flex: 0 0 18px;
+  place-items: center;
+  border: 1px solid rgb(177 197 219 / 24%);
+  border-radius: 50%;
+  font-size: 10px;
+}
+
+.boot-steps .is-active { color: #edf3f9; }
+.boot-steps .is-done { color: #c5d7e8; }
+.boot-steps .is-active span,
+.boot-steps .is-done span {
+  border-color: #69b7ff;
+  background: rgb(105 183 255 / 16%);
+}
+.boot-steps .is-failed { color: #fecaca; }
+
+.startup-elapsed {
+  margin: 8px 0 0;
+  color: #748394;
+  font-size: 11px;
 }
 
 .progress-track {
@@ -149,10 +190,10 @@ h1 {
 
 .progress-track span {
   display: block;
-  width: 34%;
+  width: 18%;
   height: 100%;
   background: #69b7ff;
-  animation: progress 1.5s ease-in-out infinite;
+  transition: width 240ms ease;
 }
 
 .startup-footer {

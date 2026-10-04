@@ -341,6 +341,8 @@ class InstanceSingletonManager:
     automatically by the OS if the owner crashes.
     """
 
+    _WIN_LOCK_OFFSET = 1 << 20
+
     def __init__(self, storage_path: Optional[str] = None):
         import os
 
@@ -361,11 +363,15 @@ class InstanceSingletonManager:
         except ImportError:
             import msvcrt
             try:
-                fd.seek(0)
+                # Windows byte-range locks are mandatory, so lock a byte past the
+                # holder metadata to keep it readable by other processes.
+                fd.seek(InstanceSingletonManager._WIN_LOCK_OFFSET)
                 msvcrt.locking(fd.fileno(), msvcrt.LK_NBLCK, 1)
                 return True
             except OSError:
                 return False
+            finally:
+                fd.seek(0)
         except OSError:
             return False
 
@@ -376,7 +382,7 @@ class InstanceSingletonManager:
             fcntl.flock(fd, fcntl.LOCK_UN)
         except ImportError:
             import msvcrt
-            fd.seek(0)
+            fd.seek(InstanceSingletonManager._WIN_LOCK_OFFSET)
             msvcrt.locking(fd.fileno(), msvcrt.LK_UNLCK, 1)
 
     def acquire(self, token: str) -> bool:

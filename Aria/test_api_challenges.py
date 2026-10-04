@@ -15,7 +15,7 @@ def make_client(response):
     client.rate_limiter.handle_429.return_value = 17.0
     client.header_spoofer = Mock()
     client.header_spoofer.proxy_manager = None
-    client.header_spoofer.get_protected_headers.return_value = {}
+    client.header_spoofer.get_protected_headers.side_effect = lambda *args, **kwargs: {}
     client.header_spoofer.session = Mock()
     client.header_spoofer.session.post.return_value = response
     client.session = Mock()
@@ -25,6 +25,7 @@ def make_client(response):
     client.health_monitor = None
     client._rate_limit_log_times = {}
     client._get_cached_response = Mock(return_value=None)
+    client._captcha_provider_name = None
     return client
 
 
@@ -62,6 +63,37 @@ class APIChallengeTests(unittest.TestCase):
         self.assertTrue(client.verification_blocked)
         client.header_spoofer.session.post.assert_called_once()
         client.header_spoofer.rotate_profile.assert_not_called()
+
+    def test_captcha_challenge_retries_with_solution_headers(self):
+        challenge = Mock()
+        challenge.status_code = 403
+        challenge.headers = {}
+        challenge.json.return_value = {
+            "captcha_sitekey": "site-key",
+            "captcha_rqtoken": "rq-token",
+            "captcha_session_id": "session-id",
+        }
+        success = Mock()
+        success.status_code = 200
+        success.headers = {}
+        success.json.return_value = {"ok": True}
+
+        client = make_client(challenge)
+        client.header_spoofer.session.post.side_effect = [challenge, success]
+        client._solve_captcha_challenge = Mock(return_value="solved-token")
+
+        with patch("api_client.time.sleep"):
+            response = client.request("POST", "/users/@me/settings", data={"status": "online"})
+
+        self.assertIs(response, success)
+        self.assertFalse(client.verification_blocked)
+        self.assertEqual(client.header_spoofer.session.post.call_count, 2)
+        first_call = client.header_spoofer.session.post.call_args_list[0]
+        second_call = client.header_spoofer.session.post.call_args_list[1]
+        self.assertNotIn("X-Captcha-Key", first_call.kwargs.get("headers", {}))
+        self.assertEqual(second_call.kwargs["headers"]["X-Captcha-Key"], "solved-token")
+        self.assertEqual(second_call.kwargs["headers"]["X-Captcha-Rqtoken"], "rq-token")
+        self.assertEqual(second_call.kwargs["headers"]["X-Captcha-Session-Id"], "session-id")
 
     def test_429_write_is_returned_without_automatic_replay(self):
         rate_limited = Mock()

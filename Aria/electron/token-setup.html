@@ -26,11 +26,25 @@
       </div>
     </header>
 
+    <ol class="connect-steps" id="connect-steps">
+      <li class="is-active">Paste token</li>
+      <li>Choose remember</li>
+      <li>Verify account</li>
+    </ol>
     <form id="token-form">
       <label for="token">Account token</label>
       <div class="token-field">
         <input id="token" type="password" autocomplete="off" spellcheck="false" required />
         <button id="reveal-token" type="button" aria-label="Show token">Show</button>
+      </div>
+
+      <label for="captcha-key">Captcha solver key <small>(optional)</small></label>
+      <div class="token-field">
+        <select id="captcha-provider" aria-label="Captcha provider">
+          <option value="nocaptchaai">NoCaptchaAI</option>
+          <option value="yescaptcha">YesCaptcha</option>
+        </select>
+        <input id="captcha-key" type="password" autocomplete="off" spellcheck="false" placeholder="Saved to config.json" />
       </div>
 
       <label class="remember-option" for="remember-token">

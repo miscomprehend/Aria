@@ -736,7 +736,7 @@ class WebPanelControlTests(unittest.TestCase):
             project_root_text = str(project_root)
             self.assertIn(f"SOURCE_ROOT = {project_root_text!r}", runner)
             self.assertIn("for path in (SOURCE_ROOT, TEMP_DIR):", runner)
-            self.assertIn(str(Path(self.temp_dir.name, "hosted_test.json")), runner)
+            self.assertIn(repr(str(Path(self.temp_dir.name, "hosted_test.json"))), runner)
             self.assertNotIn(token, runner)
             self.assertTrue(Path(project_root, "main.py").is_file())
             runner_ast = ast.parse(runner)

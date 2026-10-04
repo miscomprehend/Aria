@@ -7,6 +7,9 @@ from contextlib import redirect_stdout
 import config
 
 
+CAPTCHA_PROVIDERS = {"nocaptchaai", "yescaptcha"}
+
+
 def identify_token_owner(token: str) -> dict[str, str]:
     """Resolve the account ID attached to a token without exposing the token."""
     from api_client import DiscordAPIClient
@@ -51,6 +54,8 @@ def configure_token(
     remember: bool,
     config_path: str = "config.json",
     owner_identity: dict[str, str] | None = None,
+    captcha_key: str = "",
+    captcha_provider: str = "",
 ) -> None:
     if remember and not token:
         raise ValueError("Token is required when remembering it.")
@@ -61,6 +66,10 @@ def configure_token(
     with redirect_stdout(io.StringIO()):
         settings = config.Config(config_path)
     settings.config["token"] = stored_token
+    if captcha_key:
+        settings.config["captcha_api_key"] = captcha_key
+        if captcha_provider in CAPTCHA_PROVIDERS:
+            settings.config["captcha_provider"] = captcha_provider
     if owner_identity:
         _save_owner_identity(settings, owner_identity)
     settings.save_config()
@@ -81,10 +90,15 @@ def main() -> None:
     if action not in {"save", "clear"}:
         raise ValueError("Expected a save or clear action.")
     token = sys.stdin.readline().rstrip("\r\n")
+    captcha_key = sys.stdin.readline().strip()
+    captcha_provider = sys.stdin.readline().strip().lower()
     if action == "save" and not token:
         raise ValueError("Token is required when remembering it.")
     owner_identity = identify_token_owner(token) if token else None
-    configure_token(token, remember=action == "save", owner_identity=owner_identity)
+    configure_token(
+        token, remember=action == "save", owner_identity=owner_identity,
+        captcha_key=captcha_key, captcha_provider=captcha_provider,
+    )
     print(json.dumps({"owner": owner_identity}))
 
 

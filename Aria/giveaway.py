@@ -252,6 +252,30 @@ class GiveawaySniper:
             )
 
     def _click_button(self, message_data: dict, button: dict) -> bool:
+        guild_id = message_data.get("guild_id")
+        channel_id = message_data.get("channel_id")
+        message_id = message_data.get("id")
+        custom_id = button.get("custom_id")
+        if guild_id and channel_id and message_id and custom_id and hasattr(self.api, "click_button"):
+            try:
+                application_id = (
+                    str(message_data.get("application_id") or "")
+                    or str((message_data.get("interaction_metadata") or {}).get("id") or "")
+                    or str((message_data.get("author") or {}).get("id", ""))
+                )
+                return bool(
+                    self.api.click_button(
+                        str(guild_id),
+                        str(channel_id),
+                        str(message_id),
+                        str(application_id),
+                        str(custom_id),
+                        int(message_data.get("flags", 0) or 0),
+                    )
+                )
+            except Exception:
+                pass
+
         application_id = (
             str(message_data.get("application_id") or "")
             or str((message_data.get("interaction_metadata") or {}).get("id") or "")
@@ -287,6 +311,12 @@ class GiveawaySniper:
         success = False
         for enc in identifiers:
             try:
+                if hasattr(self.api, "add_reaction"):
+                    raw_emoji = urllib.parse.unquote(str(enc or ""))
+                    if self.api.add_reaction(str(channel_id), str(msg_id), raw_emoji):
+                        success = True
+                    continue
+
                 resp = self.api.request(
                     "PUT",
                     f"/channels/{channel_id}/messages/{msg_id}/reactions/{enc}/@me"

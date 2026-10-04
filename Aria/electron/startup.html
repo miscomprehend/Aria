@@ -31,9 +31,16 @@
       <p class="eyebrow">STARTUP</p>
       <h1>Preparing your workspace</h1>
       <p id="startup-status" class="startup-status">Checking for an Aria dashboard...</p>
+      <ol class="boot-steps" id="boot-steps">
+        <li data-step="local" class="is-active"><span>1</span>Find the local dashboard</li>
+        <li data-step="runtime"><span>2</span>Start the private runtime</li>
+        <li data-step="owner"><span>3</span>Sign in as owner</li>
+        <li data-step="open"><span>4</span>Open the dashboard</li>
+      </ol>
       <div class="progress-track" role="progressbar" aria-label="Starting Aria">
-        <span></span>
+        <span id="startup-fill"></span>
       </div>
+      <p id="startup-elapsed" class="startup-elapsed">0s</p>
     </section>
 
     <footer class="startup-footer">

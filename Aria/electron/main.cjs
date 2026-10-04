@@ -332,7 +332,7 @@ function ensureNativeControlServer() {
           throw new Error("Enter a valid token.");
         }
 
-        const identity = await saveTokenConfig(token, payload.remember === true);
+        const identity = await saveTokenConfig(token, payload.remember === true, normalizeCaptcha(payload));
         desktopOwnerId = String(identity.id || "");
         await stopBackend();
         startBackend(payload.remember === true ? null : token, desktopOwnerId);
@@ -411,7 +411,7 @@ function stopBackend() {
   });
 }
 
-function runTokenConfig(action, token = "") {
+function runTokenConfig(action, token = "", captcha = {}) {
   return new Promise((resolve, reject) => {
     const child = runBackendScript("token_config.py", [action], {
       stdio: ["pipe", "pipe", "pipe"],
@@ -438,13 +438,20 @@ function runTokenConfig(action, token = "") {
         reject(new Error(`Could not read the verified account identity: ${error.message}`));
       }
     });
-    child.once("spawn", () => child.stdin.end(action === "identify" ? "" : `${token}\n`));
+    child.once("spawn", () => child.stdin.end(action === "identify" ? "" : `${token}\n${captcha.key || ""}\n${captcha.provider || ""}\n`));
     child.stdin.on("error", () => {});
   });
 }
 
-function saveTokenConfig(token, remember) {
-  return runTokenConfig(remember ? "save" : "clear", token);
+function normalizeCaptcha(payload) {
+  const key = typeof payload?.captchaKey === "string" ? payload.captchaKey.trim() : "";
+  if (key.length > 512 || /[\r\n]/.test(key)) throw new Error("Enter a valid captcha API key.");
+  const provider = payload?.captchaProvider === "yescaptcha" ? "yescaptcha" : "nocaptchaai";
+  return { key, provider };
+}
+
+function saveTokenConfig(token, remember, captcha = {}) {
+  return runTokenConfig(remember ? "save" : "clear", token, captcha);
 }
 
 function identifySavedTokenOwner() {
@@ -494,11 +501,13 @@ function createTokenWindow() {
   }
 
   const options = {
-    width: 480,
-    height: 470,
+    width: 520,
+    height: 680,
+    minWidth: 420,
+    minHeight: 560,
     frame: false,
     autoHideMenuBar: true,
-    resizable: false,
+    resizable: true,
     show: false,
     title: "Aria Desktop Setup",
     icon: path.join(__dirname, "aria.ico"),
@@ -534,8 +543,8 @@ function updateStartupStatus(message) {
 function createLoadingWindow() {
   if (mainWindow && !mainWindow.isDestroyed()) return Promise.resolve();
   mainWindow = new BrowserWindow({
-    width: 620,
-    height: 440,
+    width: 640,
+    height: 560,
     minWidth: 540,
     minHeight: 390,
     frame: false,
@@ -571,7 +580,7 @@ ipcMain.handle("setup:save-token", async (event, payload) => {
   }
 
   try {
-    const ownerIdentity = await saveTokenConfig(token, remember);
+    const ownerIdentity = await saveTokenConfig(token, remember, normalizeCaptcha(payload));
     logMessage("INFO", `Verified ${ownerIdentity.username} (${ownerIdentity.id}) as the desktop owner.`);
     await stopBackend();
     logMessage("INFO", "Restarting Aria with the updated token setting.");

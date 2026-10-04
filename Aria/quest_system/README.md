@@ -171,7 +171,7 @@ Platform-specific headers are automatically selected based on the quest type.
 
 ## Captcha Handling
 
-If the `YES_CAPTCHA_API_KEY` environment variable is set:
+If `NOCAPTCHAAI_API_KEY` or `YES_CAPTCHA_API_KEY` is set:
 
 ```python
 from Aria.quest_system import get_captcha_solver
@@ -186,7 +186,8 @@ if solver.is_available():
 
 ### Environment Variables
 
-- `YES_CAPTCHA_API_KEY` - YesCaptcha API key for automatic captcha solving
+- `NOCAPTCHAAI_API_KEY` - NoCaptchaAI API key for automatic captcha solving (preferred when both keys are set)
+- `YES_CAPTCHA_API_KEY` - YesCaptcha API key for automatic captcha solving (fallback)
 
 ### Refresh Intervals
 
@@ -216,7 +217,7 @@ The following TypeScript features have been ported:
 | Collection manager | QuestManager | QuestManager |
 | Header management | Utils class | Utils class |
 | Constants | Constants class | Constants class |
-| Captcha solving | YesCaptchaSolver | YesCaptchaSolver |
+| Captcha solving | YesCaptchaSolver/NoCaptchaSolver | YesCaptchaSolver/NoCaptchaSolver |
 
 ### From Legacy Aria
 
@@ -254,7 +255,7 @@ The quest system is optimized for performance:
 
 ### Captcha errors
 
-1. Verify `YES_CAPTCHA_API_KEY` is set
+1. Verify `NOCAPTCHAAI_API_KEY` or `YES_CAPTCHA_API_KEY` is set
 2. Check captcha solver is initialized
 3. Ensure hCaptcha is properly decoded
 

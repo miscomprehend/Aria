@@ -460,6 +460,16 @@ Aria creates local configuration and runtime-state files as it runs.
 dashboard session-signing key is stored in `.aria_webpanel_secret`; keep it
 private and stable across restarts. For deployments that manage secrets via
 environment variables, set `ARIA_WEBPANEL_SECRET` before starting Aria.
+If you enable automatic Discord captcha retries for profile updates, quest
+flows, invites, or other write endpoints, configure one of these optional
+provider keys:
+
+- `NOCAPTCHAAI_API_KEY` (preferred)
+- `YES_CAPTCHA_API_KEY` (fallback)
+
+These retries also cover Nitro gift redemption and giveaway-entry actions
+(button interactions and reaction joins) because they use the shared API
+request path.
 
 Do not commit tokens, passwords, session secrets, database files, runtime
 state, logs, or generated builds. The repository's `.gitignore` excludes
