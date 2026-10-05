@@ -130,8 +130,14 @@ export class YesCaptchaSolver {
 		};
 
 		const createResult = await this.createTask(task);
+		const taskId = createResult.taskId;
 
-		return createResult.solution;
+		if (!taskId) {
+			throw new Error('No task ID in image captcha create response');
+		}
+
+		const result = await this.poolTaskResult<ImageToTextSolution>(taskId);
+		return result.solution;
 	}
 
 	async hcaptcha(

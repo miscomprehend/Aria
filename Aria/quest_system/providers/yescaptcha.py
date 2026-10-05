@@ -155,10 +155,10 @@ class YesCaptchaSolver:
 
     async def image_captcha(self, image_base64: str) -> Dict[str, Any]:
         """Solve image captcha.
-        
+
         Args:
             image_base64: Base64 encoded image
-            
+
         Returns:
             Solution with text
         """
@@ -166,6 +166,14 @@ class YesCaptchaSolver:
             'type': 'ImageToTextTaskM1',
             'body': image_base64,
         }
-        
+
         create_result = await self.create_task(task)
-        return create_result.get('solution', {})
+        task_id = create_result.get('taskId')
+        if not task_id:
+            raise ValueError('No task ID in image captcha create response')
+
+        result = await self.get_task_result(task_id)
+        solution = result.get('solution', {})
+        if not isinstance(solution, dict):
+            raise ValueError('Image captcha provider returned an invalid solution payload')
+        return solution

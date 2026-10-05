@@ -82,7 +82,7 @@ class CaptchaSolver:
         try:
             result = await self._solver.hcaptcha(
                 data.captcha_sitekey,
-                'https://discord.com',
+                'https://discord.com/channels/@me',
                 {
                     'rqdata': data.captcha_rqdata,
                     'isInvisible': False,

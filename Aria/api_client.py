@@ -227,21 +227,38 @@ class DiscordAPIClient:
     def _extract_captcha_challenge(self, response_data: Dict[str, Any]) -> Optional[Dict[str, str]]:
         if not isinstance(response_data, dict):
             return None
-        sitekey = str(response_data.get("captcha_sitekey") or "").strip()
+
+        nested = response_data.get("captcha")
+        if isinstance(nested, dict):
+            nested = nested
+        else:
+            nested = {}
+
+        sitekey = str(response_data.get("captcha_sitekey") or nested.get("sitekey") or "").strip()
         if not sitekey:
             return None
-        service = str(response_data.get("captcha_service") or "hcaptcha").strip().lower()
-        return {
+
+        service = str(response_data.get("captcha_service") or nested.get("service") or "hcaptcha").strip().lower()
+        challenge = {
             "service": service,
             "sitekey": sitekey,
-            "rqdata": str(response_data.get("captcha_rqdata") or "").strip(),
-            "rqtoken": str(response_data.get("captcha_rqtoken") or "").strip(),
-            "session_id": str(response_data.get("captcha_session_id") or "").strip(),
+            "rqdata": str(response_data.get("captcha_rqdata") or nested.get("rqdata") or "").strip(),
+            "rqtoken": str(response_data.get("captcha_rqtoken") or nested.get("rqtoken") or "").strip(),
+            "session_id": str(response_data.get("captcha_session_id") or nested.get("session_id") or "").strip(),
         }
+        if response_data.get("captcha") is not None and isinstance(response_data.get("captcha"), dict):
+            challenge["website_url"] = str(response_data["captcha"].get("website_url") or "").strip()
+            challenge["page_url"] = str(response_data["captcha"].get("page_url") or "").strip()
+        return challenge
 
     def _has_captcha_indicators(self, response_data: Dict[str, Any]) -> bool:
         if not isinstance(response_data, dict):
             return False
+        nested = response_data.get("captcha")
+        if isinstance(nested, dict):
+            nested_fields = nested
+        else:
+            nested_fields = {}
         verification_fields = (
             "captcha_key",
             "captcha_sitekey",
@@ -249,8 +266,9 @@ class DiscordAPIClient:
             "captcha_rqdata",
             "captcha_rqtoken",
             "captcha_required",
+            "captcha",
         )
-        return any(response_data.get(field) for field in verification_fields)
+        return any(response_data.get(field) or nested_fields.get(field) for field in verification_fields)
 
     def _get_captcha_provider_candidates(self) -> List[Dict[str, str]]:
         providers: List[Dict[str, str]] = []
@@ -287,11 +305,15 @@ class DiscordAPIClient:
         return providers
 
     def _create_captcha_task(self, provider: Dict[str, str], challenge: Dict[str, str]) -> Optional[str]:
+        website_url = str(challenge.get("website_url") or challenge.get("page_url") or "https://discord.com/channels/@me").strip()
+        if not website_url.startswith("https://"):
+            website_url = "https://discord.com/channels/@me"
+
         payload = {
             "clientKey": provider["client_key"],
             "task": {
                 "type": "HCaptchaTaskProxyless",
-                "websiteURL": "https://discord.com",
+                "websiteURL": website_url,
                 "websiteKey": challenge["sitekey"],
                 "userAgent": self.header_spoofer.profile.user_agent,
                 "isInvisible": False,
@@ -393,12 +415,55 @@ class DiscordAPIClient:
 
         for provider in providers:
             self._captcha_provider_name = provider["name"]
+
+            # Full teardown on rotation: if the current session is still alive,
+            # drop the transport before reassociating the next browser/TLS profile.
+            if hasattr(self.header_spoofer, "rotate_user_agent"):
+                try:
+                    rotation = self.header_spoofer.rotate_user_agent()
+                    browser_target = rotation.get("browser_target", "chrome124")
+                    if hasattr(self.header_spoofer, "session") and self.header_spoofer.session is not None:
+                        close = getattr(self.header_spoofer.session, "close", None)
+                        if callable(close):
+                            close()
+                    self.header_spoofer.session = self.header_spoofer._create_session()
+                    self.header_spoofer._update_session_headers()
+                    if browser_target:
+                        try:
+                            from curl_cffi.requests import Session as CurlSession
+                            self.header_spoofer.session = CurlSession(impersonate=browser_target)
+                            self.header_spoofer.session.trust_env = False
+                        except Exception:
+                            pass
+                except Exception:
+                    pass
+
             task_id = self._create_captcha_task(provider, challenge)
             if not task_id:
                 continue
             token = self._poll_captcha_result(provider, task_id)
             if token:
                 return token
+
+            if hasattr(self.header_spoofer, "rotate_user_agent"):
+                try:
+                    rotation = self.header_spoofer.rotate_user_agent()
+                    browser_target = rotation.get("browser_target", "chrome124")
+                    if hasattr(self.header_spoofer, "session") and self.header_spoofer.session is not None:
+                        close = getattr(self.header_spoofer.session, "close", None)
+                        if callable(close):
+                            close()
+                    self.header_spoofer.session = self.header_spoofer._create_session()
+                    self.header_spoofer._update_session_headers()
+                    if browser_target:
+                        try:
+                            from curl_cffi.requests import Session as CurlSession
+                            self.header_spoofer.session = CurlSession(impersonate=browser_target)
+                            self.header_spoofer.session.trust_env = False
+                        except Exception:
+                            pass
+                except Exception:
+                    pass
         return None
 
     def _check_circuit_breaker(self) -> bool:

@@ -337,36 +337,64 @@ class HeaderSpoofer:
         except:
             self.proxy_manager = None
 
+    def _choose_tls_impersonation(self) -> str:
+        """Choose the closest available curl_cffi Chrome impersonation.
+
+        Matching the TLS impersonation to the active browser profile reduces
+        fingerprint drift between headers and the underlying transport.
+        """
+        browser_version = getattr(getattr(self, "profile", None), "browser_version", "124.0.0.0")
+        major = 124
+        try:
+            major = int(str(browser_version).split('.')[0])
+        except Exception:
+            major = 124
+
+        candidates = []
+        for value in (major, max(major, 124), 136, 135, 134, 133, 132, 131, 124, 110):
+            if value not in candidates and value >= 110:
+                candidates.append(value)
+
+        for value in candidates:
+            impersonation = f"chrome{value}"
+            try:
+                from curl_cffi.requests import Session as CurlSession
+                CurlSession(impersonate=impersonation)
+                return impersonation
+            except Exception:
+                continue
+
+        return "chrome124"
+
     def _create_session(self) -> Any:
-        """Create SSL-safe session"""
+        """Create SSL-safe session using a transport profile that matches the UA."""
         try:
             context = ssl.create_default_context()
             context.check_hostname = False
             context.verify_mode = ssl.CERT_NONE
-            
-            # Try curl_cffi first for better spoofing — impersonate version must
-            # match the User-Agent Chrome major version to avoid TLS fingerprint mismatch.
+
             try:
                 from curl_cffi.requests import Session as CurlSession
-                # Prefer chrome136 (matches 2026 UA); fall back to chrome124 if unavailable.
-                for _imp in ("chrome136", "chrome124", "chrome110"):
-                    try:
-                        session = CurlSession(impersonate=_imp)
-                        break
-                    except Exception:
-                        continue
-                else:
-                    session = CurlSession(impersonate="chrome110")
+                impersonation = self._choose_tls_impersonation()
+                try:
+                    session = CurlSession(impersonate=impersonation)
+                except Exception:
+                    for _imp in ("chrome136", "chrome124", "chrome110"):
+                        try:
+                            session = CurlSession(impersonate=_imp)
+                            break
+                        except Exception:
+                            continue
+                    else:
+                        session = CurlSession(impersonate="chrome110")
                 session.trust_env = False
                 return session
-            except:
-                # Fall back to requests if curl_cffi not available
+            except Exception:
                 session = Session()
                 session.verify = False
                 session.trust_env = False
                 return session
-        except:
-            # Ultimate fallback
+        except Exception:
             import requests
             session = requests.Session()
             session.verify = False
@@ -657,7 +685,47 @@ class HeaderSpoofer:
         self.fingerprint = ""
         self._cached_super_properties = None  # Force rebuild with new profile
         self._cached_super_properties_hash = None
+
+        # Full transport teardown: this prevents session bleed when a keep-alive
+        # connection is reused across a user-agent / fingerprint change.
+        try:
+            if getattr(self, "session", None) is not None:
+                close = getattr(self.session, "close", None)
+                if callable(close):
+                    close()
+        except Exception:
+            pass
+
+        try:
+            self.session = self._create_session()
+        except Exception:
+            self.session = None
         self._update_session_headers()
+
+    def rotate_user_agent(self) -> Dict[str, str]:
+        """Return a fully synchronized UA + header profile and rebuild the live transport.
+
+        The returned dict intentionally contains the modern browser fingerprinting
+        data that must stay in sync with the underlying TLS impersonation.
+        """
+        self.rotate_profile()
+        return {
+            "User-Agent": self.profile.user_agent,
+            "Accept-Language": f"{self.profile.locale},en;q=0.9,en;q=0.8",
+            "Sec-Ch-Ua": self.profile.sec_ch_ua or '"Chromium";v="136", "Google Chrome";v="136", "Not(A:Brand";v="99"',
+            "Sec-Ch-Ua-Mobile": self.profile.sec_ch_ua_mobile,
+            "Sec-Ch-Ua-Platform": self.profile.sec_ch_ua_platform,
+            "Sec-Ch-Ua-Platform-Version": self.profile.sec_ch_ua_platform_version,
+            "Sec-Ch-Ua-Full-Version-List": self.profile.sec_ch_ua_full_version,
+            "Sec-Ch-Ua-Arch": self.profile.sec_ch_ua_arch,
+            "Sec-Ch-Ua-Bitness": self.profile.sec_ch_ua_bitness,
+            "Sec-Ch-Ua-Form-Factor": self.profile.sec_ch_ua_form_factor,
+            "browser_target": f"chrome{self.profile.browser_version.split('.')[0]}",
+        }
+
+    def rotate_tls(self):
+        """Alias for rotate_profile used by captcha retry flows."""
+        self.rotate_profile()
 
 
 __all__ = ['HeaderSpoofer', 'RateLimiter', 'BrowserProfile']

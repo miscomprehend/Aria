@@ -64,6 +64,25 @@ class APIChallengeTests(unittest.TestCase):
         client.header_spoofer.session.post.assert_called_once()
         client.header_spoofer.rotate_profile.assert_not_called()
 
+    def test_nested_captcha_payload_is_extracted_for_profile_updates(self):
+        client = make_client(Mock())
+        nested = {
+            "captcha": {
+                "sitekey": "nested-site-key",
+                "rqdata": "nested-rqdata",
+                "rqtoken": "nested-rqtoken",
+                "session_id": "nested-session-id",
+            },
+            "captcha_key": ["verification required"],
+        }
+
+        extracted = client._extract_captcha_challenge(nested)
+
+        self.assertEqual(extracted["sitekey"], "nested-site-key")
+        self.assertEqual(extracted["rqdata"], "nested-rqdata")
+        self.assertEqual(extracted["rqtoken"], "nested-rqtoken")
+        self.assertEqual(extracted["session_id"], "nested-session-id")
+
     def test_captcha_challenge_retries_with_solution_headers(self):
         challenge = Mock()
         challenge.status_code = 403
