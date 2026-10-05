@@ -1,23 +1,46 @@
-"""YesCaptcha solver for hCaptcha and image captchas."""
+"""YesCaptcha solver for hCaptcha and image captchas.
+
+This client is resilient to transient provider failures. In particular, when
+YesCaptcha returns ``ERROR_CAPTCHA_UNSOLVABLE`` (the worker could not solve the
+challenge) we do NOT give up immediately: we rotate the browser/header profile
+(and the TLS impersonation that goes with it) and submit a brand new task, up
+to ``max_attempts`` times. This mirrors how a real client retries a fresh
+challenge instead of reusing a dead one.
+
+Two challenge kinds are supported:
+
+* ``hcaptcha``  -> ``HCaptchaTaskProxyless`` (Discord login / profile writes)
+* ``image_captcha`` -> ``ImageToTextTaskM1`` (image challenges)
+
+Both accept an optional ``rotate`` callback that is invoked before every retry
+so the caller can rotate headers + TLS in sync with the fresh task. The shared
+retry/rotation logic lives in ``base.RetryMixin``.
+"""
 
 import asyncio
 import json
-from typing import Dict, Any, Optional
+from typing import Callable, Dict, Any, Optional
 import aiohttp
 
+from .base import RetryMixin
 
-class YesCaptchaSolver:
+
+class YesCaptchaSolver(RetryMixin):
     """YesCaptcha API client for solving captchas."""
 
     BASE_URL = 'https://api.yescaptcha.com'
+    provider_name = 'YesCaptcha'
 
-    def __init__(self, api_key: str):
+    def __init__(self, api_key: str, max_attempts: int = 3):
         """Initialize YesCaptcha solver.
-        
+
         Args:
             api_key: YesCaptcha API key
+            max_attempts: How many fresh tasks to submit when the provider
+                reports a retryable error (e.g. ERROR_CAPTCHA_UNSOLVABLE).
         """
         self.api_key = api_key
+        self.max_attempts = max(1, int(max_attempts))
         self.session: Optional[aiohttp.ClientSession] = None
 
     async def _get_session(self) -> aiohttp.ClientSession:
@@ -34,23 +57,23 @@ class YesCaptchaSolver:
 
     async def create_task(self, task: Dict[str, Any]) -> Dict[str, Any]:
         """Create a captcha solving task.
-        
+
         Args:
             task: Task configuration
-            
+
         Returns:
             Task response
-            
+
         Raises:
             ValueError: If task creation fails
         """
         session = await self._get_session()
-        
+
         payload = {
             'clientKey': self.api_key,
             'task': task,
         }
-        
+
         try:
             async with session.post(
                 f'{self.BASE_URL}/createTask',
@@ -60,35 +83,35 @@ class YesCaptchaSolver:
                 data = await resp.json()
         except Exception as e:
             raise ValueError(f"Failed to create task: {e}")
-        
+
         if data.get('errorId') == 1:
             raise ValueError(f"Error creating task: {json.dumps(data, indent=2)}")
-        
+
         return data
 
     async def get_task_result(self, task_id: str) -> Dict[str, Any]:
         """Poll for task result.
-        
+
         Args:
             task_id: Task ID
-            
+
         Returns:
             Task result
-            
+
         Raises:
             ValueError: If polling fails
         """
         session = await self._get_session()
-        
+
         max_wait = 120  # 2 minutes max wait
         elapsed = 0
-        
+
         while elapsed < max_wait:
             payload = {
                 'clientKey': self.api_key,
                 'taskId': task_id,
             }
-            
+
             try:
                 async with session.post(
                     f'{self.BASE_URL}/getTaskResult',
@@ -96,21 +119,21 @@ class YesCaptchaSolver:
                     headers={'Content-Type': 'application/json'},
                 ) as resp:
                     data = await resp.json()
-            except Exception as e:
+            except Exception:
                 await asyncio.sleep(3)
                 elapsed += 3
                 continue
-            
+
             if data.get('errorId') == 1:
                 raise ValueError(f"Error getting task result: {json.dumps(data, indent=2)}")
-            
+
             if data.get('status') == 'ready':
                 return data
-            
+
             # Wait before polling again
             await asyncio.sleep(3)
             elapsed += 3
-        
+
         raise ValueError(f"Timeout while waiting for task {task_id}")
 
     async def hcaptcha(
@@ -118,62 +141,66 @@ class YesCaptchaSolver:
         sitekey: str,
         website_url: str,
         options: Optional[Dict[str, Any]] = None,
+        rotate: Optional[Callable[[], Any]] = None,
     ) -> Dict[str, Any]:
-        """Solve hCaptcha.
-        
+        """Solve hCaptcha, retrying with rotated headers on unsolvable errors.
+
         Args:
             sitekey: hCaptcha site key
             website_url: Website URL
             options: Additional options (rqdata, isInvisible, userAgent)
-            
+            rotate: Optional callable to rotate the browser/header profile
+                before each retry.
+
         Returns:
             Solution with gRecaptchaResponse
         """
         options = options or {}
-        
-        task = {
-            'type': 'HCaptchaTaskProxyless',
-            'websiteURL': website_url,
-            'websiteKey': sitekey,
-        }
-        
-        if options.get('userAgent'):
-            task['userAgent'] = options['userAgent']
-        if options.get('isInvisible') is not None:
-            task['isInvisible'] = options['isInvisible']
-        if options.get('rqdata'):
-            task['rqdata'] = options['rqdata']
-        
-        create_result = await self.create_task(task)
-        task_id = create_result.get('taskId')
-        
-        if not task_id:
-            raise ValueError("No task ID in create response")
-        
-        result = await self.get_task_result(task_id)
-        return result.get('solution', {})
 
-    async def image_captcha(self, image_base64: str) -> Dict[str, Any]:
-        """Solve image captcha.
+        def build_task() -> Dict[str, Any]:
+            task: Dict[str, Any] = {
+                'type': 'HCaptchaTaskProxyless',
+                'websiteURL': website_url,
+                'websiteKey': sitekey,
+            }
+            if options.get('userAgent'):
+                task['userAgent'] = options['userAgent']
+            if options.get('isInvisible') is not None:
+                task['isInvisible'] = options['isInvisible']
+            if options.get('rqdata'):
+                task['rqdata'] = options['rqdata']
+            return task
+
+        return await self._solve_with_retries(build_task, rotate=rotate)
+
+    async def image_captcha(
+        self,
+        image_base64: str,
+        rotate: Optional[Callable[[], Any]] = None,
+    ) -> Dict[str, Any]:
+        """Solve an image captcha (ImageToTextTaskM1).
 
         Args:
-            image_base64: Base64 encoded image
+            image_base64: Base64 encoded image (raw base64, no data: prefix).
+            rotate: Optional callable to rotate the browser/header profile
+                before each retry.
 
         Returns:
-            Solution with text
+            Solution dict containing the recognized ``text``.
         """
-        task = {
-            'type': 'ImageToTextTaskM1',
-            'body': image_base64,
-        }
+        body = str(image_base64 or "").strip()
+        if body.startswith("data:"):
+            _, _, body = body.partition(",")
+        if not body:
+            raise ValueError("Image captcha requires base64 image data")
 
-        create_result = await self.create_task(task)
-        task_id = create_result.get('taskId')
-        if not task_id:
-            raise ValueError('No task ID in image captcha create response')
+        def build_task() -> Dict[str, Any]:
+            return {
+                'type': 'ImageToTextTaskM1',
+                'body': body,
+            }
 
-        result = await self.get_task_result(task_id)
-        solution = result.get('solution', {})
+        solution = await self._solve_with_retries(build_task, rotate=rotate)
         if not isinstance(solution, dict):
             raise ValueError('Image captcha provider returned an invalid solution payload')
         return solution

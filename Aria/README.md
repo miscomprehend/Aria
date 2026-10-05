@@ -576,6 +576,29 @@ The dashboard can configure mention, edit, delete, and own-message filtering.
 The live feed is limited to 400 in-memory events; the logger's settings are
 persisted separately in `message_logger.json`.
 
+### OwO commands
+
+Replace `<prefix>` with the command prefix configured for the active instance.
+The OwO commands are registered on the main command bot:
+
+```text
+<prefix>owofarm channel [channel-id]
+<prefix>owofarm once
+<prefix>owofarm start
+<prefix>owofarm stop
+<prefix>owofarm status
+<prefix>owofarm cmds
+<prefix>owofarm add <command>
+<prefix>owofarm remove <position>
+<prefix>owofarm delay <min> <max> [gap]
+<prefix>owo
+<prefix>uwu
+```
+
+OwO settings are saved in `owo_config.json` beside the application files.
+The farm loop stops if OwO sends a captcha or warning message; it does not
+attempt to solve captchas.
+
 ### Hosted-instance permissions and recovery
 
 Hosted clients run as separate processes and use their own runtime

@@ -2,7 +2,6 @@ import time
 import random
 import json
 import base64
-import ssl
 import re
 import hashlib
 from typing import Dict, Any, Optional
@@ -64,6 +63,7 @@ def get_latest_build() -> int:
     except Exception as e:
         print(f"[BUILD] Fetch failed, using fallback {_FALLBACK_BUILD}: {e}")
         return _FALLBACK_BUILD
+
 
 class RateLimiter:
     """Advanced rate limiter with bucket management and DM protection"""
@@ -138,99 +138,49 @@ class RateLimiter:
 
 
 class BrowserProfile:
-    """Enhanced browser profile for spoofing with modern browsers and better randomization"""
+    """Chrome profile kept compatible with the active HTTP transport.
 
-    def __init__(self):
+    Each instance is a self-contained, randomly varied browser fingerprint.
+    Call rotate_profile() on the spoofer to get a fresh profile + session.
+
+    Randomness comes from a *private* ``random.Random`` instance rather than the
+    process-global RNG. Reseeding the global RNG here (as a previous version
+    did) both leaked determinism into other callers and made two profiles built
+    in the same second collapse to identical fingerprints.
+    """
+
+    # Chrome versions (2025-2026) used when rotating.
+    _CHROME_VERSIONS = [
+        "150.0.0.0",
+        "136.0.0.0",
+        "135.0.0.0",
+        "134.0.0.0",
+        "133.0.0.0",
+        "132.0.0.0",
+        "131.0.0.0",
+        "124.0.0.0",
+    ]
+
+    def __init__(self, browser_version: str = "150.0.0.0"):
         timestamp = int(time.time())
-        random.seed(timestamp % 1000)
+        # Private RNG: seeded from OS entropy, never touches the global RNG.
+        self._rng = random.Random()
 
-        # Chrome versions (2025-2026)
-        self.chrome_versions = [
-            {"major": "124", "full": "124.0.0.0"},
-            {"major": "135", "full": "135.0.7049.115"},
-            {"major": "134", "full": "134.0.6998.117"},
-            {"major": "133", "full": "133.0.6943.141"},
-            {"major": "132", "full": "132.0.6834.160"},
-            {"major": "131", "full": "131.0.6778.264"},
-        ]
-
-        # Edge (Chromium-based) versions (2025-2026)
-        self.edge_versions = [
-            {"major": "135", "full": "135.0.3179.98"},
-            {"major": "134", "full": "134.0.3124.83"},
-            {"major": "133", "full": "133.0.3065.92"},
-        ]
-
-        # Firefox versions on Linux (inspired by headerspoofer-discord-plugin)
-        self.firefox_versions = [
-            {"major": "136", "full": "136.0"},
-            {"major": "135", "full": "135.0.1"},
-            {"major": "134", "full": "134.0.2"},
-            {"major": "133", "full": "133.0"},
-        ]
-
-        # Linux distros for Firefox spoofing
-        self.linux_distros = [
-            "Ubuntu 24.04",
-            "Ubuntu 22.04",
-            "Debian 12",
-            "Fedora 41",
-        ]
-
-        # Browser rotation: Chrome (Windows), Edge (Windows), Firefox (Linux), Firefox (macOS)
-        browser_choice = random.choice([
-            "chrome", "chrome", "chrome",
-            "edge",
-            "firefox_linux", "firefox_linux",
-            "firefox_mac",
-        ])
-
-        self.is_firefox = browser_choice.startswith("firefox")
-
-        if browser_choice == "edge":
-            version_idx = random.randint(0, len(self.edge_versions) - 1)
-            browser = self.edge_versions[version_idx]
-            self.browser_version = browser['full']
-            browser_full = f"Edg/{browser['full']}"
-            ua_template = f"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/{browser['full']} Safari/537.36 {browser_full}"
-            self.browser = "Edge"
-            self.os = "Windows"
-            self.os_version = "10"
-            self.platform = "Win32"
-        elif browser_choice == "firefox_linux":
-            version_idx = (timestamp // 3600) % len(self.firefox_versions)
-            browser = self.firefox_versions[version_idx]
-            self.browser_version = browser['full']
-            distro = random.choice(self.linux_distros)
-            self.linux_distro = distro
-            ua_template = f"Mozilla/5.0 (X11; Linux x86_64; rv:{browser['major']}.0) Gecko/20100101 Firefox/{browser['full']}"
-            self.browser = "Firefox"
-            self.os = "Linux"
-            self.os_version = distro
-            self.platform = "Linux x86_64"
-        elif browser_choice == "firefox_mac":
-            version_idx = (timestamp // 3600) % len(self.firefox_versions)
-            browser = self.firefox_versions[version_idx]
-            self.browser_version = browser['full']
-            ua_template = f"Mozilla/5.0 (Macintosh; Intel Mac OS X 14.7; rv:{browser['major']}.0) Gecko/20100101 Firefox/{browser['full']}"
-            self.browser = "Firefox"
-            self.os = "Mac OS X"
-            self.os_version = "14.7"
-            self.platform = "MacIntel"
-        else:
-            version_idx = (timestamp // 3600) % len(self.chrome_versions)
-            browser = self.chrome_versions[version_idx]
-            self.browser_version = browser['full']
-            ua_template = f"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/{browser['full']} Safari/537.36"
-            self.browser = "Chrome"
-            self.os = "Windows"
-            self.os_version = "10"
-            self.platform = "Win32"
+        self.browser_version = browser_version
+        self.is_firefox = False
+        self.browser = "Chrome"
+        self.os = "Windows"
+        self.os_version = "10"
+        self.platform = "Win32"
+        ua_template = (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            f"AppleWebKit/537.36 (KHTML, like Gecko) Chrome/{browser_version} Safari/537.36"
+        )
 
         # Randomize window size for more natural spoofing
         screen_sizes = [
             "1920x1080",
-            "1680x1050", 
+            "1680x1050",
             "1440x900",
             "1366x768",
             "2560x1440",
@@ -255,21 +205,21 @@ class BrowserProfile:
         self.user_agent = ua_template
         self.locale = location['locale']
         self.timezone = location['timezone']
-        self.screen_resolution = random.choice(screen_sizes)
-        self.hardware_concurrency = random.choice([4, 8, 16])
-        self.device_memory = random.choice([4, 8, 16, 32])
+        self.screen_resolution = self._rng.choice(screen_sizes)
+        self.hardware_concurrency = self._rng.choice([4, 8, 16])
+        self.device_memory = self._rng.choice([4, 8, 16, 32])
 
         width, height = map(int, self.screen_resolution.split("x"))
-        self.viewport_width = str(max(800, width - random.randint(0, 280)))
-        self.viewport_height = str(max(600, height - random.randint(100, 220)))
-        self.dpr = random.choice(["1", "1.25", "1.5", "2", "2.5", "3"])
+        self.viewport_width = str(max(800, width - self._rng.randint(0, 280)))
+        self.viewport_height = str(max(600, height - self._rng.randint(100, 220)))
+        self.dpr = self._rng.choice(["1", "1.25", "1.5", "2", "2.5", "3"])
 
         self.sec_fetch_dest = "empty"
         self.sec_fetch_mode = "cors"
         self.sec_fetch_site = "same-origin"
-        self.ect = random.choice(["4g", "4g", "3g"])
-        self.downlink = str(random.choice([10.0, 15.0, 20.0, 30.0]))
-        self.rtt = str(random.choice([20, 30, 40, 50]))
+        self.ect = self._rng.choice(["4g", "4g", "3g"])
+        self.downlink = str(self._rng.choice([10.0, 15.0, 20.0, 30.0]))
+        self.rtt = str(self._rng.choice([20, 30, 40, 50]))
         self.save_data = "off"
 
         self.sec_ch_ua = None
@@ -277,7 +227,7 @@ class BrowserProfile:
         self.sec_ch_ua_platform = f'"{self.os}"'
         self.sec_ch_ua_platform_version = "0.0.0"
         self.sec_ch_ua_full_version = f'"{self.browser_version}"'
-        self.sec_ch_ua_arch = random.choice(["x86", "x86_64"])
+        self.sec_ch_ua_arch = self._rng.choice(["x86", "x86_64"])
         self.sec_ch_ua_bitness = "64"
         self.sec_ch_ua_model = ""
         self.sec_ch_ua_form_factor = "Desktop"
@@ -308,24 +258,35 @@ class BrowserProfile:
                         176, 177, 178, 184, 185, 186, 187, 188, 189, 190, 191, 193, 194, 195, 196, 197, 198,
                         199, 200, 201, 202, 203, 204, 205, 206, 207, 208, 209, 216, 217, 218, 219, 220, 221,
                         222, 223]
-        first = random.choice(first_octets)
-        return f"{first}.{random.randint(0,255)}.{random.randint(0,255)}.{random.randint(1,254)}"
+        first = self._rng.choice(first_octets)
+        return f"{first}.{self._rng.randint(0,255)}.{self._rng.randint(0,255)}.{self._rng.randint(1,254)}"
 
 
 class HeaderSpoofer:
-    """Main header spoofer for Discord"""
+    """Main header spoofer for Discord with per-call header rotation.
 
-    def __init__(self):
+    The TLS transport is impersonated to match the active Chrome profile so the
+    TLS fingerprint and the User-Agent always agree. When a captcha challenge
+    appears, call ``rotate_tls()`` to tear down the old keep-alive connection
+    and rebuild a fresh, matching TLS session + header block.
+    """
+
+    def __init__(self, browser_version: str = "124.0.0.0"):
         self.token: Optional[str] = None
         self.user_id: Optional[str] = None
         self.fingerprint: str = ""
         self.cookies: str = ""
         self.cache_time: float = 0
-        self.profile = BrowserProfile()
-        self.build_number = get_latest_build()  # Fetched live; falls back to 305124
+        self._browser_version = browser_version
+        # Build the profile FIRST so the TLS impersonation is chosen from the
+        # exact browser version that will appear in the User-Agent. Creating the
+        # session before the profile caused the TLS fingerprint to be picked
+        # from the default version even when a different one was requested.
+        self.profile = BrowserProfile(self._browser_version)
+        self.session: Any = self._create_session()
+        self.build_number = get_latest_build()  # Fetched live; falls back to _FALLBACK_BUILD
         self._cached_super_properties: Optional[str] = None  # Stable per session
         self._cached_super_properties_hash: Optional[str] = None
-        self.session: Any = self._create_session()
         self.proxy_manager = None
         self._init_proxy_manager()
 
@@ -337,18 +298,23 @@ class HeaderSpoofer:
         except:
             self.proxy_manager = None
 
+    def _profile_major(self) -> int:
+        """Return the major version of the active profile (default 124)."""
+        version = getattr(getattr(self, "profile", None), "browser_version", "124.0.0.0")
+        try:
+            return int(str(version).split('.')[0])
+        except Exception:
+            return 124
+
     def _choose_tls_impersonation(self) -> str:
         """Choose the closest available curl_cffi Chrome impersonation.
 
         Matching the TLS impersonation to the active browser profile reduces
-        fingerprint drift between headers and the underlying transport.
+        fingerprint drift between headers and the underlying transport. The
+        chosen impersonation's major version always matches the User-Agent's
+        major version when curl_cffi supports it.
         """
-        browser_version = getattr(getattr(self, "profile", None), "browser_version", "124.0.0.0")
-        major = 124
-        try:
-            major = int(str(browser_version).split('.')[0])
-        except Exception:
-            major = 124
+        major = self._profile_major()
 
         candidates = []
         for value in (major, max(major, 124), 136, 135, 134, 133, 132, 131, 124, 110):
@@ -367,36 +333,31 @@ class HeaderSpoofer:
         return "chrome124"
 
     def _create_session(self) -> Any:
-        """Create SSL-safe session using a transport profile that matches the UA."""
-        try:
-            context = ssl.create_default_context()
-            context.check_hostname = False
-            context.verify_mode = ssl.CERT_NONE
+        """Create a supported Chrome-impersonating session when available.
 
+        The impersonation is chosen from the active profile's browser version,
+        so the TLS handshake fingerprint matches the User-Agent exactly.
+        """
+        try:
+            from curl_cffi.requests import Session as CurlSession
+            impersonation = self._choose_tls_impersonation()
             try:
-                from curl_cffi.requests import Session as CurlSession
-                impersonation = self._choose_tls_impersonation()
-                try:
-                    session = CurlSession(impersonate=impersonation)
-                except Exception:
-                    for _imp in ("chrome136", "chrome124", "chrome110"):
-                        try:
-                            session = CurlSession(impersonate=_imp)
-                            break
-                        except Exception:
-                            continue
-                    else:
-                        session = CurlSession(impersonate="chrome110")
-                session.trust_env = False
-                return session
+                session = CurlSession(impersonate=impersonation)
             except Exception:
-                session = Session()
-                session.verify = False
-                session.trust_env = False
-                return session
+                for _imp in ("chrome136", "chrome124", "chrome110"):
+                    try:
+                        session = CurlSession(impersonate=_imp)
+                        break
+                    except Exception:
+                        continue
+                else:
+                    session = CurlSession(impersonate="chrome110")
+            session.trust_env = False
+            return session
         except Exception:
-            import requests
-            session = requests.Session()
+            if Session is None:
+                raise RuntimeError("Install curl_cffi or requests to create an API session.")
+            session = Session()
             session.verify = False
             session.trust_env = False
             return session
@@ -405,15 +366,6 @@ class HeaderSpoofer:
         """Set proxy for the session"""
         if self.session:
             self.session.proxies = {"http": proxy, "https": proxy}
-        """Keep the session default headers aligned with the current profile and token."""
-        if not self.session:
-            return
-
-        try:
-            default_headers = self.get_protected_headers(self.token)
-            self.session.headers.update(default_headers)
-        except Exception:
-            pass
 
     def initialize_with_token(self, token: str):
         """Initialize with bot token"""
@@ -447,10 +399,12 @@ class HeaderSpoofer:
         return f"{timestamp_ms}.{random_part}"
 
     def _fetch_fingerprint(self) -> tuple:
-        """Fetch fingerprint from Discord"""
-        if time.time() - self.cache_time < 3600 and self.fingerprint:
-            return self.fingerprint, self.cookies
+        """Fetch/generate a fresh fingerprint for this request.
 
+        Always generates a new fingerprint so every request batch rotates its
+        X-Fingerprint and X-Track values. The server-provided fingerprint is
+        still used when available, but never cached across calls.
+        """
         try:
             headers = {
                 "User-Agent": self.profile.user_agent,
@@ -467,12 +421,11 @@ class HeaderSpoofer:
                 headers=headers,
                 timeout=10
             )
-            
+
             if response.status_code == 200:
                 data = response.json()
                 self.fingerprint = data.get("fingerprint", self._generate_fingerprint())
                 self.cookies = "; ".join([f"{k}={v}" for k, v in response.cookies.items()])
-                self.cache_time = time.time()
             else:
                 self.fingerprint = self._generate_fingerprint()
                 self.cookies = f"locale={self.profile.locale}"
@@ -487,7 +440,9 @@ class HeaderSpoofer:
 
         Generated once per session (or after rotate_profile) so that every
         request in the same session sends identical super-properties, which
-        is how a real browser behaves.
+        is how a real browser behaves. The value is a base64-encoded JSON blob
+        that Discord's tracking layer expects; it is built from the same
+        profile fields that drive the User-Agent and TLS impersonation.
         """
         if self._cached_super_properties is not None:
             return self._cached_super_properties
@@ -544,10 +499,14 @@ class HeaderSpoofer:
         captcha_key: Optional[str] = None,
         captcha_session_id: Optional[str] = None,
     ) -> Dict[str, str]:
-        """Get fully protected headers for Discord API with modern spoofing"""
+        """Get fully protected headers for Discord API with modern spoofing.
+
+        Header ORDER is randomized per call so repeated requests do not emit
+        an identical byte-for-byte header block — this is the rotation step.
+        """
         if token:
             self.token = token
-        
+
         fingerprint, cookies = self._fetch_fingerprint()
 
         header_items = [
@@ -678,8 +637,15 @@ class HeaderSpoofer:
         return None
 
     def rotate_profile(self):
-        """Rotate browser profile and reset all per-session cached values."""
-        self.profile = BrowserProfile()
+        """Rotate browser profile and reset all per-session cached values.
+
+        Picks a new random Chrome version from the supported list, tears down
+        the old TLS session (preventing keep-alive bleed across fingerprints),
+        and rebuilds a fresh session + headers. Call this before each new
+        request batch to rotate headers, fingerprint, and transport.
+        """
+        self.profile = BrowserProfile(random.choice(BrowserProfile._CHROME_VERSIONS))
+        self._browser_version = self.profile.browser_version
         self.build_number = get_latest_build()
         self.cache_time = 0
         self.fingerprint = ""
@@ -724,7 +690,12 @@ class HeaderSpoofer:
         }
 
     def rotate_tls(self):
-        """Alias for rotate_profile used by captcha retry flows."""
+        """Alias for rotate_profile used by captcha retry flows.
+
+        Rotates the TLS impersonation + browser profile so a captcha-triggered
+        fingerprint is never reused on the next attempt. The new session's TLS
+        handshake is matched to the new User-Agent before any request is sent.
+        """
         self.rotate_profile()
 
 
