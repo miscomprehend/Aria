@@ -1,7 +1,8 @@
 """Captcha solving module."""
 
+import inspect
 import os
-from typing import Optional, Any
+from typing import Optional, Any, Callable
 from .interface import CaptchaDataFromRequest
 from .constants import Constants
 
@@ -21,13 +22,32 @@ except ImportError:
     YesCaptchaSolver = None
 
 
+def _accepts_rotate(func: Any, *args: Any) -> bool:
+    """Return True when ``func`` can be called with a ``rotate`` keyword."""
+    try:
+        signature = inspect.signature(func)
+    except (TypeError, ValueError):
+        return False
+    params = signature.parameters.values()
+    if any(p.kind is inspect.Parameter.VAR_KEYWORD for p in params):
+        return True
+    return 'rotate' in signature.parameters
+
+
 class CaptchaSolver:
     """Handles captcha solving for quests."""
 
-    def __init__(self):
-        """Initialize captcha solver."""
+    def __init__(self, rotate_callback: Optional[Callable[[], Any]] = None):
+        """Initialize captcha solver.
+
+        Args:
+            rotate_callback: Optional callable invoked before each provider
+                retry so the caller can rotate the browser/header profile.
+                This keeps the request fingerprint in sync with a fresh task.
+        """
         self._solver: Optional[Any] = None
         self._provider_name: Optional[str] = None
+        self._rotate_callback = rotate_callback
 
         nocaptcha_key = str(os.environ.get('NOCAPTCHAAI_API_KEY') or "").strip()
         yescaptcha_key = str(os.environ.get('YES_CAPTCHA_API_KEY') or "").strip()
@@ -64,21 +84,25 @@ class CaptchaSolver:
                 except Exception as e:
                     print(f"Failed to initialize YesCaptcha: {e}")
 
+    def set_rotate_callback(self, rotate_callback: Optional[Callable[[], Any]]) -> None:
+        """Register a callback used to rotate headers before each retry."""
+        self._rotate_callback = rotate_callback
+
     async def solve_captcha(self, data: CaptchaDataFromRequest) -> str:
         """Solve hCaptcha using NoCaptchaAI or YesCaptcha.
-        
+
         Args:
             data: Captcha data from Discord
-            
+
         Returns:
             Captcha solution token
-            
+
         Raises:
             ValueError: If solving fails or is not available
         """
         if not self._solver:
             raise ValueError('Captcha solving not available')
-        
+
         try:
             result = await self._solver.hcaptcha(
                 data.captcha_sitekey,
@@ -87,7 +111,8 @@ class CaptchaSolver:
                     'rqdata': data.captcha_rqdata,
                     'isInvisible': False,
                     'userAgent': Constants.USER_AGENT,
-                }
+                },
+                rotate=self._rotate_callback,
             )
             return result.get('gRecaptchaResponse', '')
         except Exception as e:
@@ -95,7 +120,11 @@ class CaptchaSolver:
             raise ValueError(f"Failed to solve captcha with {provider}: {e}")
 
     async def solve_image_captcha(self, image_base64: str) -> str:
-        """Solve image captcha and return extracted text."""
+        """Solve image captcha and return extracted text.
+
+        Passes the rotation callback through so the provider can rotate the
+        browser/header profile (and TLS impersonation) between retries.
+        """
         if not self._solver:
             raise ValueError('Captcha solving not available')
 
@@ -104,7 +133,14 @@ class CaptchaSolver:
             raise ValueError(f"Image captcha solving is not supported by {provider}")
 
         try:
-            result = await self._solver.image_captcha(image_base64)
+            # Only pass ``rotate`` when the provider actually accepts it, so a
+            # real TypeError raised inside the provider is never masked.
+            if _accepts_rotate(self._solver.image_captcha):
+                result = await self._solver.image_captcha(
+                    image_base64, rotate=self._rotate_callback
+                )
+            else:
+                result = await self._solver.image_captcha(image_base64)
         except Exception as e:
             provider = self._provider_name or 'captcha provider'
             raise ValueError(f"Failed to solve image captcha with {provider}: {e}")

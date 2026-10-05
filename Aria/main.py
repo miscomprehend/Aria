@@ -1432,6 +1432,12 @@ def main():
 
     # Slash bot support was removed. The main bot continues to run without a separate slash process.
 
+    try:
+        from owo_commands import setup_owo_commands
+        setup_owo_commands(bot, os.path.join(config.config_dir, "owo_config.json"))
+    except Exception as e:
+        print(f"[owo_commands] failed: {e}")
+
     # Integrate enhanced command engine (500+ commands, ANSI-safe help)
     try:
         integrate_command_engine(bot, bot.api, bot.prefix)

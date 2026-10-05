@@ -1,18 +1,28 @@
-"""NoCaptchaAI solver for hCaptcha."""
+"""NoCaptchaAI solver for hCaptcha.
+
+Like the YesCaptcha client, this solver retries with a fresh task and rotated
+headers when the provider reports a transient/unsolvable error instead of
+failing the whole request on the first bad result. The shared retry/rotation
+logic lives in ``base.RetryMixin`` so both providers stay in sync.
+"""
 
 import asyncio
 import json
-from typing import Dict, Any, Optional
+from typing import Callable, Dict, Any, Optional
 import aiohttp
 
+from .base import RetryMixin
 
-class NoCaptchaSolver:
+
+class NoCaptchaSolver(RetryMixin):
     """NoCaptchaAI API client for solving captchas."""
 
     BASE_URL = 'https://api.nocaptchaai.com'
+    provider_name = 'NoCaptchaAI'
 
-    def __init__(self, api_key: str):
+    def __init__(self, api_key: str, max_attempts: int = 3):
         self.api_key = api_key
+        self.max_attempts = max(1, int(max_attempts))
         self.session: Optional[aiohttp.ClientSession] = None
 
     async def _get_session(self) -> aiohttp.ClientSession:
@@ -41,7 +51,7 @@ class NoCaptchaSolver:
         except Exception as e:
             raise ValueError(f"Failed to create task: {e}")
 
-        if data.get('errorId'):
+        if data.get('errorId') == 1:
             raise ValueError(f"Error creating task: {json.dumps(data, indent=2)}")
         return data
 
@@ -67,7 +77,7 @@ class NoCaptchaSolver:
                 elapsed += 3
                 continue
 
-            if data.get('errorId'):
+            if data.get('errorId') == 1:
                 raise ValueError(f"Error getting task result: {json.dumps(data, indent=2)}")
 
             if data.get('status') == 'ready':
@@ -83,25 +93,22 @@ class NoCaptchaSolver:
         sitekey: str,
         website_url: str,
         options: Optional[Dict[str, Any]] = None,
+        rotate: Optional[Callable[[], Any]] = None,
     ) -> Dict[str, Any]:
         options = options or {}
-        task = {
-            'type': 'HCaptchaTaskProxyless',
-            'websiteURL': website_url,
-            'websiteKey': sitekey,
-        }
 
-        if options.get('userAgent'):
-            task['userAgent'] = options['userAgent']
-        if options.get('isInvisible') is not None:
-            task['isInvisible'] = options['isInvisible']
-        if options.get('rqdata'):
-            task['rqdata'] = options['rqdata']
+        def build_task() -> Dict[str, Any]:
+            task: Dict[str, Any] = {
+                'type': 'HCaptchaTaskProxyless',
+                'websiteURL': website_url,
+                'websiteKey': sitekey,
+            }
+            if options.get('userAgent'):
+                task['userAgent'] = options['userAgent']
+            if options.get('isInvisible') is not None:
+                task['isInvisible'] = options['isInvisible']
+            if options.get('rqdata'):
+                task['rqdata'] = options['rqdata']
+            return task
 
-        create_result = await self.create_task(task)
-        task_id = create_result.get('taskId')
-        if not task_id:
-            raise ValueError("No task ID in create response")
-
-        result = await self.get_task_result(task_id)
-        return result.get('solution', {})
+        return await self._solve_with_retries(build_task, rotate=rotate)

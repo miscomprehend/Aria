@@ -1516,6 +1516,10 @@ class DiscordBot:
             channel_id = message_data.get("channel_id", "")
             guild_id = message_data.get("guild_id")
 
+            owo_message_handler = getattr(self, "_owo_on_message_create", None)
+            if callable(owo_message_handler):
+                owo_message_handler(message_data)
+
             # ── Dashboard: push Discord notifications ──────────────────────────
             try:
                 if author_id and author_id != str(self.user_id or ""):

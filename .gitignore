@@ -67,3 +67,6 @@ Aria/release/
 
 # Per-token instance locks
 .instance_lock/
+.xgrok/BEST_PRACTICES.md
+AGENTS.md
+.xgrok/SECURITY.md
