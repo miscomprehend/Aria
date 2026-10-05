@@ -7289,7 +7289,6 @@ Example Usage:
             "message": "messaging",
             "messages": "messaging",
             "user": "profile",
-            "guild": "server",
             "guilds": "server",
             "host": "hosting",
             "hosts": "hosting",
@@ -8305,7 +8304,7 @@ Example Usage:
                 f"{p}rpc stop",
                 "",
                 {"type": "section", "text": "Aliases"},
-                "ps4/ps5 => playstation",
+                "ps5 => playstation; mobile => android; oculus/meta_quest => quest",
             ),
 
                         "join": help_page(

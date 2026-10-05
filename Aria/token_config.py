@@ -4,7 +4,16 @@ import re
 import sys
 from contextlib import redirect_stdout
 
+import warnings
+
 import config
+
+warnings.filterwarnings("ignore", message=".*Unverified HTTPS request.*")
+try:
+    import urllib3
+    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+except ImportError:
+    pass
 
 
 CAPTCHA_PROVIDERS = {"nocaptchaai", "yescaptcha"}
@@ -18,7 +27,7 @@ def identify_token_owner(token: str) -> dict[str, str]:
         with redirect_stdout(io.StringIO()):
             profile = DiscordAPIClient(token).get_user_info(force=True)
     except Exception as error:
-        raise ValueError("Could not verify this account token. Check it and try again.") from error
+        raise ValueError(f"Could not verify this account token ({type(error).__name__}: {str(error)[:120]}). Check it and try again.") from error
 
     owner_id = str((profile or {}).get("id") or "").strip()
     if not re.fullmatch(r"[0-9]{15,22}", owner_id):

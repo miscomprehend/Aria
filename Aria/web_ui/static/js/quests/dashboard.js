@@ -24,71 +24,85 @@ class QuestDashboard {
   }
 
   setupEventListeners() {
-    // Navigation
-    document.querySelectorAll('[data-section]').forEach(item => {
-      item.addEventListener('click', (e) => {
-        this.navigateTo(item.dataset.section);
-      });
-    });
-
-    // Action buttons
-    document.getElementById('autoCompleteToggle')?.addEventListener('click', () => this.toggleAutoComplete());
-    document.getElementById('enrollAllBtn')?.addEventListener('click', () => this.enrollAll());
-    document.getElementById('claimAllBtn')?.addEventListener('click', () => this.claimAll());
-    document.getElementById('refreshAllBtn')?.addEventListener('click', () => this.refreshData());
-
     // Settings
     document.getElementById('darkMode')?.addEventListener('change', (e) => this.toggleDarkMode(e.target.checked));
     document.getElementById('compactView')?.addEventListener('change', (e) => this.toggleCompactView(e.target.checked));
   }
 
   navigateTo(section) {
-    // Update active nav
-    document.querySelectorAll('[data-section]').forEach(item => {
-      item.classList.toggle('active', item.dataset.section === section);
-    });
-
-    // Update content
-    document.querySelectorAll('.section-content').forEach(content => {
-      content.classList.add('hidden');
-    });
-
-    const targetContent = document.querySelector(`[data-section-content="${section}"]`);
-    if (targetContent) {
-      targetContent.classList.remove('hidden');
-    }
-
+    if (typeof window.navigateTo === 'function') window.navigateTo(section);
     this.currentPage = section;
   }
 
-  async loadQuestData() {
+  async api(path, options) {
+    const init = { ...(options || {}) };
+    if (init.method && init.method !== 'GET') {
+      init.headers = {
+        ...(init.headers || {}),
+        'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]')?.content || ''
+      };
+    }
+    const response = await fetch(path, init);
+    let body = null;
+    try { body = await response.json(); } catch (e) { /* non-JSON error page */ }
+    if (!response.ok || (body && body.ok === false)) {
+      throw new Error((body && body.error) || `HTTP ${response.status}`);
+    }
+    return body || {};
+  }
+
+  esc(value) {
+    return String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  }
+
+  async loadQuestData(force = false) {
     try {
-      const response = await fetch('/api/quests/@me');
-      const data = await response.json();
-      
-      // Categorize quests
-      this.quests.active = data.quests.filter(q => q.user_status?.enrolled_at && !q.user_status?.completed_at);
-      this.quests.available = data.quests.filter(q => !q.user_status?.enrolled_at);
-      this.quests.completed = data.quests.filter(q => q.user_status?.completed_at);
-      this.quests.claimable = data.quests.filter(q => q.user_status?.completed_at && !q.user_status?.claimed_at);
-      
+      const data = await this.api('/api/quests/@me' + (force ? '?refresh=1' : ''));
+      const quests = Array.isArray(data.quests) ? data.quests : [];
+      const now = Date.now();
+      const live = quests.filter(q => !q.config?.expires_at || new Date(q.config.expires_at).getTime() > now || q.user_status?.completed_at);
+      this.quests.active = live.filter(q => q.user_status?.enrolled_at && !q.user_status?.completed_at);
+      this.quests.available = live.filter(q => !q.user_status?.enrolled_at);
+      this.quests.completed = live.filter(q => q.user_status?.completed_at);
+      this.quests.claimable = live.filter(q => q.user_status?.completed_at && !q.user_status?.claimed_at);
+      this.autoComplete = !!data.auto_complete;
+      this.syncAutoButton();
       this.renderQuests();
       this.updateStats();
+      return true;
     } catch (error) {
       console.error('Failed to load quests:', error);
-      this.showToast('Failed to load quests', 'error');
+      this.showToast('Quests: ' + error.message, 'error');
+      return false;
     }
+  }
+
+  syncAutoButton() {
+    const btn = document.getElementById('autoCompleteToggle');
+    if (!btn) return;
+    btn.classList.toggle('active', this.autoComplete);
+    const title = btn.querySelector('.action-title');
+    if (title) title.textContent = this.autoComplete ? 'Stop Auto-Complete' : 'Start Auto-Complete';
   }
 
   renderQuests() {
     // Render active quests
-    const activeContainer = document.querySelector('[data-section-content="overview"] .active-quests');
+    const activeContainer = document.querySelector('[data-section-content="quests-overview"] .active-quests');
     if (activeContainer) {
-      activeContainer.innerHTML = this.quests.active.map(q => this.createQuestCard(q)).join('');
+      activeContainer.innerHTML = this.quests.active.length > 0
+        ? this.quests.active.map(q => this.createQuestCard(q)).join('')
+        : this.getEmptyState('No active quests', '⏳');
+    }
+
+    const activeList = document.querySelector('[data-section-content="quests-active"] .quests-list');
+    if (activeList) {
+      activeList.innerHTML = this.quests.active.length > 0
+        ? this.quests.active.map(q => this.createQuestCard(q)).join('')
+        : this.getEmptyState('No active quests', '⏳');
     }
 
     // Render available quests
-    const availableContainer = document.querySelector('[data-section-content="available"] .quests-list');
+    const availableContainer = document.querySelector('[data-section-content="quests-available"] .quests-list');
     if (availableContainer) {
       availableContainer.innerHTML = this.quests.available.length > 0 
         ? this.quests.available.map(q => this.createQuestCard(q)).join('')
@@ -96,7 +110,7 @@ class QuestDashboard {
     }
 
     // Render completed quests
-    const completedContainer = document.querySelector('[data-section-content="completed"] .quests-list');
+    const completedContainer = document.querySelector('[data-section-content="quests-completed"] .quests-list');
     if (completedContainer) {
       completedContainer.innerHTML = this.quests.completed.length > 0 
         ? this.quests.completed.map(q => this.createQuestCard(q, 'completed')).join('')
@@ -104,7 +118,7 @@ class QuestDashboard {
     }
 
     // Render claimable quests
-    const claimContainer = document.querySelector('[data-section-content="claim"] .quests-list');
+    const claimContainer = document.querySelector('[data-section-content="quests-claim"] .quests-list');
     if (claimContainer) {
       claimContainer.innerHTML = this.quests.claimable.length > 0 
         ? this.quests.claimable.map(q => this.createQuestCard(q, 'claimable')).join('')
@@ -113,10 +127,10 @@ class QuestDashboard {
   }
 
   createQuestCard(quest, state = 'active') {
-    const config = quest.config;
+    const config = quest.config || {};
     const userStatus = quest.user_status;
     const progress = this.getQuestProgress(quest);
-    const progressPercent = (progress.done / progress.total) * 100;
+    const progressPercent = progress.total ? (progress.done / progress.total) * 100 : 0;
 
     const badge = state === 'completed' ? 'completed' 
                 : state === 'claimable' ? 'claimable'
@@ -132,18 +146,18 @@ class QuestDashboard {
       <div class="quest-card reward-tier-${rewardTier}">
         <div class="quest-header">
           <div>
-            <h3 class="quest-title">${config.messages?.quest_name || 'Untitled Quest'}</h3>
-            <p class="quest-game">${config.application?.name || 'Unknown'}</p>
+            <h3 class="quest-title">${this.esc(config.messages?.quest_name || 'Untitled Quest')}</h3>
+            <p class="quest-game">${this.esc(config.application?.name || 'Unknown')}</p>
           </div>
           <span class="quest-badge ${badge}">${this.formatBadge(badge)}</span>
         </div>
 
-        <p class="quest-description">${config.messages?.quest_description || ''}</p>
+        <p class="quest-description">${this.esc(config.messages?.quest_description || '')}</p>
 
         ${state !== 'completed' && state !== 'claimable' ? `
           <div class="quest-progress">
             <div class="progress-info">
-              <span class="progress-label">${progress.event}</span>
+              <span class="progress-label">${this.esc(progress.event)}</span>
               <span class="progress-value">${progress.done}/${progress.total}</span>
             </div>
             <div class="progress-bar">
@@ -156,11 +170,11 @@ class QuestDashboard {
           <span class="quest-time">${this.getTimeRemaining(config.expires_at)}</span>
           <div class="quest-actions">
             ${state === 'active' ? `
-              <button class="quest-action" onclick="dashboard.pauseQuest('${quest.id}')">Pause</button>
+              <button class="quest-action" onclick="dashboard.pauseQuest('${this.esc(quest.id)}')">Pause</button>
             ` : state === 'available' ? `
-              <button class="quest-action" onclick="dashboard.enrollQuest('${quest.id}')">Enroll</button>
+              <button class="quest-action" onclick="dashboard.enrollQuest('${this.esc(quest.id)}')">Enroll</button>
             ` : state === 'claimable' ? `
-              <button class="quest-action" onclick="dashboard.claimReward('${quest.id}')">Claim</button>
+              <button class="quest-action" onclick="dashboard.claimReward('${this.esc(quest.id)}')">Claim</button>
             ` : ''}
           </div>
         </div>
@@ -170,7 +184,7 @@ class QuestDashboard {
 
   getQuestProgress(quest) {
     const userStatus = quest.user_status;
-    const config = quest.config;
+    const config = quest.config || {};
     const tasks = config.task_config_v2?.tasks || {};
 
     if (!userStatus?.progress) {
@@ -182,7 +196,7 @@ class QuestDashboard {
     let targetTotal = 100;
 
     for (const [eventName, progressData] of Object.entries(userStatus.progress)) {
-      if (progressData.value > maxProgress) {
+      if ((progressData?.value || 0) > maxProgress) {
         maxProgress = progressData.value;
         targetEvent = eventName;
       }
@@ -233,102 +247,86 @@ class QuestDashboard {
     return badgeMap[badge] || badge;
   }
 
-  updateStats() {
-    document.querySelector('[data-stat="active"]')!.textContent = this.quests.active.length;
-    document.querySelector('[data-stat="available"]')!.textContent = this.quests.available.length;
-    document.querySelector('[data-stat="completed"]')!.textContent = this.quests.completed.length;
-    document.querySelector('[data-stat="claimable"]')!.textContent = this.quests.claimable.length;
-
-    // Update badges
-    document.querySelector('[data-badge="active"]')!.textContent = this.quests.active.length;
-    document.querySelector('[data-badge="available"]')!.textContent = this.quests.available.length;
-    document.querySelector('[data-badge="completed"]')!.textContent = this.quests.completed.length;
-    document.querySelector('[data-badge="claimable"]')!.textContent = this.quests.claimable.length;
+  setText(selector, value) {
+    document.querySelectorAll(selector).forEach(el => { el.textContent = value; });
   }
 
-  async enrollQuest(questId) {
+  updateStats() {
+    this.setText('[data-stat="active"]' , this.quests.active.length);
+    this.setText('[data-stat="available"]' , this.quests.available.length);
+    this.setText('[data-stat="completed"]' , this.quests.completed.length);
+    this.setText('[data-stat="claimable"]' , this.quests.claimable.length);
+
+    // Update badges
+    this.setText('[data-badge="active"]' , this.quests.active.length);
+    this.setText('[data-badge="available"]' , this.quests.available.length);
+    this.setText('[data-badge="completed"]' , this.quests.completed.length);
+    this.setText('[data-badge="claimable"]' , this.quests.claimable.length);
+  }
+
+  async enrollQuest(questId, quiet = false) {
     try {
-      const response = await fetch(`/api/quests/${questId}/enroll`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' }
-      });
-      
-      if (response.ok) {
-        this.showToast(`Enrolled in quest!`, 'success');
-        await this.loadQuestData();
-      } else {
-        this.showToast('Failed to enroll', 'error');
-      }
+      await this.api(`/api/quests/${encodeURIComponent(questId)}/enroll`, { method: 'POST' });
+      if (!quiet) { this.showToast('Enrolled in quest!', 'success'); await this.loadQuestData(); }
+      return true;
     } catch (error) {
-      console.error('Enroll failed:', error);
-      this.showToast('Enrollment error', 'error');
+      this.showToast('Enroll failed: ' + error.message, 'error');
+      return false;
     }
   }
 
-  async claimReward(questId) {
+  async claimReward(questId, quiet = false) {
     try {
-      const response = await fetch(`/api/quests/${questId}/claim-reward`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' }
-      });
-      
-      if (response.ok) {
-        this.showToast('Reward claimed! 🎉', 'success');
-        await this.loadQuestData();
-      } else {
-        this.showToast('Failed to claim reward', 'error');
-      }
+      await this.api(`/api/quests/${encodeURIComponent(questId)}/claim-reward`, { method: 'POST' });
+      if (!quiet) { this.showToast('Reward claimed! 🎉', 'success'); await this.loadQuestData(); }
+      return true;
     } catch (error) {
-      console.error('Claim failed:', error);
-      this.showToast('Claim error', 'error');
+      this.showToast('Claim failed: ' + error.message, 'error');
+      return false;
     }
   }
 
   async enrollAll() {
-    if (this.quests.available.length === 0) {
-      this.showToast('No quests to enroll in', 'info');
-      return;
+    const targets = [...this.quests.available];
+    if (!targets.length) { this.showToast('No quests to enroll in', 'info'); return; }
+    let ok = 0;
+    for (const quest of targets) {
+      if (await this.enrollQuest(quest.id, true)) ok += 1;
+      await new Promise(resolve => setTimeout(resolve, 800));
     }
-
-    for (const quest of this.quests.available) {
-      await this.enrollQuest(quest.id);
-      await new Promise(resolve => setTimeout(resolve, 300)); // Throttle requests
-    }
-
-    this.showToast(`Enrolled in ${this.quests.available.length} quests!`, 'success');
+    await this.loadQuestData(true);
+    this.showToast(`Enrolled in ${ok}/${targets.length} quests`, ok ? 'success' : 'error');
   }
 
   async claimAll() {
-    if (this.quests.claimable.length === 0) {
-      this.showToast('No rewards to claim', 'info');
-      return;
+    const targets = [...this.quests.claimable];
+    if (!targets.length) { this.showToast('No rewards to claim', 'info'); return; }
+    let ok = 0;
+    for (const quest of targets) {
+      if (await this.claimReward(quest.id, true)) ok += 1;
+      await new Promise(resolve => setTimeout(resolve, 800));
     }
-
-    for (const quest of this.quests.claimable) {
-      await this.claimReward(quest.id);
-      await new Promise(resolve => setTimeout(resolve, 300));
-    }
-
-    this.showToast(`Claimed ${this.quests.claimable.length} rewards! 🎉`, 'success');
+    await this.loadQuestData(true);
+    this.showToast(`Claimed ${ok}/${targets.length} rewards`, ok ? 'success' : 'error');
   }
 
   async refreshData() {
     this.showToast('Refreshing quest data...', 'info');
-    await this.loadQuestData();
-    this.showToast('Quest data refreshed!', 'success');
+    if (await this.loadQuestData(true)) this.showToast('Quest data refreshed!', 'success');
   }
 
-  toggleAutoComplete() {
-    this.autoComplete = !this.autoComplete;
-    const btn = document.getElementById('autoCompleteToggle');
-    btn.classList.toggle('active');
-    
-    if (this.autoComplete) {
-      this.showToast('Auto-complete enabled ▶', 'success');
-      btn.innerHTML = '⏹ Stop Auto-Complete';
-    } else {
-      this.showToast('Auto-complete disabled', 'info');
-      btn.innerHTML = '▶ Start Auto-Complete';
+  async toggleAutoComplete() {
+    try {
+      const data = await this.api('/api/quests/auto', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabled: !this.autoComplete })
+      });
+      this.autoComplete = !!data.auto_complete;
+      this.syncAutoButton();
+      this.showToast(this.autoComplete ? 'Auto-complete enabled ▶' : 'Auto-complete disabled', 'info');
+    } catch (error) {
+      this.showToast('Auto-complete: ' + error.message, 'error');
     }
   }
 

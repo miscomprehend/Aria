@@ -46,7 +46,6 @@ def make_bot():
         "last_heartbeat": 0.0,
         "gateway_latency_ms": None,
         "_last_successful_heartbeat": 0.0,
-        "_network_stability_score": 100,
     }
     for name, value in defaults.items():
         setattr(bot, name, value)

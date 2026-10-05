@@ -10,43 +10,35 @@
   <script src="startup.js" defer></script>
 </head>
 <body>
-  <main class="startup-shell">
-    <header class="startup-header">
-      <div class="brand-lockup">
-        <img src="aria.png" alt="" width="38" height="38" />
-        <div>
-          <strong>ARIA</strong>
-          <span>DESKTOP</span>
-        </div>
-      </div>
-      <span class="build-label">LOCAL WORKSPACE</span>
-      <div class="window-controls" aria-label="Window controls">
-        <button type="button" data-window-action="minimize" aria-label="Minimize">−</button>
-        <button type="button" data-window-action="close" aria-label="Close">×</button>
-      </div>
-    </header>
+  <div class="window-controls" aria-label="Window controls">
+    <button type="button" data-window-action="minimize" aria-label="Minimize">−</button>
+    <button type="button" data-window-action="close" aria-label="Close">×</button>
+  </div>
 
-    <section class="startup-content" aria-live="polite">
-      <div class="status-mark" aria-hidden="true"><span></span></div>
-      <p class="eyebrow">STARTUP</p>
-      <h1>Preparing your workspace</h1>
-      <p id="startup-status" class="startup-status">Checking for an Aria dashboard...</p>
-      <ol class="boot-steps" id="boot-steps">
-        <li data-step="local" class="is-active"><span>1</span>Find the local dashboard</li>
-        <li data-step="runtime"><span>2</span>Start the private runtime</li>
-        <li data-step="owner"><span>3</span>Sign in as owner</li>
-        <li data-step="open"><span>4</span>Open the dashboard</li>
-      </ol>
-      <div class="progress-track" role="progressbar" aria-label="Starting Aria">
-        <span id="startup-fill"></span>
+  <main class="startup-shell" aria-live="polite">
+    <div class="brand-lockup">
+      <img src="aria.png" alt="" width="40" height="40" />
+      <div>
+        <strong>aria</strong>
+        <span id="runtime-state">desktop · starting</span>
       </div>
-      <p id="startup-elapsed" class="startup-elapsed">0s</p>
-    </section>
+    </div>
 
-    <footer class="startup-footer">
-      <span>ARIA DESKTOP</span>
-      <span id="runtime-state">INITIALIZING</span>
-    </footer>
+    <h1 id="startup-title">Looking for your dashboard</h1>
+    <p id="startup-status" class="startup-status">Checking for an Aria dashboard...</p>
+
+    <div class="progress-track" role="progressbar" aria-label="Starting Aria">
+      <span id="startup-fill"></span>
+    </div>
+
+    <ol class="boot-steps" id="boot-steps">
+      <li data-step="local" class="is-active"><i></i><span>Finding local dashboard</span><em></em></li>
+      <li data-step="runtime"><i></i><span>Starting private runtime</span><em></em></li>
+      <li data-step="owner"><i></i><span>Signing in as owner</span><em></em></li>
+      <li data-step="open"><i></i><span>Opening dashboard</span><em></em></li>
+    </ol>
+
+    <p id="startup-elapsed" class="startup-elapsed">00:00</p>
   </main>
 </body>
 </html>

@@ -1806,6 +1806,7 @@ class DiscordBot:
             else:
                 print("\033[1;36m[RPC]\033[0m cleared")
             self._last_activity_signature = signature
+        self._sync_custom_status(normalized_activities)
         if self.identified and self.connection_active and self.ws:
             try:
                 status = getattr(self, "_current_status", "online")
@@ -1823,6 +1824,56 @@ class DiscordBot:
             except Exception:
                 pass
         return normalized_activities
+
+    def _sync_custom_status(self, activities):
+        """Mirror a type-4 activity into the account's real custom status.
+
+        Discord only treats the profile setting as authoritative, so a gateway-only
+        custom status is dropped or shown inconsistently on other clients.
+        """
+        custom = next(
+            (a for a in activities if isinstance(a, dict) and a.get("type") == 4),
+            None,
+        )
+        previous = getattr(self, "_synced_custom_status", None)
+        if custom is None:
+            if previous is None:
+                return
+            desired = None
+        else:
+            text = str(custom.get("state") or "").strip()
+            emoji = custom.get("emoji") if isinstance(custom.get("emoji"), dict) else {}
+            desired = (text, str(emoji.get("name") or ""), str(emoji.get("id") or ""))
+        if desired == previous:
+            return
+        self._synced_custom_status = desired
+        api = getattr(self, "api", None)
+        if api is None:
+            return
+
+        if desired is None:
+            body = {"custom_status": None}
+        else:
+            text, emoji_name, emoji_id = desired
+            body = {"custom_status": {
+                "text": text[:128] or None,
+                "emoji_name": emoji_name or None,
+                "emoji_id": emoji_id or None,
+                "expires_at": None,
+            }}
+
+        def _push():
+            try:
+                response = api.request("PATCH", "/users/@me/settings", json=body)
+                code = getattr(response, "status_code", 200)
+                if response is None or code not in (200, 204):
+                    self._synced_custom_status = previous
+                    print(f"\033[1;31m[RPC]\033[0m Custom status sync failed (HTTP {code}).")
+            except Exception as exc:
+                self._synced_custom_status = previous
+                print(f"\033[1;31m[RPC]\033[0m Custom status sync failed: {exc}")
+
+        threading.Thread(target=_push, daemon=True, name="custom-status-sync").start()
 
     def clear_activity(self):
         """Remove the current presence activity."""

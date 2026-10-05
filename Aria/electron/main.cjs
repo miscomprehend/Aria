@@ -191,8 +191,16 @@ function startBackend(runtimeToken = null, ownerId = desktopOwnerId) {
     backendStartError = error;
     logMessage("ERROR", `Could not start the Aria backend: ${error.message}`);
   });
-  backendProcess.once("exit", (code, signal) => {
+  const child = backendProcess;
+  child.once("exit", (code, signal) => {
     logMessage(code === 0 ? "INFO" : "ERROR", `Aria backend exited (${code ?? signal}).`);
+    const intentional = isQuitting || backendProcess !== child || signal === "SIGTERM";
+    if (!intentional && code !== 0 && dashboardUrl) {
+      dialog.showErrorBox(
+        "Aria backend stopped",
+        `The Aria backend exited unexpectedly (${code ?? signal}). Restart Aria to continue.\n\nLog file: ${logFilePath || "unavailable"}`,
+      );
+    }
   });
 }
 
@@ -507,6 +515,7 @@ function createTokenWindow() {
     minHeight: 520,
     frame: false,
     autoHideMenuBar: true,
+    backgroundColor: "#070a10",
     resizable: true,
     show: false,
     title: "Aria Desktop Setup",
@@ -549,6 +558,7 @@ function createLoadingWindow() {
     minHeight: 390,
     frame: false,
     autoHideMenuBar: true,
+    backgroundColor: "#070a10",
     resizable: false,
     show: false,
     title: "Aria Desktop",
@@ -657,6 +667,7 @@ function createWindow() {
       minHeight: 520,
       frame: false,
       autoHideMenuBar: true,
+      backgroundColor: "#070a10",
       title: "Aria Desktop",
       icon: path.join(__dirname, "aria.ico"),
       webPreferences: {

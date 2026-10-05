@@ -210,26 +210,18 @@ class NitroSniper:
     def get_stats(self):
         """Get comprehensive nitro sniper statistics"""
         with self.lock:
+            attempted = self.stats["attempted"]
             return {
                 "enabled": self.enabled,
-                "attempted": self.stats["attempted"],
+                "attempted": attempted,
                 "claimed": self.stats["claimed"],
                 "failed": self.stats["failed"],
                 "invalid": self.stats["invalid"],
-                "used_codes_count": len(self.used_codes),
-                "last_claimed": self.last_claimed,
-                "success_rate": f"{(self.stats['claimed']/max(self.stats['attempted'],1)*100):.1f}%" if self.stats["attempted"] > 0 else "0%"
-            }
-            return count
-    
-    def get_stats(self):
-        with self.lock:
-            return {
-                "enabled": self.enabled,
                 "used_codes": len(self.used_codes),
-                "claimed": self.claimed_count,
+                "used_codes_count": len(self.used_codes),
                 "cached": len(self.used_codes),
                 "last_claimed": self.last_claimed,
+                "success_rate": f"{(self.stats['claimed'] / attempted * 100):.1f}%" if attempted else "0%",
             }
 
 nitro_fast = None

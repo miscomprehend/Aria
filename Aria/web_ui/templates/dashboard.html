@@ -594,17 +594,17 @@
                 <span class="search-hint" id="cmdCountLabel"></span>
                 <span class="kbd">/</span>
             </div>
-            <div class="table-card">
-                <div class="table-header">
-                    <span class="table-title">Loaded Commands</span>
-                    <span class="table-badge" id="cmdBadge">—</span>
+            <div class="cmd-toolbar">
+                <div class="cmd-chips" id="cmdChips" role="tablist" aria-label="Command filter">
+                    <button type="button" class="cmd-chip is-active" data-filter="all">All</button>
+                    <button type="button" class="cmd-chip" data-filter="used">Used</button>
+                    <button type="button" class="cmd-chip" data-filter="unused">Unused</button>
+                    <button type="button" class="cmd-chip" data-filter="aliased">With aliases</button>
                 </div>
-                <table class="data-table">
-                    <thead><tr><th>Command</th><th>Aliases</th><th>Description</th><th>Recent Usage</th></tr></thead>
-                    <tbody id="commandsBody">
-                        <tr><td colspan="4" class="empty-row">Loading…</td></tr>
-                    </tbody>
-                </table>
+                <span class="table-badge" id="cmdBadge">—</span>
+            </div>
+            <div class="cmd-grid" id="commandsBody">
+                <div class="empty-row cmd-empty">Loading…</div>
             </div>
         </section>
 
@@ -1007,7 +1007,7 @@
                         <label class="rpc-preset-field" for="rpcPresetActivityName"><span>Activity name</span><input id="rpcPresetActivityName" class="setting-input" type="text" maxlength="128" placeholder="e.g. Gaming"></label>
                         <label class="rpc-preset-field" for="rpcPresetType"><span>RPC type</span><select id="rpcPresetType" class="setting-input">
                             <option value="0">Playing</option><option value="1">Streaming</option><option value="2">Listening</option><option value="3">Watching</option><option value="5">Competing</option>
-                            <optgroup label="Apps"><option value="spotify">Spotify</option><option value="youtube">YouTube</option><option value="crunchyroll">Crunchyroll</option><option value="xbox">Xbox</option><option value="playstation">PlayStation</option><option value="vrchat">VRChat</option></optgroup>
+                            <optgroup label="Apps"><option value="spotify">Spotify</option><option value="youtube">YouTube</option><option value="crunchyroll">Crunchyroll</option><option value="xbox">Xbox</option><option value="playstation">PlayStation 5</option><option value="vrchat">VRChat</option></optgroup><optgroup label="Platforms"><option value="ps4">PlayStation 4</option><option value="quest">Meta Quest</option><option value="android">Android</option><option value="ios">iOS</option><option value="samsung">Samsung</option><option value="desktop">Desktop</option></optgroup>
                         </select></label>
                         <label class="rpc-preset-field" for="rpcPresetStreamUrl"><span>Stream URL</span><input id="rpcPresetStreamUrl" class="setting-input" type="url" placeholder="https://twitch.tv/channel"></label>
                         <label class="rpc-preset-field" for="rpcPresetDetails"><span>Details</span><input id="rpcPresetDetails" class="setting-input" type="text" maxlength="128" placeholder="First activity line"></label>
@@ -1204,6 +1204,13 @@
                                         <button class="rpc-type-option" type="button" role="option" aria-selected="false" data-rpc-type="xbox" tabindex="-1" onclick="selectRpcType('xbox')"><span><strong>Xbox</strong><small>Console game activity</small></span><i aria-hidden="true">&#10003;</i></button>
                                         <button class="rpc-type-option" type="button" role="option" aria-selected="false" data-rpc-type="playstation" tabindex="-1" onclick="selectRpcType('playstation')"><span><strong>PlayStation</strong><small>Console game activity</small></span><i aria-hidden="true">&#10003;</i></button>
                                         <button class="rpc-type-option" type="button" role="option" aria-selected="false" data-rpc-type="vrchat" tabindex="-1" onclick="selectRpcType('vrchat')"><span><strong>VRChat</strong><small>Virtual world activity</small></span><i aria-hidden="true">&#10003;</i></button>
+                                        <div class="rpc-type-group-label" role="presentation">PLATFORMS</div>
+                                        <button class="rpc-type-option" type="button" role="option" aria-selected="false" data-rpc-type="ps4" tabindex="-1" onclick="selectRpcType('ps4')"><span><strong>PlayStation 4</strong><small>Spoof PS4 console</small></span><i aria-hidden="true">&#10003;</i></button>
+                                        <button class="rpc-type-option" type="button" role="option" aria-selected="false" data-rpc-type="quest" tabindex="-1" onclick="selectRpcType('quest')"><span><strong>Meta Quest</strong><small>Spoof headset</small></span><i aria-hidden="true">&#10003;</i></button>
+                                        <button class="rpc-type-option" type="button" role="option" aria-selected="false" data-rpc-type="android" tabindex="-1" onclick="selectRpcType('android')"><span><strong>Android</strong><small>Spoof mobile</small></span><i aria-hidden="true">&#10003;</i></button>
+                                        <button class="rpc-type-option" type="button" role="option" aria-selected="false" data-rpc-type="ios" tabindex="-1" onclick="selectRpcType('ios')"><span><strong>iOS</strong><small>Spoof mobile</small></span><i aria-hidden="true">&#10003;</i></button>
+                                        <button class="rpc-type-option" type="button" role="option" aria-selected="false" data-rpc-type="samsung" tabindex="-1" onclick="selectRpcType('samsung')"><span><strong>Samsung</strong><small>Spoof Galaxy / TV</small></span><i aria-hidden="true">&#10003;</i></button>
+                                        <button class="rpc-type-option" type="button" role="option" aria-selected="false" data-rpc-type="desktop" tabindex="-1" onclick="selectRpcType('desktop')"><span><strong>Desktop</strong><small>Spoof PC client</small></span><i aria-hidden="true">&#10003;</i></button>
                                     </div>
                                 </div>
                             </div>

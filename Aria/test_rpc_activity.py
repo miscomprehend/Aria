@@ -59,13 +59,20 @@ class RpcActivityTests(unittest.TestCase):
             self.assertEqual(RPC_PROVIDER_CONFIG[rpc_type]["application_id"], expected_app_id)
             self.assertEqual(RPC_APP_IDS[rpc_type], expected_app_id)
 
+    def test_platform_spoof_providers_set_presence_platform(self):
+        for kind, platform in (("ps4", "ps4"), ("android", "android"), ("quest", "meta_quest"), ("ios", "ios")):
+            activity = build_rpc_activity(kind, {"name": "Halo"})
+            self.assertEqual(activity["platform"], platform)
+            self.assertEqual(activity["name"], "Halo")
+
     def test_rpc_types_match_supported_catalog(self):
         self.assertEqual(
             RPC_TYPES,
             (
                 "custom_status", "playing", "watching", "listening", "streaming",
                 "competing", "spotify", "youtube", "xbox", "playstation",
-                "crunchyroll", "vrchat", "custom", "clear",
+                "ps4", "crunchyroll", "vrchat", "quest", "android", "ios",
+                "samsung", "desktop", "custom", "clear",
             ),
         )
 
@@ -98,7 +105,7 @@ class RpcActivityTests(unittest.TestCase):
             "youtube_music", "applemusic", "deezer", "tidal", "twitch", "kick",
             "netflix", "disneyplus", "primevideo", "plex", "jellyfin",
             "soundcloud", "metaquest", "roblox", "vscode", "browser",
-            "desktop", "mobile", "phone", "web",
+            "mobile", "phone", "web",
         }
         configured_modes = {mode for group in RPC_TYPE_GROUPS.values() for mode in group}
         self.assertTrue(removed_modes.isdisjoint(configured_modes))

@@ -665,16 +665,22 @@ class WebPanel:
                 users[admin_id] = entry
                 self._save_dashboard_users(users)
 
-        if password_to_print:
-            heading = "Owner Credentials Rotated" if getattr(self, "rotate_owner_password", False) else "Owner Account Created"
+        desktop_mode = os.environ.get("ARIA_DESKTOP_MODE") == "1"
+        if desktop_mode and not password_to_print and configured_password:
+            password_to_print = configured_password
+
+        if password_to_print or desktop_mode:
+            heading = "Owner Credentials Rotated" if getattr(self, "rotate_owner_password", False) else ("Owner Credentials" if desktop_mode else "Owner Account Created")
             username = str((users.get(admin_id) or {}).get("username") or configured_username)
             print(f"\n{'=' * 55}")
             print(f"  Aria WebPanel — {heading}")
             print(f"  Owner ID : {admin_id}")
             print(f"  Username : {username}")
-            print(f"  Password : {password_to_print}")
+            if password_to_print:
+                print(f"  Password : {password_to_print}")
+            else:
+                print("  Password : (stored as a hash; set owner_password in the config to show it here)")
             print(f"  Sign in  : http://127.0.0.1:{self.port}/login")
-            print("  Password is stored as a hash, not plaintext.")
             print(f"{'=' * 55}\n")
 
         if not owner_is_master and admin_id in users:
@@ -970,7 +976,7 @@ class WebPanel:
         }
 
     @staticmethod
-    def _dispatch_hosted_rpc(target: dict[str, Any], action: str, activity: dict[str, Any] | None = None) -> dict[str, Any]:
+    def _dispatch_hosted_rpc(target: dict[str, Any], action: str, activity: dict[str, Any] | list[dict[str, Any]] | None = None) -> dict[str, Any]:
         if not target.get("active"):
             return {"ok": False, "error": "Hosted client is not running"}
         from hosted_rpc_bridge import dispatch_hosted_rpc
@@ -2922,6 +2928,75 @@ class WebPanel:
                 return jsonify({"ok": False, "error": "Unauthorized"}), 403
             return jsonify({"ok": True, "data": self._commands_data()})
 
+        def _quest_manager_or_error(mutating: bool = False):
+            if not self._require_session():
+                return None, (jsonify({"ok": False, "error": "Unauthorized"}), 403)
+            requester_id = str(session.get("user_id") or "")
+            bot_user_id = str(getattr(self.bot, "user_id", "") or "")
+            if requester_id != bot_user_id and not self._is_owner_session():
+                return None, (jsonify({"ok": False, "error": "Forbidden"}), 403)
+            if mutating and not self._valid_csrf_token(request.headers.get("X-CSRF-Token", "")):
+                return None, (jsonify({"ok": False, "error": "Session expired"}), 403)
+            manager = getattr(self.bot, "quest_manager", None) if self.bot else None
+            if manager is None:
+                return None, (jsonify({"ok": False, "error": "Quest system is still starting"}), 503)
+            return manager, None
+
+        @self.app.get("/api/quests/@me")
+        def api_quests_me() -> Any:
+            manager, err = _quest_manager_or_error()
+            if err:
+                return err
+            force = request.args.get("refresh") == "1"
+            if force or not manager.quests:
+                ok, message = manager.fetch_quests(force=True)
+                if not ok and not manager.quests:
+                    return jsonify({"ok": False, "error": message}), 502
+            return jsonify({
+                "ok": True,
+                "quests": list(manager.quests.values()),
+                "auto_complete": bool(manager.auto_complete),
+                "last_fetch": manager.last_fetch,
+            })
+
+        @self.app.post("/api/quests/<quest_id>/enroll")
+        def api_quest_enroll(quest_id: str) -> Any:
+            manager, err = _quest_manager_or_error(mutating=True)
+            if err:
+                return err
+            quest = manager.quests.get(str(quest_id))
+            if quest is None:
+                return jsonify({"ok": False, "error": "Unknown quest"}), 404
+            status = manager.enroll(quest)
+            if not status:
+                return jsonify({"ok": False, "error": "Discord rejected the enrollment"}), 502
+            quest["user_status"] = status
+            return jsonify({"ok": True})
+
+        @self.app.post("/api/quests/<quest_id>/claim-reward")
+        def api_quest_claim(quest_id: str) -> Any:
+            manager, err = _quest_manager_or_error(mutating=True)
+            if err:
+                return err
+            quest = manager.quests.get(str(quest_id))
+            if quest is None:
+                return jsonify({"ok": False, "error": "Unknown quest"}), 404
+            if not manager.claim(quest):
+                return jsonify({"ok": False, "error": "Reward could not be claimed (it may need a captcha or already be claimed)"}), 502
+            return jsonify({"ok": True})
+
+        @self.app.post("/api/quests/auto")
+        def api_quest_auto() -> Any:
+            manager, err = _quest_manager_or_error(mutating=True)
+            if err:
+                return err
+            payload = request.get_json(silent=True) or {}
+            if payload.get("enabled"):
+                manager.start()
+            else:
+                manager.stop()
+            return jsonify({"ok": True, "auto_complete": bool(manager.auto_complete)})
+
         @self.app.get("/api/friends")
         def api_friends() -> Any:
             if not self._require_session():
@@ -3220,7 +3295,7 @@ class WebPanel:
                     apply_activity = getattr(b, "_rpc_apply_activity", None)
                     if callable(apply_activity):
                         apply_activity(b, None)
-                    else:
+                    elif b is not None:
                         b.set_activity(None)
                 except Exception as e:
                     return jsonify({"ok": False, "error": str(e)}), 500
@@ -3243,7 +3318,7 @@ class WebPanel:
                     activity = dict(incoming)
                     is_custom_status = int(activity.get("type", 0)) == 4
                     if not is_custom_status:
-                        apply_rpc_spoofing(activity, data.get("spoof"), data.get("stream_url"))
+                        apply_rpc_spoofing(activity, bool(data.get("spoof")), data.get("stream_url"))
                     normalized_activities.append(self._normalize_rpc_activity(activity))
                 payload = normalized_activities[0] if single_activity else normalized_activities
                 response_activity = next(
@@ -3264,7 +3339,7 @@ class WebPanel:
                 apply_activity = getattr(b, "_rpc_apply_activity", None)
                 if callable(apply_activity):
                     apply_activity(b, payload)
-                else:
+                elif b is not None:
                     b.set_activity(payload)
             except ValueError as e:
                 return jsonify({"ok": False, "error": str(e)}), 400
@@ -3383,7 +3458,7 @@ class WebPanel:
             b = self.bot if target is None else None
             try:
                 if action == "set":
-                    rotation = store.set_rotation(data.get("presets"), data.get("interval"))
+                    rotation = store.set_rotation(data.get("presets") or [], data.get("interval") or 0)
                 elif action == "start":
                     if target:
                         result = self._dispatch_hosted_rpc(target, "rotation_start")
@@ -3460,10 +3535,13 @@ class WebPanel:
                     elif action == "add":
                         return jsonify({"ok": False, "error": "activity must be an object"}), 400
                     elif target:
-                        current = self._read_hosted_runtime_state(target).get("rpc", {}).get("activity")
+                        hosted_rpc = self._read_hosted_runtime_state(target).get("rpc", {})
+                        current = hosted_rpc.get("activities") or hosted_rpc.get("activity")
                         activities = current if isinstance(current, list) else [current]
                     else:
-                        current = getattr(self.bot, "activity", None) if self.bot else None
+                        current = getattr(self.bot, "activities", None) if self.bot else None
+                        if not current and self.bot:
+                            current = getattr(self.bot, "activity", None)
                         activities = current if isinstance(current, list) else [current]
                     if not activities or not all(isinstance(item, dict) for item in activities):
                         return jsonify({"ok": False, "error": "Set or build an RPC activity before adding it to the stack"}), 400
@@ -3472,7 +3550,7 @@ class WebPanel:
                     stack = store.save_stack(stack + activities)
                 elif action == "remove":
                     try:
-                        index = int(data.get("index"))
+                        index = int(data.get("index", ""))
                     except (TypeError, ValueError):
                         return jsonify({"ok": False, "error": "Stack index must be an integer"}), 400
                     if index < 0 or index >= len(stack):
@@ -3488,6 +3566,7 @@ class WebPanel:
                 elif action == "apply":
                     if not stack:
                         return jsonify({"ok": False, "error": "RPC stack is empty"}), 400
+                    stack = [self._normalize_rpc_activity(item) for item in stack]
                     if target:
                         result = self._dispatch_hosted_rpc(target, "set", stack)
                         if not result.get("ok"):
@@ -4305,7 +4384,7 @@ class WebPanel:
                 user_entry = users.get(target_uid) or {}
                 user_entry["password_hash"] = self._hash_pw(new_pw)
                 user_entry["last_seen_at"] = int(time.time())
-                timeline = user_entry.get("last_actions") if isinstance(user_entry.get("last_actions"), list) else []
+                timeline: list = user_entry.get("last_actions") if isinstance(user_entry.get("last_actions"), list) else []
                 timeline.append({
                     "ts": int(time.time()),
                     "action": "password_reset",

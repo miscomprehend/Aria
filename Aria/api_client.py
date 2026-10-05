@@ -288,7 +288,9 @@ class DiscordAPIClient:
             return None
 
         if not response or getattr(response, "status_code", 0) != 200:
-            print(f'[CAPTCHA] {provider["name"]} createTask failed with HTTP {getattr(response, "status_code", "no response")}')
+            detail = str(getattr(response, "text", "") or "").strip()[:200]
+            hint = " (API key rejected; check your captcha API key)" if "apikey" in detail.lower() else ""
+            print(f'[CAPTCHA] {provider["name"]} createTask failed with HTTP {getattr(response, "status_code", "no response")}: {detail}{hint}')
             return None
 
         try:
@@ -361,7 +363,12 @@ class DiscordAPIClient:
             print(f'[CAPTCHA] Unsupported captcha service: {challenge.get("service")}')
             return None
 
-        for provider in self._get_captcha_provider_candidates():
+        providers = self._get_captcha_provider_candidates()
+        if not providers:
+            print('[CAPTCHA] No captcha API key configured. Set NOCAPTCHAAI_API_KEY (or YES_CAPTCHA_API_KEY), or captcha_api_key in the Aria config.')
+            return None
+
+        for provider in providers:
             self._captcha_provider_name = provider["name"]
             task_id = self._create_captcha_task(provider, challenge)
             if not task_id:

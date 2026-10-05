@@ -9,13 +9,24 @@ RPC_TYPE_GROUPS = {
     "music": ("spotify", "listening"),
     "video": ("youtube", "watching", "crunchyroll"),
     "activity": ("playing", "streaming", "listening", "watching", "competing"),
-    "platform": ("xbox", "playstation", "vrchat"),
+    "platform": ("xbox", "playstation", "ps4", "vrchat", "quest", "android", "ios", "samsung", "desktop"),
     "custom": ("custom_status", "custom"),
 }
 
 RPC_TYPE_ALIASES = {
-    "ps4": "playstation",
     "ps5": "playstation",
+    "meta_quest": "quest",
+    "oculus": "quest",
+    "mobile": "android",
+    "iphone": "ios",
+    "galaxy": "samsung",
+}
+
+# Presence "platform" values the Discord client understands, keyed by dashboard/command type.
+RPC_PLATFORM_TYPES = {
+    "xbox": "xbox", "playstation": "ps5", "ps4": "ps4", "vrchat": "meta_quest",
+    "quest": "meta_quest", "android": "android", "ios": "ios",
+    "samsung": "samsung", "desktop": "desktop",
 }
 
 RPC_ACTIVITY_TYPES = {
@@ -40,8 +51,8 @@ RPC_APP_IDS = {
 
 RPC_TYPES = (
     "custom_status", "playing", "watching", "listening", "streaming",
-    "competing", "spotify", "youtube", "xbox", "playstation", "crunchyroll",
-    "vrchat", "custom", "clear",
+    "competing", "spotify", "youtube", "xbox", "playstation", "ps4", "crunchyroll",
+    "vrchat", "quest", "android", "ios", "samsung", "desktop", "custom", "clear",
 )
 
 ROTATABLE_FIELDS = (
@@ -82,6 +93,20 @@ _PROVIDER_CONFIG = {
         "default_button": "Join", "default_url": "https://hello.vrchat.com",
     },
 }
+
+for _key, _label, _platform in (
+    ("ps4", "PlayStation 4", "ps4"),
+    ("quest", "Meta Quest", "meta_quest"),
+    ("android", "Android", "android"),
+    ("ios", "iOS", "ios"),
+    ("samsung", "Samsung", "samsung"),
+    ("desktop", "Desktop", "desktop"),
+):
+    _PROVIDER_CONFIG[_key] = {
+        "type": 0, "name": "Game", "app": "generic",
+        "application_id": RPC_APP_IDS["generic"], "platform": _platform,
+        "label": _label, "default_button": "Play", "default_url": "https://discord.com",
+    }
 
 RPC_PROVIDER_CONFIG = _PROVIDER_CONFIG
 

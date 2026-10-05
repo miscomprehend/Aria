@@ -97,6 +97,42 @@ class WebPanelControlTests(unittest.TestCase):
     def tearDown(self):
         self.temp_dir.cleanup()
 
+    def test_quest_routes_serve_and_mutate_real_quest_manager(self):
+        class FakeQuests:
+            auto_complete = False
+            last_fetch = 1.0
+            quests = {"7": {"id": "7", "config": {}, "user_status": None}}
+
+            def fetch_quests(self, force=False):
+                return True, "ok"
+
+            def enroll(self, q):
+                return {"enrolled_at": "now"}
+
+            def claim(self, q):
+                return True
+
+            def start(self):
+                self.auto_complete = True
+
+            def stop(self):
+                self.auto_complete = False
+
+        panel.bot.quest_manager = FakeQuests()
+        panel.bot.user_id = "1"
+        self.authenticated = True
+        with self.client.session_transaction() as s:
+            s["user_id"] = "1"
+        data = self.client.get("/api/quests/@me").get_json()
+        self.assertEqual([q["id"] for q in data["quests"]], ["7"])
+        self.assertEqual(self.client.post("/api/quests/7/enroll").status_code, 403)
+        hdr = {"X-CSRF-Token": "test-csrf-token"}
+        self.assertTrue(self.client.post("/api/quests/7/enroll", headers=hdr).get_json()["ok"])
+        self.assertEqual(panel.bot.quest_manager.quests["7"]["user_status"], {"enrolled_at": "now"})
+        self.assertEqual(self.client.post("/api/quests/9/claim-reward", headers=hdr).status_code, 404)
+        r = self.client.post("/api/quests/auto", json={"enabled": True}, headers=hdr)
+        self.assertTrue(r.get_json()["auto_complete"])
+
     def test_favicon_route_serves_multisize_icon_when_no_custom_brand_is_configured(self):
         with patch.object(
             panel,
@@ -1616,7 +1652,8 @@ class WebPanelControlTests(unittest.TestCase):
 
         applied = self.client.post("/api/rpc/stack", json={"action": "apply"})
         self.assertTrue(applied.json["ok"])
-        self.assertEqual(panel.bot.activities, [{"type": 0, "name": "Initial"}, draft])
+        self.assertEqual([a["name"] for a in panel.bot.activities], ["Initial", "Draft"])
+        self.assertEqual(panel.bot.activities[1]["details"], "Built offline")
 
         removed = self.client.post("/api/rpc/stack", json={"action": "remove", "index": 1})
         self.assertTrue(removed.json["ok"])

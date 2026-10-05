@@ -1897,7 +1897,7 @@ def setup_bulk_commands(bot, delete_after_delay):
         if not text:
             _send(ctx, _box("Compress", "Usage: compress <text>  — compresses text with zlib"))
             return
-        import zlib, base64
+        import zlib
         compressed = base64.b64encode(zlib.compress(text.encode())).decode()
         _send(ctx, _box("Compress", f"Original: {len(text)} bytes\nCompressed (b64): {len(compressed)} chars\nData: {compressed[:200]}"))
 

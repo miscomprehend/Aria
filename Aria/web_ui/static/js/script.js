@@ -1077,28 +1077,49 @@ async function loadCommands() {
     setText('cmdCountLabel', _allCommands.length + ' commands');
     renderCommands(_allCommands);
     if (!_allCommands.length && res.data.error) {
-        const tbody = document.getElementById('commandsBody');
-        if (tbody) tbody.innerHTML = `<tr><td colspan="4" class="empty-row">${esc(res.data.error)}</td></tr>`;
+        const grid = document.getElementById('commandsBody');
+        if (grid) grid.innerHTML = `<div class="empty-row cmd-empty">${esc(res.data.error)}</div>`;
     }
 }
 
+let _cmdFilter = 'all';
+
+function _cmdMatches(c, q) {
+    if (_cmdFilter === 'used' && !Number(c.recent_usage || 0)) return false;
+    if (_cmdFilter === 'unused' && Number(c.recent_usage || 0)) return false;
+    if (_cmdFilter === 'aliased' && !(c.aliases && c.aliases.length)) return false;
+    if (!q) return true;
+    return c.name.toLowerCase().includes(q) ||
+        (c.aliases || []).some(a => a.toLowerCase().includes(q)) ||
+        (c.description || '').toLowerCase().includes(q);
+}
+
+function applyCommandFilters() {
+    const searchEl = document.getElementById('cmdSearch');
+    const q = searchEl ? searchEl.value.toLowerCase().trim() : '';
+    renderCommands(_allCommands.filter(c => _cmdMatches(c, q)));
+}
+
 function renderCommands(list) {
-    const tbody = document.getElementById('commandsBody');
+    const grid = document.getElementById('commandsBody');
     const badge = document.getElementById('cmdBadge');
     if (badge) badge.textContent = list.length + (list.length === 1 ? ' command' : ' commands');
-    if (!tbody) return;
+    if (!grid) return;
     if (!list || list.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="4" class="empty-row">No commands found</td></tr>';
+        grid.innerHTML = '<div class="empty-row cmd-empty">No commands found</div>';
         return;
     }
-    tbody.innerHTML = list.map(c =>
-        `<tr>
-            <td class="cmd-name">${esc(c.name)}</td>
-            <td class="cmd-aliases">${c.aliases && c.aliases.length ? esc(c.aliases.join(', ')) : '<span style="color:var(--muted)">—</span>'}</td>
-            <td style="color:var(--muted)">${esc(c.description || '—')}</td>
-            <td style="text-align:right;font-weight:700">${Number(c.recent_usage || 0)}</td>
-        </tr>`
-    ).join('');
+    grid.innerHTML = list.map(c => {
+        const uses = Number(c.recent_usage || 0);
+        const aliases = c.aliases && c.aliases.length
+            ? c.aliases.map(a => `<span class="cmd-alias">${esc(a)}</span>`).join('') : '';
+        return `<article class="cmd-card">
+            <header><span class="cmd-name">${esc(c.name)}</span>
+            <span class="cmd-uses${uses ? ' is-used' : ''}">${uses} ${uses === 1 ? 'use' : 'uses'}</span></header>
+            <p>${esc(c.description || 'No description provided.')}</p>
+            ${aliases ? `<footer>${aliases}</footer>` : ''}
+        </article>`;
+    }).join('');
 }
 
 async function loadFriends() {
@@ -1152,17 +1173,17 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 document.addEventListener('DOMContentLoaded', () => {
+    const chips = document.getElementById('cmdChips');
+    if (chips) chips.addEventListener('click', e => {
+        const btn = e.target.closest('.cmd-chip');
+        if (!btn) return;
+        _cmdFilter = btn.dataset.filter || 'all';
+        chips.querySelectorAll('.cmd-chip').forEach(x => x.classList.toggle('is-active', x === btn));
+        applyCommandFilters();
+    });
     const searchEl = document.getElementById('cmdSearch');
     if (searchEl) {
-        searchEl.addEventListener('input', () => {
-            const q = searchEl.value.toLowerCase().trim();
-            if (!q) { renderCommands(_allCommands); return; }
-            renderCommands(_allCommands.filter(c =>
-                c.name.toLowerCase().includes(q) ||
-                (c.aliases || []).some(a => a.toLowerCase().includes(q)) ||
-                (c.description || '').toLowerCase().includes(q)
-            ));
-        });
+        searchEl.addEventListener('input', applyCommandFilters);
     }
 });
 
@@ -2035,9 +2056,15 @@ const RPC_TYPE_CONFIG = {
     spotify: { activityType: 2, label: 'Listening to', applicationId: '3201606009684', name: 'Spotify' },
     youtube: { activityType: 3, label: 'Watching', applicationId: '111299001912', name: 'YouTube' },
     crunchyroll: { activityType: 3, label: 'Watching', applicationId: '981509069309354054', name: 'Crunchyroll' },
-    xbox: { activityType: 0, label: 'Playing a game', applicationId: '622174530214821906', name: 'Game' },
-    playstation: { activityType: 0, label: 'Playing a game', applicationId: '1470539864909943067', name: 'Game' },
-    vrchat: { activityType: 0, label: 'Playing VRChat', applicationId: '1498387526501535835', name: 'VRChat' },
+    xbox: { activityType: 0, label: 'Playing a game', applicationId: '622174530214821906', name: 'Game', platform: 'xbox' },
+    playstation: { activityType: 0, label: 'Playing a game', applicationId: '1470539864909943067', name: 'Game', platform: 'ps5' },
+    ps4: { activityType: 0, label: 'Playing a game', applicationId: '1470539864909943067', name: 'Game', platform: 'ps4' },
+    vrchat: { activityType: 0, label: 'Playing VRChat', applicationId: '1498387526501535835', name: 'VRChat', platform: 'meta_quest' },
+    quest: { activityType: 0, label: 'Playing a game', applicationId: '367827983903490050', name: 'Game', platform: 'meta_quest' },
+    android: { activityType: 0, label: 'Playing a game', applicationId: '367827983903490050', name: 'Game', platform: 'android' },
+    ios: { activityType: 0, label: 'Playing a game', applicationId: '367827983903490050', name: 'Game', platform: 'ios' },
+    samsung: { activityType: 0, label: 'Playing a game', applicationId: '367827983903490050', name: 'Game', platform: 'samsung' },
+    desktop: { activityType: 0, label: 'Playing a game', applicationId: '367827983903490050', name: 'Game', platform: 'desktop' },
     custom_status: { activityType: 4, label: 'Custom Status', applicationId: '367827983903490050', name: 'Custom Status', customStatus: true },
 };
 
@@ -3082,6 +3109,7 @@ function buildRpcEditorActivity() {
         : { type: spoof ? 1 : typeConfig.activityType, name, application_id: getEffectiveRpcAppId(), timestamps };
     if (typeConfig.customStatus && draft.statusEmoji) activity.emoji = { name: draft.statusEmoji, id: null, animated: false };
     if (draft.display_name) activity.display_name = draft.display_name;
+    if (typeConfig.platform) activity.platform = typeConfig.platform;
     if (!typeConfig.customStatus && draft.details) activity.details = draft.details;
     if (!typeConfig.customStatus && draft.state) activity.state = draft.state;
     if ((typeConfig.activityType === 1 || spoof) && draft.streamUrl) activity.url = draft.streamUrl;

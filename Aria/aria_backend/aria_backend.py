@@ -168,6 +168,7 @@ BOT_HELP = {
                  ("spotifylyrics", "Sync Spotify lyrics to your status")],
     "Logger": [("logger", "Track keywords/mentions, log deletes & edits")],
     "Profile": [("profile", "Set display name, avatar, banner, bio, pronouns, accent")],
+    "Snipers": [("nitro", "Nitro gift sniper"), ("giveaway", "Giveaway sniper")],
     "Anti-GC": [("antigc", "Auto-leave group-DM traps (+ block/msg/name/icon/webhook/whitelist)")],
     "Guild": [("guilds", "List your servers"),
               ("massleave", "Leave all non-owned servers"),
@@ -234,6 +235,8 @@ _gc_cog = None
 _gcextra_cog = None
 _guild_cog = None
 _reactions_cog = None
+_nitro_cog = None
+_giveaway_cog = None
 _DISCOVER_RPC_KEY = "aria_promo"
 
 def emit(obj: dict) -> None:
@@ -350,6 +353,13 @@ HELP = {
             ("clearclan", "clearclan", "Clear your current clan tag."),
             ("rotatetags", "rotatetags <i1> <i2> ... [Nm]", "Rotate clan tags across servers by index."),
             ("stoprotatetags", "stoprotatetags", "Stop guild tag rotation."),
+        ],
+    },
+    "snipers": {
+        "desc": "Nitro and giveaway snipers",
+        "cmds": [
+            ("nitro", "nitro <on/off/clear/stats>", "Toggle the Nitro sniper or show its stats."),
+            ("giveaway", "giveaway <on/off/stats>", "Toggle the giveaway sniper or show its stats."),
         ],
     },
     "reactions": {
@@ -1622,6 +1632,32 @@ async def start_realbot(token: str, app_id: str, guild_id: str = ""):
             await _rpc_reply(interaction, "Log into your account in Aria first."); return
         await _rpc_reply(interaction, _reactions_cog.unset("multi", user))
 
+    @tree.command(name="nitro", description="Nitro gift sniper")
+    @user_installable
+    async def _nitro(interaction, action: Literal["on", "off", "clear", "stats"] = "stats"):
+        if _nitro_cog is None:
+            await _rpc_reply(interaction, "Log into your account in Aria first."); return
+        if action in ("on", "off"):
+            _nitro_cog.enabled = (action == "on"); _nitro_cog._save()
+            await _rpc_reply(interaction, f"Nitro sniper {'enabled' if _nitro_cog.enabled else 'disabled'}.")
+        elif action == "clear":
+            await _rpc_reply(interaction, f"Nitro cache cleared ({_nitro_cog.clear_codes()} codes).")
+        else:
+            s = _nitro_cog.get_stats()
+            await _rpc_reply(interaction, f"Nitro sniper {'ON' if s['enabled'] else 'OFF'} — claimed {s['claimed']}, cached {s['cached']}, last {s['last_claimed'] or 'never'}.")
+
+    @tree.command(name="giveaway", description="Giveaway sniper")
+    @user_installable
+    async def _giveaway(interaction, action: Literal["on", "off", "stats"] = "stats"):
+        if _giveaway_cog is None:
+            await _rpc_reply(interaction, "Log into your account in Aria first."); return
+        if action in ("on", "off"):
+            _giveaway_cog.enabled = (action == "on"); _giveaway_cog._save()
+            await _rpc_reply(interaction, f"Giveaway sniper {'enabled' if _giveaway_cog.enabled else 'disabled'}.")
+        else:
+            s = _giveaway_cog.get_stats()
+            await _rpc_reply(interaction, f"Giveaway sniper {'ON' if s['enabled'] else 'OFF'} — entered {s['entered']}, won {s['won']}, failed {s['failed']}, last win {s['last_win'] or 'never'}.")
+
     @tree.command(name="card", description="Post your custom Layout card here")
     @user_installable
     async def _card(interaction):
@@ -1790,7 +1826,7 @@ def _upsert_account(token: str, stats: dict, make_active: bool = True) -> dict:
     return rec
 
 async def _teardown_bot() -> None:
-    global _bot, _bot_task, _rpc_cog, _spotify_cog, _logger_cog, _profile_cog, _antigc_cog, _friends_cog, _gc_cog, _gcextra_cog, _guild_cog, _reactions_cog
+    global _bot, _bot_task, _rpc_cog, _spotify_cog, _logger_cog, _profile_cog, _antigc_cog, _friends_cog, _gc_cog, _gcextra_cog, _guild_cog, _reactions_cog, _nitro_cog, _giveaway_cog
     for _c in (_gc_cog, _guild_cog, _reactions_cog):
         if _c is not None:
             try:
@@ -1819,6 +1855,8 @@ async def _teardown_bot() -> None:
     _gcextra_cog = None
     _guild_cog = None
     _reactions_cog = None
+    _nitro_cog = None
+    _giveaway_cog = None
 
 async def _switch_to_token(token: str) -> None:
     """Tear down the current account and log in with another (one active at a time)."""
@@ -1848,7 +1886,7 @@ async def _account_remove(aid: str) -> None:
 
 async def handle(cmd: dict, state: dict):
     global _bot, _bot_task, _rpc_cog, _realbot_task, OWNER_ID, _bot_app_id, _userapp_watch_task, _spotify_cog
-    global _logger_cog, _profile_cog, _antigc_cog, _friends_cog, _gc_cog, _gcextra_cog, _guild_cog, _reactions_cog, _ACTIVE_ID
+    global _logger_cog, _profile_cog, _antigc_cog, _friends_cog, _gc_cog, _gcextra_cog, _guild_cog, _reactions_cog, _nitro_cog, _giveaway_cog, _ACTIVE_ID
     c = cmd.get("cmd")
 
     if c == "login":
@@ -1958,6 +1996,24 @@ async def handle(cmd: dict, state: dict):
                 except Exception as e:
                     _reactions_cog = None
                     log(f"reactions cog failed to load: {e}\n" + traceback.format_exc())
+
+                try:
+                    import nitro_cog
+                    _nitro_cog = nitro_cog.Nitro(_bot)
+                    _bot.add_cog(_nitro_cog)
+                    log("Nitro cog loaded")
+                except Exception as e:
+                    _nitro_cog = None
+                    log(f"nitro cog failed to load: {e}\n" + traceback.format_exc())
+
+                try:
+                    import giveaway_cog
+                    _giveaway_cog = giveaway_cog.Giveaway(_bot)
+                    _bot.add_cog(_giveaway_cog)
+                    log("Giveaway cog loaded")
+                except Exception as e:
+                    _giveaway_cog = None
+                    log(f"giveaway cog failed to load: {e}\n" + traceback.format_exc())
             stats = await build_stats(_bot)
         except Exception as e:
             emit({"type": "login_error", "msg": str(e)})

@@ -49,5 +49,4 @@ async def main():
         print(f"❌ Error: {e}")
 
 if __name__ == "__main__":
-    asyncio.run(main())</content>
-<parameter name="filePath">/workspaces/Aria/Aria/async_example.py
+    asyncio.run(main())
