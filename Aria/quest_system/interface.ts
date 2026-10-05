@@ -528,4 +528,5 @@ export interface CaptchaDataFromRequest {
 	captcha_session_id: string;
 	captcha_rqdata: string;
 	captcha_rqtoken: string;
+	userAgent?: string;
 }

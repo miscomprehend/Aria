@@ -1,4 +1,5 @@
 import { fetch } from 'undici';
+import { Constants } from '../constants';
 
 type BaseResponse = {
 	errorId: 0 | 1;
@@ -29,6 +30,11 @@ type HCaptchaTaskProxyless = {
 	rqdata?: string;
 };
 
+export type YesCaptchaTask = {
+	type: string;
+	[key: string]: unknown;
+};
+
 type ImageToTextTask = {
 	type: 'ImageToTextTaskM1';
 	body: string; // Base64 encoded image
@@ -44,19 +50,11 @@ type ImageToTextSolution = {
 	text: string;
 };
 
-type CaptchaTask = HCaptchaTaskProxyless | ImageToTextTask;
-
-type CreateTaskResponse = {
-	HCaptchaTaskProxyless: BaseResponse;
-	ImageToTextTaskM1: ReadyTaskResult<ImageToTextSolution>;
-};
-
 export class YesCaptchaSolver {
 	public static readonly baseUrl = 'https://api.yescaptcha.com';
 	private apiKey: string;
 	private headersDefault: Headers = new Headers({
-		'User-Agent':
-			'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3',
+		'User-Agent': Constants.USER_AGENT,
 		'Content-Type': 'application/json',
 	});
 
@@ -64,9 +62,9 @@ export class YesCaptchaSolver {
 		this.apiKey = apiKey;
 	}
 
-	private createTask = async <T extends CaptchaTask>(
-		task: T,
-	): Promise<CreateTaskResponse[T['type']]> => {
+	private createTask = async <TTask extends { type: string }>(
+		task: TTask,
+	): Promise<BaseResponse> => {
 		const response = await fetch(YesCaptchaSolver.baseUrl + '/createTask', {
 			body: JSON.stringify({
 				clientKey: this.apiKey,
@@ -74,7 +72,7 @@ export class YesCaptchaSolver {
 			}),
 			method: 'POST',
 			headers: this.headersDefault,
-		}).then((res) => res.json() as any as CreateTaskResponse[T['type']]);
+		}).then((res) => res.json() as Promise<BaseResponse>);
 
 		if (response.errorId === 1) {
 			throw new Error(
@@ -93,15 +91,15 @@ export class YesCaptchaSolver {
 			}, 120_000);
 
 			while (true) {
-                const response = await fetch(
+				const response = await fetch(
 					YesCaptchaSolver.baseUrl + '/getTaskResult',
 					{
 						body: JSON.stringify({
 							clientKey: this.apiKey,
 							taskId,
 						}),
-                        method: 'POST',
-                        headers: this.headersDefault,
+						method: 'POST',
+						headers: this.headersDefault,
 					},
 				).then((res) => res.json() as any as TaskResult<T>);
 
@@ -129,14 +127,23 @@ export class YesCaptchaSolver {
 			body: imageBase64,
 		};
 
-		const createResult = await this.createTask(task);
-		const taskId = createResult.taskId;
+		return this.solveTask<ImageToTextTask, ImageToTextSolution>(task);
+	}
 
-		if (!taskId) {
-			throw new Error('No task ID in image captcha create response');
+	async solveTask<
+		TTask extends { type: string },
+		TSolution extends object = object,
+	>(
+		task: TTask,
+	): Promise<TSolution> {
+		if (!task || typeof task.type !== 'string' || !task.type.trim()) {
+			throw new Error("YesCaptcha task must include a non-empty 'type'");
 		}
-
-		const result = await this.poolTaskResult<ImageToTextSolution>(taskId);
+		const createResult = await this.createTask({ ...task });
+		if (!createResult.taskId) {
+			throw new Error('No task ID in captcha create response');
+		}
+		const result = await this.poolTaskResult<TSolution>(createResult.taskId);
 		return result.solution;
 	}
 
@@ -157,10 +164,6 @@ export class YesCaptchaSolver {
 			rqdata: options?.rqdata,
 		};
 
-		const createResult = await this.createTask(task);
-		const taskId = createResult.taskId;
-
-		const result = await this.poolTaskResult<HCaptchaSolution>(taskId);
-		return result.solution;
+		return this.solveTask<HCaptchaTaskProxyless, HCaptchaSolution>(task);
 	}
 }

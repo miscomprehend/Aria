@@ -104,14 +104,16 @@ class CaptchaSolver:
             raise ValueError('Captcha solving not available')
 
         try:
+            options = {
+                'rqdata': data.captcha_rqdata,
+                'isInvisible': False,
+                'userAgent': getattr(data, 'user_agent', None) or Constants.USER_AGENT,
+            }
+
             result = await self._solver.hcaptcha(
                 data.captcha_sitekey,
                 'https://discord.com/channels/@me',
-                {
-                    'rqdata': data.captcha_rqdata,
-                    'isInvisible': False,
-                    'userAgent': Constants.USER_AGENT,
-                },
+                options,
                 rotate=self._rotate_callback,
             )
             return result.get('gRecaptchaResponse', '')

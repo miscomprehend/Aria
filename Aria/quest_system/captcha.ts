@@ -47,7 +47,7 @@ export function solveCaptcha(data: CaptchaDataFromRequest): Promise<string> {
 		.hcaptcha(data.captcha_sitekey, 'https://discord.com', {
 			rqdata: data.captcha_rqdata,
 			isInvisible: false,
-			userAgent: Constants.USER_AGENT,
+			userAgent: data.userAgent || Constants.USER_AGENT,
 		})
 		.then((result) => result.gRecaptchaResponse)
 		.catch((error) => {

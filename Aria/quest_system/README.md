@@ -8,7 +8,7 @@ This is an enhanced quest system for Aria that integrates the TypeScript Auto-Qu
 - **Sophisticated class structure** with Quest and QuestManager classes
 - **Better type definitions** using dataclasses
 - **Enhanced header management** for Discord API requests
-- **YesCaptcha integration** for solving hCaptchas
+- **YesCaptcha integration** for hCaptcha and arbitrary typed provider tasks
 - **Proxy ticket support** for Discord Says activities
 - **Constants management** with proper user agent spoofing
 
@@ -218,6 +218,12 @@ The following TypeScript features have been ported:
 | Header management | Utils class | Utils class |
 | Constants | Constants class | Constants class |
 | Captcha solving | YesCaptchaSolver/NoCaptchaSolver | YesCaptchaSolver/NoCaptchaSolver |
+
+YesCaptcha's Python and TypeScript clients also expose `solve_task` /
+`solveTask` for forwarding a complete YesCaptcha task payload unchanged. Use
+this for task types or fields added by the provider (for example
+`websiteKey`, `pageAction`, or a current `userAgent`) that are not yet modeled
+by the convenience hCaptcha method.
 
 ### From Legacy Aria
 
