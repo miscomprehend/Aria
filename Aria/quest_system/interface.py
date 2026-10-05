@@ -374,6 +374,12 @@ class QuestTaskConfigType:
 
 class CaptchaDataFromRequest:
     """Data from captcha challenge."""
-    def __init__(self, captcha_sitekey: str, captcha_rqdata: str):
+    def __init__(
+        self,
+        captcha_sitekey: str,
+        captcha_rqdata: str,
+        user_agent: Optional[str] = None,
+    ):
         self.captcha_sitekey = captcha_sitekey
         self.captcha_rqdata = captcha_rqdata
+        self.user_agent = user_agent

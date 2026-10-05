@@ -1,4 +1,4 @@
-"""YesCaptcha solver for hCaptcha and image captchas.
+"""YesCaptcha client for typed provider tasks, hCaptcha, and image captchas.
 
 This client is resilient to transient provider failures. In particular, when
 YesCaptcha returns ``ERROR_CAPTCHA_UNSOLVABLE`` (the worker could not solve the
@@ -9,7 +9,7 @@ challenge instead of reusing a dead one.
 
 Two challenge kinds are supported:
 
-* ``hcaptcha``  -> ``HCaptchaTaskProxyless`` (Discord login / profile writes)
+* ``hcaptcha``  -> ``HCaptchaTask`` or ``HCaptchaTaskProxyless`` (Discord login / profile writes)
 * ``image_captcha`` -> ``ImageToTextTaskM1`` (image challenges)
 
 Both accept an optional ``rotate`` callback that is invoked before every retry
@@ -23,13 +23,18 @@ from typing import Callable, Dict, Any, Optional
 import aiohttp
 
 from .base import RetryMixin
+from ..constants import Constants
 
 
 class YesCaptchaSolver(RetryMixin):
     """YesCaptcha API client for solving captchas."""
 
-    BASE_URL = 'https://api.yescaptcha.com'
+    BASE_URL = 'https://yescaptcha.com'
     provider_name = 'YesCaptcha'
+    headers = {
+        'Content-Type': 'application/json',
+        'User-Agent': Constants.USER_AGENT,
+    }
 
     def __init__(self, api_key: str, max_attempts: int = 3):
         """Initialize YesCaptcha solver.
@@ -78,7 +83,7 @@ class YesCaptchaSolver(RetryMixin):
             async with session.post(
                 f'{self.BASE_URL}/createTask',
                 json=payload,
-                headers={'Content-Type': 'application/json'},
+                headers=self.headers,
             ) as resp:
                 data = await resp.json()
         except Exception as e:
@@ -116,7 +121,7 @@ class YesCaptchaSolver(RetryMixin):
                 async with session.post(
                     f'{self.BASE_URL}/getTaskResult',
                     json=payload,
-                    headers={'Content-Type': 'application/json'},
+                    headers=self.headers,
                 ) as resp:
                     data = await resp.json()
             except Exception:
@@ -136,10 +141,27 @@ class YesCaptchaSolver(RetryMixin):
 
         raise ValueError(f"Timeout while waiting for task {task_id}")
 
+    async def solve_task(
+        self,
+        task: Dict[str, Any],
+        rotate: Optional[Callable[[], Any]] = None,
+    ) -> Dict[str, Any]:
+        """Submit a complete YesCaptcha task without rewriting provider fields.
+
+        This supports new YesCaptcha task types and task-specific values such
+        as ``websiteKey``, ``pageAction``, and ``userAgent`` without requiring
+        this client to understand every captcha mechanism.
+        """
+        if not isinstance(task, dict) or not isinstance(task.get('type'), str) or not task['type'].strip():
+            raise ValueError("YesCaptcha task must be a mapping with a non-empty 'type'")
+
+        return await self._solve_with_retries(lambda: dict(task), rotate=rotate)
+
     async def hcaptcha(
         self,
         sitekey: str,
         website_url: str,
+        proxy: Optional[str] = None,
         options: Optional[Dict[str, Any]] = None,
         rotate: Optional[Callable[[], Any]] = None,
     ) -> Dict[str, Any]:
@@ -148,30 +170,32 @@ class YesCaptchaSolver(RetryMixin):
         Args:
             sitekey: hCaptcha site key
             website_url: Website URL
-            options: Additional options (rqdata, isInvisible, userAgent)
+            proxy: Optional proxy string passed to YesCaptcha. format: type:host:port:user:pass
+                   Example: http:192.168.1.1:8080:username:password
+            options: Additional hCaptcha fields (rqdata, isInvisible, userAgent)
             rotate: Optional callable to rotate the browser/header profile
                 before each retry.
 
         Returns:
             Solution with gRecaptchaResponse
         """
-        options = options or {}
-
-        def build_task() -> Dict[str, Any]:
-            task: Dict[str, Any] = {
-                'type': 'HCaptchaTaskProxyless',
-                'websiteURL': website_url,
-                'websiteKey': sitekey,
-            }
-            if options.get('userAgent'):
-                task['userAgent'] = options['userAgent']
-            if options.get('isInvisible') is not None:
-                task['isInvisible'] = options['isInvisible']
-            if options.get('rqdata'):
-                task['rqdata'] = options['rqdata']
-            return task
-
-        return await self._solve_with_retries(build_task, rotate=rotate)
+        task: Dict[str, Any] = dict(options or {})
+        
+        if proxy:
+            task.update({
+                'type': 'HCaptchaTask',
+                'proxy': proxy
+            })
+        else:
+            task.update({
+                'type': 'HCaptchaTaskProxyless'
+            })
+            
+        task.update({
+            'websiteURL': website_url,
+            'websiteKey': sitekey,
+        })
+        return await self.solve_task(task, rotate=rotate)
 
     async def image_captcha(
         self,
@@ -203,4 +227,4 @@ class YesCaptchaSolver(RetryMixin):
         solution = await self._solve_with_retries(build_task, rotate=rotate)
         if not isinstance(solution, dict):
             raise ValueError('Image captcha provider returned an invalid solution payload')
-        return solution
+        return solution 
