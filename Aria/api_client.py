@@ -202,6 +202,28 @@ class DiscordAPIClient:
         self.health_monitor = None
         self._captcha_provider_name: Optional[str] = None
 
+    @staticmethod
+    def _is_quest_endpoint(endpoint: str) -> bool:
+        return str(endpoint or "").startswith("/quests")
+
+    def _quest_captcha_cooling_down(self, endpoint: str) -> bool:
+        """True while quest write endpoints are paused after an unsolved captcha."""
+        if not self._is_quest_endpoint(endpoint):
+            return False
+        return time.time() < getattr(self, "_quest_captcha_blocked_until", 0.0)
+
+    def _block_verification(self, endpoint: str) -> None:
+        """Record an unsolved challenge.
+
+        Quest endpoints only pause quest writes for a few minutes, so a failed
+        quest captcha cannot take the whole client (and quest listing) offline.
+        """
+        if self._is_quest_endpoint(endpoint):
+            self._quest_captcha_blocked_until = time.time() + 300
+            return
+        self.verification_blocked = True
+        self.verification_endpoint = endpoint
+
     def _extract_captcha_challenge(self, response_data: Dict[str, Any]) -> Optional[Dict[str, str]]:
         if not isinstance(response_data, dict):
             return None
@@ -240,10 +262,11 @@ class DiscordAPIClient:
                 settings = aria_config.Config()
             configured_key = str(settings.get("captcha_api_key") or "").strip()
             configured_provider = str(settings.get("captcha_provider") or "nocaptchaai").strip().lower()
+            configured_yes_key = str(settings.get("yes_captcha_api_key") or "").strip()
         except Exception:
-            pass
+            configured_yes_key = ""
         nocaptcha_key = str(os.environ.get("NOCAPTCHAAI_API_KEY") or "").strip()
-        yescaptcha_key = str(os.environ.get("YES_CAPTCHA_API_KEY") or "").strip()
+        yescaptcha_key = str(os.environ.get("YES_CAPTCHA_API_KEY") or "").strip() or configured_yes_key
         if configured_key:
             if configured_provider == "yescaptcha":
                 yescaptcha_key = yescaptcha_key or configured_key
@@ -601,6 +624,8 @@ class DiscordAPIClient:
             return None
         if self.auth_failed or getattr(self, "verification_blocked", False):
             return None
+        if method != "GET" and self._quest_captcha_cooling_down(endpoint):
+            return None
 
         if self._is_cacheable_get(method, endpoint):
             cached = self._get_cached_response(endpoint)
@@ -693,13 +718,11 @@ class DiscordAPIClient:
                                     _global_retry=_global_retry + 1,
                                 )
 
-                        self.verification_blocked = True
-                        self.verification_endpoint = endpoint
+                        self._block_verification(endpoint)
                         print(f"[AUTH-CHALLENGE] Discord requires verification for {endpoint}; captcha solve failed or unavailable.")
                         return response
                     if self._has_captcha_indicators(response_data):
-                        self.verification_blocked = True
-                        self.verification_endpoint = endpoint
+                        self._block_verification(endpoint)
                         print(f"[AUTH-CHALLENGE] Discord requires verification for {endpoint}; challenge is missing sitekey.")
                         return response
 

@@ -20,6 +20,7 @@ class Config:
             "token": "token here",
             "captcha_api_key": "",
             "captcha_provider": "nocaptchaai",
+            "yes_captcha_api_key": "",
             "prefix": ";",
             "owner_id": "REDACTED_OWNER_ID",
             "owner_username": "redacted",

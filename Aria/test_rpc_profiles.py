@@ -46,5 +46,37 @@ class RPCProfileStoreTests(unittest.TestCase):
         self.assertFalse(self.store.delete_preset("One"))
 
 
+    def test_stacked_preset_is_listed_and_round_trips(self):
+        bundle = [
+            {"type": 0, "name": "Game", "details": "Level 3"},
+            {"type": 2, "name": "Music", "details": "Track"},
+        ]
+        self.store.save_preset("Solo", {"type": 3, "name": "Reading"})
+        self.store.save_preset("Stack", bundle)
+
+        listed = self.store.list_presets()
+
+        self.assertEqual(sorted(listed), ["Solo", "Stack"])
+        self.assertEqual(listed["Stack"], bundle)
+        self.assertEqual(self.store.get_preset("Stack"), bundle)
+
+    def test_snapshot_keeps_every_stacked_activity(self):
+        from types import SimpleNamespace
+        from rpc_profiles import snapshot_current_activity
+
+        first = {"type": 0, "name": "Game"}
+        second = {"type": 2, "name": "Music"}
+
+        stacked = SimpleNamespace(activity=first, activities=[first, second])
+        single = SimpleNamespace(activity=first, activities=[first])
+        legacy = SimpleNamespace(activity=first)
+        empty = SimpleNamespace(activity=None, activities=[])
+
+        self.assertEqual(snapshot_current_activity(stacked), [first, second])
+        self.assertEqual(snapshot_current_activity(single), first)
+        self.assertEqual(snapshot_current_activity(legacy), first)
+        self.assertIsNone(snapshot_current_activity(empty))
+
+
 if __name__ == "__main__":
     unittest.main()

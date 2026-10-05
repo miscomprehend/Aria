@@ -343,14 +343,15 @@ class AllQuestsResponse:
         for quest_data in data.get('quests', []) or []:
             try:
                 quests.append(Quest.from_dict(quest_data, user_id))
-            except (ValueError, KeyError):
+            except Exception:
+                # One odd quest must not hide the rest of the account's quests.
                 continue
         
         excluded = []
         for quest_data in data.get('excluded_quests', []) or []:
             try:
                 excluded.append(Quest.from_dict(quest_data, user_id))
-            except (ValueError, KeyError):
+            except Exception:
                 continue
         
         return cls(

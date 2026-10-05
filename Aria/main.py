@@ -24,7 +24,7 @@ import time
 import random
 import json
 from urllib.parse import quote as _url_quote
-from rpc_profiles import RPCProfileStore
+from rpc_profiles import RPCProfileStore, snapshot_current_activity
 from rpc_activity import (
     RPC_APP_IDS,
     RPC_ACTIVITY_TYPES,
@@ -1313,6 +1313,7 @@ def main():
             ("prefix", ";"),
             ("captcha_api_key", ""),
             ("captcha_provider", "nocaptchaai"),
+            ("yes_captcha_api_key", ""),
         ):
             starter.setdefault(key, value)
         with open(config.config_file, 'w', encoding='utf-8') as f:
@@ -4249,8 +4250,8 @@ Example Usage:
 
             try:
                 if subcommand == "save":
-                    activity = getattr(profile_bot, "activity", None)
-                    if not isinstance(activity, dict):
+                    activity = snapshot_current_activity(profile_bot)
+                    if not activity:
                         raise ValueError("Set an RPC activity before saving a preset")
                     RPC_PROFILE_STORE.save_preset(preset_name, activity)
                     response = f"> RPC preset **{preset_name}** saved."
@@ -9608,7 +9609,9 @@ Example Usage:
                     state = voice_manager.get_state(channel_id)
                     joined_channel = state.get("channel_id") or channel_id or "unknown"
                     ready = "ready" if state.get("ws_ready") else "starting"
-                    result = f"> **✓ {description}** :: {joined_channel} | WS: {ready}"
+                    issue = str(state.get("last_error") or "").strip()
+                    issue_suffix = f" | note: {issue}" if issue and ready != "ready" else ""
+                    result = f"> **✓ {description}** :: {joined_channel} | WS: {ready}{issue_suffix}"
                 else:
                     detail = getattr(voice_manager, "last_error", "") or "Unknown voice error"
                     result = f"> **✗ {description}** :: {detail}"
@@ -9686,9 +9689,11 @@ Example Usage:
             if voice_manager.is_in_voice():
                 st = voice_manager.get_state()
                 ch = st.get("channel_id") or "unknown"
+                err = str(st.get("last_error") or "").strip()
+                suffix = f" | issue={err}" if err else ""
                 msg = _vc_send(
                     ctx,
-                    f"> **Voice Status** :: Connected to **{ch}** | cam={st.get('camera')} | stream={st.get('stream')} | mute={st.get('mute')} | deaf={st.get('deaf')} | ws={st.get('ws_ready')}",
+                    f"> **Voice Status** :: Connected to **{ch}** | cam={st.get('camera')} | stream={st.get('stream')} | mute={st.get('mute')} | deaf={st.get('deaf')} | ws={st.get('ws_ready')}{suffix}",
                 )
             else:
                 err = getattr(voice_manager, "last_error", "")

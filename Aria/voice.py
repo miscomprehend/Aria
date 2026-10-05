@@ -21,8 +21,10 @@ from discord_api_types import GatewayOpcodes, VoiceOpcodes
 
 try:
     import websockets
+    from websockets.exceptions import ConnectionClosed
 except ImportError:
     websockets = None
+    ConnectionClosed = Exception
 
 _VOICE_WS_VERSION = 4
 logger = logging.getLogger(__name__)
@@ -46,6 +48,7 @@ class VoiceClient:
         self.channel_id: Optional[str] = None
         self.is_dm_call = False
         self.call_channel_id: Optional[str] = None
+        self.channel_type: Optional[int] = None
 
         # Populated by gateway events forwarded from bot.py
         self.session_id: Optional[str] = None
@@ -54,12 +57,14 @@ class VoiceClient:
 
         self.ssrc: Optional[int] = None
         self.secret_key = None
+        self.encryption_mode: Optional[str] = None
 
         # Threading events so connect() can block until gateway data arrives
         self._session_event = threading.Event()
         self._server_event = threading.Event()
         self._connected_event = threading.Event()
         self._ws_error: str = ""
+        self._voice_unsupported = False
 
         # Local state toggles reflected via gateway op4 / voice ws operations.
         self.self_mute = False
@@ -123,7 +128,7 @@ class VoiceClient:
 
     # ── connect / disconnect ─────────────────────────────────────────────
 
-    def connect(self, channel_id: str, guild_id, is_dm: bool = False) -> bool:
+    def connect(self, channel_id: str, guild_id, is_dm: bool = False, channel_type: Optional[int] = None) -> bool:
         if websockets is None:
             self._ws_error = "Voice support requires the optional 'websockets' dependency"
             logger.warning("[Voice] %s", self._ws_error)
@@ -132,6 +137,7 @@ class VoiceClient:
         self.channel_id = str(channel_id)
         self.guild_id = str(guild_id) if guild_id else None
         self.is_dm_call = is_dm
+        self.channel_type = int(channel_type) if channel_type is not None else None
         self.call_channel_id = str(channel_id) if is_dm else None
         self.session_id = None
         self.voice_token = None
@@ -143,6 +149,7 @@ class VoiceClient:
         self._server_event.clear()
         self._connected_event.clear()
         self._ws_error = ""
+        self._voice_unsupported = False
 
         # Send Voice State Update (op 4) through the existing bot gateway
         payload = json.dumps({
@@ -153,6 +160,7 @@ class VoiceClient:
                 "self_mute": False,
                 "self_deaf": False,
                 "self_video": False,
+                "self_stream": False,
             },
         })
         try:
@@ -189,6 +197,8 @@ class VoiceClient:
         # Give the WS a chance to reach session description (op4), but don't fail
         # plain channel join if the voice WS is delayed.
         self._connected_event.wait(timeout=8)
+        # The account is already in the channel via the main gateway (op 4). A media
+        # WS failure (e.g. DAVE required) only means no audio, so keep the join.
         return True
 
     def disconnect(self) -> bool:
@@ -203,6 +213,7 @@ class VoiceClient:
                     "channel_id": None,
                     "self_mute": False,
                     "self_deaf": False,
+                    "self_stream": False,
                 },
             })
             self.bot_ws.send(payload)
@@ -254,6 +265,9 @@ class VoiceClient:
             except Exception as e:
                 logger.error("[Voice] WS thread error: %s", e)
                 self._ws_error = str(e)
+            if self._voice_unsupported:
+                # Presence-only mode: stop media retries but stay joined via gateway.
+                break
             if not self.running:
                 break
             logger.warning("[Voice] Reconnecting in %ss", backoff)
@@ -294,6 +308,16 @@ class VoiceClient:
                     except Exception:
                         continue
                     await self._handle_voice_op(ws, msg)
+        except ConnectionClosed as e:
+            code = getattr(e, "code", None)
+            reason = str(getattr(e, "reason", "") or "")
+            if code == 4017 or "E2EE/DAVE protocol required" in reason:
+                self._voice_unsupported = True
+                self._ws_error = "Voice server requires E2EE/DAVE, which Aria voice does not support yet."
+                logger.error("[Voice] %s", self._ws_error)
+            else:
+                logger.error("[Voice] WS error: %s", e)
+                self._ws_error = str(e)
         except Exception as e:
             logger.error("[Voice] WS error: %s", e)
             self._ws_error = str(e)
@@ -315,6 +339,7 @@ class VoiceClient:
             self.ssrc = d["ssrc"]
             udp_ip = d["ip"]
             udp_port = d["port"]
+            self.encryption_mode = self._select_encryption_mode(d.get("modes"))
             logger.info("[Voice] Voice ready with SSRC %s", self.ssrc)
             # Ensure ssrc is always int for run_in_executor
             ssrc_int = int(self.ssrc) if self.ssrc is not None else 0
@@ -328,7 +353,7 @@ class VoiceClient:
                     "data": {
                         "address": ext_ip,
                         "port": ext_port,
-                        "mode": "xsalsa20_poly1305",
+                        "mode": self.encryption_mode,
                     },
                 },
             }))
@@ -336,6 +361,9 @@ class VoiceClient:
         elif op == VoiceOpcodes.SessionDescription:
             # Session Description — we're fully connected
             self.secret_key = msg["d"].get("secret_key")
+            mode = str(msg["d"].get("mode") or "").strip()
+            if mode:
+                self.encryption_mode = mode
             logger.info("[Voice] Connected to voice session")
             self._connected_event.set()
             # Mark as not-speaking (silent join)
@@ -348,6 +376,35 @@ class VoiceClient:
 
         elif op == VoiceOpcodes.Resumed:
             logger.info("[Voice] Session resumed")
+
+        elif op == VoiceOpcodes.SecureFramesPrepareProtocolTransition:
+            data = msg.get("d") if isinstance(msg.get("d"), dict) else {}
+            if isinstance(data, dict) and data.get("protocol"):
+                self.encryption_mode = str(data.get("protocol"))
+            await ws.send(json.dumps({
+                "op": VoiceOpcodes.SecureFramesExecuteTransition,
+                "d": data or {},
+            }))
+            logger.info("[Voice] Acknowledged secure-frames protocol transition")
+
+    @staticmethod
+    def _select_encryption_mode(server_modes) -> str:
+        """Pick the best supported voice encryption mode from server-advertised modes."""
+        preferred = (
+            "aead_aes256_gcm_rtpsize",
+            "aead_xchacha20_poly1305_rtpsize",
+            "xsalsa20_poly1305_lite_rtpsize",
+            "xsalsa20_poly1305_suffix",
+            "xsalsa20_poly1305",
+        )
+        if isinstance(server_modes, list):
+            modes = [str(mode) for mode in server_modes if isinstance(mode, str)]
+            for mode in preferred:
+                if mode in modes:
+                    return mode
+            if modes:
+                return modes[0]
+        return "xsalsa20_poly1305"
 
     async def _silence_keepalive(self, ws, interval: float = 30.0):
         """Re-send speaking=0 every `interval` seconds to prevent idle disconnect."""
@@ -436,6 +493,7 @@ class SimpleVoice:
                     "self_mute": bool(client.self_mute),
                     "self_deaf": bool(client.self_deaf),
                     "self_video": bool(client.self_video),
+                    "self_stream": bool(client.self_stream),
                 },
             }
             return client._send_gateway_payload(payload)
@@ -468,13 +526,15 @@ class SimpleVoice:
 
         # Fetch channel info to determine guild_id / type
         guild_id = None
+        channel_type = None
         is_dm = False
         try:
             resp = self.api.request("GET", f"/channels/{channel_id}")
             if resp and resp.status_code == 200:
                 d = resp.json()
                 ctype = d.get("type", 0)
-                if ctype == 2:          # Guild voice channel
+                channel_type = int(ctype) if isinstance(ctype, int) else None
+                if ctype in (2, 13):    # Guild voice / stage channels
                     guild_id = d.get("guild_id")
                 elif ctype in (1, 3):   # DM / group DM call
                     is_dm = True
@@ -505,7 +565,11 @@ class SimpleVoice:
         key = f"channel_{channel_id}"
         # Keep the gateway membership addressable while connect waits for voice events.
         self.active_connections[key] = client
-        success = client.connect(channel_id, guild_id, is_dm)
+        try:
+            success = client.connect(channel_id, guild_id, is_dm, channel_type)
+        except TypeError:
+            # Backward-compatibility for tests or legacy client shims.
+            success = client.connect(channel_id, guild_id, is_dm)
         if not success:
             self.last_error = client._ws_error or "Voice gateway handshake failed"
             if not client.gateway_joined:
@@ -558,6 +622,9 @@ class SimpleVoice:
         if not client:
             self.last_error = "Not in a voice channel"
             return False, "Not in a voice channel"
+        if client.channel_type == 13 and enabled:
+            self.last_error = "Camera is not supported in stage channels"
+            return False, self.last_error
         try:
             client.self_video = bool(enabled)
             if not self._send_voice_state_update(client):
@@ -573,33 +640,73 @@ class SimpleVoice:
         if not client:
             self.last_error = "Not in a voice channel"
             return False, "Not in a voice channel"
-        if client.is_dm_call or not client.guild_id:
-            self.last_error = "Go Live is only supported in guild voice channels"
+        if client.channel_type == 13:
+            self.last_error = "Go Live is not supported in stage channels"
             return False, self.last_error
+        is_call = bool(client.is_dm_call or not client.guild_id)
         try:
+            if is_call:
+                stream_key = f"call:{client.channel_id}:{client.user_id}"
+            else:
+                stream_key = f"guild:{client.guild_id}:{client.channel_id}:{client.user_id}"
+            client.self_stream = bool(enabled)
+            if not self._send_voice_state_update(client):
+                detail = self.last_error or "Failed to send voice state update"
+                self.last_error = detail
+                return False, detail
+
             if enabled:
                 op_payload = {
                     "op": GatewayOpcodes.StreamCreate,
                     "d": {
-                        "type": "guild",
-                        "guild_id": client.guild_id,
+                        "type": "call" if is_call else "guild",
+                        "guild_id": None if is_call else client.guild_id,
                         "channel_id": client.channel_id,
                         "preferred_region": None,
                     },
                 }
-            else:
-                op_payload = {
+                if not client._send_gateway_payload(op_payload):
+                    detail = client._ws_error or "Failed to send stream create payload"
+                    self.last_error = detail
+                    return False, detail
+
+                unpause_payload = {
                     "op": GatewayOpcodes.StreamSetPaused,
                     "d": {
-                        "guild_id": client.guild_id,
-                        "channel_id": client.channel_id,
+                        "stream_key": stream_key,
+                        "paused": False,
                     },
                 }
-            if not client._send_gateway_payload(op_payload):
-                detail = client._ws_error or "Failed to send gateway payload"
-                self.last_error = detail
-                return False, detail
-            client.self_stream = bool(enabled)
+                if not client._send_gateway_payload(unpause_payload):
+                    detail = client._ws_error or "Failed to send stream unpause payload"
+                    self.last_error = detail
+                    return False, detail
+            else:
+                pause_payload = {
+                    "op": GatewayOpcodes.StreamSetPaused,
+                    "d": {
+                        "stream_key": stream_key,
+                        "paused": True,
+                    },
+                }
+                if not client._send_gateway_payload(pause_payload):
+                    detail = client._ws_error or "Failed to send stream pause payload"
+                    self.last_error = detail
+                    return False, detail
+
+                delete_payload = {
+                    "op": GatewayOpcodes.StreamDelete,
+                    "d": {
+                        "stream_key": stream_key,
+                    },
+                }
+                if not client._send_gateway_payload(delete_payload):
+                    detail = client._ws_error or "Failed to send stream delete payload"
+                    self.last_error = detail
+                    return False, detail
+
+            if enabled and not client.ws_ready():
+                return True, "Stream requested; voice transport is still starting"
             return True, "Stream " + ("started" if enabled else "stopped")
         except Exception as e:
             self.last_error = str(e)
@@ -653,12 +760,14 @@ class SimpleVoice:
         return {
             "connected": True,
             "channel_id": str(client.channel_id or ""),
+            "channel_type": client.channel_type,
+            "dm_call": bool(client.is_dm_call),
             "camera": bool(client.self_video),
             "stream": bool(client.self_stream),
             "mute": bool(client.self_mute),
             "deaf": bool(client.self_deaf),
             "ws_ready": bool(client.ws_ready()),
-            "last_error": self.last_error,
+            "last_error": self.last_error or getattr(client, "_ws_error", ""),
         }
 
     def current_channel_id(self) -> Optional[str]:

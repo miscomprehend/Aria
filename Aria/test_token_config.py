@@ -18,13 +18,16 @@ class TokenConfigTests(unittest.TestCase):
             with redirect_stdout(io.StringIO()):
                 config.Config(config_path).save_config()
             with open(config_path, encoding="utf-8") as handle:
-                self.assertIn("captcha_api_key", json.load(handle))
+                saved = json.load(handle)
+            self.assertIn("captcha_api_key", saved)
+            self.assertIn("yes_captcha_api_key", saved)
 
             configure_token("", remember=False, config_path=config_path,
                             captcha_key="solver-key", captcha_provider="yescaptcha")
             with redirect_stdout(io.StringIO()):
                 settings = config.Config(config_path)
             self.assertEqual(settings.get("captcha_api_key"), "solver-key")
+            self.assertEqual(settings.get("yes_captcha_api_key"), "solver-key")
             self.assertEqual(settings.get("captcha_provider"), "yescaptcha")
 
     def test_identifies_token_owner_from_verified_account_profile(self):

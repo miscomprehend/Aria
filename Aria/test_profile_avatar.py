@@ -44,6 +44,15 @@ class ProfileAvatarTests(unittest.TestCase):
             download_avatar_data_uri("http://images.example/avatar.png")
         get.assert_not_called()
 
+    @patch("profile_avatar.requests.get")
+    def test_rejects_urls_that_resolve_to_private_addresses(self, get):
+        for url in ("https://127.0.0.1/a.png", "https://localhost/a.png", "https://10.1.2.3/a.png",
+                    "https://169.254.169.254/latest/meta-data", "https://[::1]/a.png"):
+            with self.subTest(url=url):
+                with self.assertRaisesRegex(ValueError, "public HTTPS"):
+                    download_avatar_data_uri(url)
+        get.assert_not_called()
+
 
 if __name__ == "__main__":
     unittest.main()

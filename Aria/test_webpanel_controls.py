@@ -23,6 +23,14 @@ from webpanel import WebPanel, _PANEL_MASTER_ID, _PANEL_SECONDARY_OWNER_ID
 from formatter import VERSION
 
 
+class _ProfileReply:
+    def __init__(self, status=200, body=None):
+        self.status_code, self._body = status, body or {}
+
+    def json(self):
+        return self._body
+
+
 class FakeBot:
     def __init__(self, directory):
         self.activity = {"type": 0, "name": "Initial"}
@@ -96,6 +104,79 @@ class WebPanelControlTests(unittest.TestCase):
 
     def tearDown(self):
         self.temp_dir.cleanup()
+
+    def _profile_api(self, responses=None):
+        responses = responses or {}
+        calls = []
+
+        class Api:
+            def request(api, method, endpoint, data=None):
+                calls.append((method, endpoint, data))
+                return responses.get((method, endpoint)) or _ProfileReply(200, {
+                    "id": "1", "username": "aria", "global_name": "Aria",
+                    "user_profile": {"bio": "hi", "pronouns": "they"},
+                })
+
+            def get_user_info(api, force=False):
+                calls.append(("refresh", force))
+
+        panel.bot.api = Api()
+        panel.bot.user_id = "1"
+        return calls
+
+    def test_account_profile_get_and_update(self):
+        calls = self._profile_api()
+        self.authenticated = True
+        with self.client.session_transaction() as s:
+            s["user_id"] = "1"
+        hdr = {"X-CSRF-Token": "test-csrf-token"}
+
+        got = self.client.get("/api/account/profile").get_json()
+        self.assertTrue(got["ok"])
+        self.assertEqual((got["profile"]["bio"], got["profile"]["global_name"]), ("hi", "Aria"))
+
+        self.assertEqual(self.client.post("/api/account/profile", json={"bio": "new"}).status_code, 403)
+
+        saved = self.client.post("/api/account/profile", json={"bio": "new", "global_name": "Neo"}, headers=hdr)
+        self.assertEqual(saved.status_code, 200)
+        self.assertEqual(saved.get_json()["updated"], ["global_name", "bio"])
+        self.assertIn(("PATCH", "/users/@me", {"global_name": "Neo"}), calls)
+        self.assertIn(("PATCH", "/users/@me/profile", {"bio": "new"}), calls)
+        self.assertIn(("refresh", True), calls)
+
+        invalid = self.client.post("/api/account/profile", json={"bio": "x" * 500}, headers=hdr)
+        self.assertEqual(invalid.status_code, 400)
+        self.assertIn("190", invalid.get_json()["error"])
+
+    def test_account_profile_reports_partial_failure(self):
+        self._profile_api({("PATCH", "/users/@me"): _ProfileReply(
+            400, {"errors": {"banner": {"_errors": [{"message": "Banner requires Nitro"}]}}})})
+        self.authenticated = True
+        with self.client.session_transaction() as s:
+            s["user_id"] = "1"
+
+        response = self.client.post(
+            "/api/account/profile", json={"banner": {"remove": True}, "bio": "ok"},
+            headers={"X-CSRF-Token": "test-csrf-token"},
+        )
+
+        body = response.get_json()
+        self.assertEqual(response.status_code, 207)
+        self.assertFalse(body["ok"])
+        self.assertEqual(body["updated"], ["bio"])
+        self.assertEqual(body["failed"], [{"fields": ["banner"], "error": "Banner requires Nitro"}])
+
+    def test_account_profile_is_limited_to_the_signed_in_account(self):
+        self._profile_api()
+        hdr = {"X-CSRF-Token": "test-csrf-token"}
+        self.assertEqual(self.client.get("/api/account/profile").status_code, 403)  # signed out
+
+        self.authenticated = True
+        with self.client.session_transaction() as s:
+            s["user_id"] = "someone-else"
+        self.assertEqual(self.client.get("/api/account/profile").status_code, 403)
+        denied = self.client.post("/api/account/profile", json={"bio": "x"}, headers=hdr)
+        self.assertEqual(denied.status_code, 403)
 
     def test_quest_routes_serve_and_mutate_real_quest_manager(self):
         class FakeQuests:

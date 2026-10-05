@@ -41,6 +41,7 @@ class QuestSystem:
         self.auto_complete = False
         self._task_thread = None
         self.last_fetch = 0
+        self.enrollment_blocked_until: Optional[str] = None
         self.refresh_interval = 5 * 60  # 5 minutes for quicker real-time pickup
         
         # New quest system manager
@@ -296,18 +297,21 @@ class QuestSystem:
                 quest_manager = QuestManager.from_response(
                     response, self.user_id, fetch_excluded=False
                 )
-                parsed_ids = {quest.id for quest in quest_manager}
-                quest_cache = {
-                    str(quest["id"]): quest
-                    for quest in quest_entries
-                    if str(quest["id"]) in parsed_ids
-                }
+                # Keep every real quest from the API; the typed parser is only an
+                # enhancement, so a quest it rejects must not vanish from the list.
+                quest_cache = {str(quest["id"]): quest for quest in quest_entries}
 
                 self.quest_manager = quest_manager
                 self.quests = quest_cache
+                self.enrollment_blocked_until = response.quest_enrollment_blocked_until
                 
                 self.last_fetch = now
-                return True, "Quest data updated."
+                if self.enrollment_blocked_until:
+                    return True, (
+                        f"Quest data updated ({len(quest_cache)} quests). "
+                        f"Enrollment is blocked until {self.enrollment_blocked_until}."
+                    )
+                return True, f"Quest data updated ({len(quest_cache)} quests)."
             status = getattr(resp, "status_code", "no response") if resp else "no response"
             return False, f"Quest request failed (HTTP {status})."
         except Exception as e:

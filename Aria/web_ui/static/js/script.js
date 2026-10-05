@@ -1733,6 +1733,208 @@ async function loadAccount() {
     const connectionDot = document.getElementById('accountConnectionDot');
     if (connectionDot) connectionDot.classList.toggle('is-online', connected);
     setAvatarImage(document.getElementById('accountAvatar'), identity.avatar_url, profile.user_id, { allowFallback: true });
+    loadAccountProfile();
+}
+
+// ── Account profile editor (avatar, banner, name, bio, pronouns, accent) ──
+const PROFILE_MAX_IMAGE_BYTES = 8 * 1024 * 1024;
+const profileEditor = { original: null, avatar: undefined, banner: undefined, accentTouched: false, bound: false };
+
+function profileEl(id) { return document.getElementById(id); }
+
+function setProfileMessage(text, kind) {
+    const el = profileEl('profileMessage');
+    if (!el) return;
+    el.textContent = text || '';
+    el.dataset.kind = kind || '';
+}
+
+function setProfileBanner(url) {
+    const el = profileEl('profileBannerPreview');
+    if (!el) return;
+    if (url) {
+        el.style.backgroundImage = `url("${String(url).replace(/"/g, '%22')}")`;
+        el.classList.add('has-image');
+    } else {
+        el.style.backgroundImage = '';
+        el.classList.remove('has-image');
+    }
+}
+
+function readProfileImage(file) {
+    return new Promise((resolve, reject) => {
+        if (!file) return reject(new Error('No file selected.'));
+        if (!/^image\/(png|jpeg|gif|webp)$/.test(file.type)) return reject(new Error('Use a PNG, JPEG, GIF or WebP image.'));
+        if (file.size > PROFILE_MAX_IMAGE_BYTES) return reject(new Error('Images must be 8 MB or smaller.'));
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result || ''));
+        reader.onerror = () => reject(new Error('Could not read that file.'));
+        reader.readAsDataURL(file);
+    });
+}
+
+function fillProfileForm(profile) {
+    profileEditor.original = profile;
+    profileEditor.avatar = undefined;
+    profileEditor.banner = undefined;
+    profileEditor.accentTouched = false;
+    const limits = profile.limits || {};
+    profileEl('profileDisplayName').value = profile.global_name || '';
+    profileEl('profileDisplayName').maxLength = limits.global_name || 32;
+    profileEl('profilePronouns').value = profile.pronouns || '';
+    profileEl('profilePronouns').maxLength = limits.pronouns || 40;
+    const bio = profileEl('profileBio');
+    bio.value = profile.bio || '';
+    bio.maxLength = limits.bio || 190;
+    setText('profileBioCount', `${bio.value.length}/${bio.maxLength}`);
+    const hasAccent = !!profile.accent_color;
+    if (hasAccent) profileEl('profileAccent').value = profile.accent_color;
+    profileEl('profileAccentClear').checked = !hasAccent;
+    profileEl('profileAvatarFile').value = '';
+    profileEl('profileBannerFile').value = '';
+    profileEl('profileAvatarUrl').value = '';
+    profileEl('profileBannerUrl').value = '';
+    setAvatarImage(profileEl('profileAvatarPreview'), profile.avatar_url, profile.user_id, { allowFallback: true });
+    setProfileBanner(profile.banner_url);
+    const note = profileEl('profileBannerNote');
+    if (note) note.hidden = Number(profile.premium_type || 0) > 0;
+}
+
+async function loadAccountProfile(force) {
+    const panel = profileEl('accountProfilePanel');
+    if (!panel) return;
+    bindAccountProfileForm();
+    // The page auto-refreshes; never overwrite edits the user hasn't saved yet.
+    if (!force && profileEditor.original && Object.keys(collectProfileChanges()).length) return;
+    let data = null;
+    try {
+        const response = await fetch('/api/account/profile', { cache: 'no-store', credentials: 'same-origin' });
+        data = await response.json();
+    } catch (e) {
+        console.warn('Profile fetch failed', e);
+    }
+    if (!data || !data.ok || !data.profile) {
+        panel.hidden = true;
+        return;
+    }
+    panel.hidden = false;
+    fillProfileForm(data.profile);
+    setText('profileStatus', `@${data.profile.username || 'account'}`);
+}
+
+function bindAccountProfileForm() {
+    if (profileEditor.bound) return;
+    profileEditor.bound = true;
+
+    const pickImage = (kind, fileId, urlId, previewFn) => {
+        profileEl(fileId).addEventListener('change', async (event) => {
+            const file = event.target.files && event.target.files[0];
+            if (!file) return;
+            try {
+                const dataUri = await readProfileImage(file);
+                profileEditor[kind] = { data: dataUri };
+                profileEl(urlId).value = '';
+                previewFn(dataUri);
+                setProfileMessage('', '');
+            } catch (e) {
+                event.target.value = '';
+                setProfileMessage(e.message, 'error');
+            }
+        });
+        profileEl(urlId).addEventListener('input', (event) => {
+            const value = event.target.value.trim();
+            if (value) {
+                profileEditor[kind] = { url: value };
+                profileEl(fileId).value = '';
+            } else if (profileEditor[kind] && profileEditor[kind].url) {
+                profileEditor[kind] = undefined;
+            }
+        });
+    };
+    pickImage('avatar', 'profileAvatarFile', 'profileAvatarUrl', (src) => { profileEl('profileAvatarPreview').src = src; });
+    pickImage('banner', 'profileBannerFile', 'profileBannerUrl', setProfileBanner);
+
+    profileEl('profileAvatarRemove').addEventListener('click', () => {
+        profileEditor.avatar = null;
+        profileEl('profileAvatarFile').value = '';
+        profileEl('profileAvatarUrl').value = '';
+        profileEl('profileAvatarPreview').src = '/static/images/aria-favicon.png';
+        setProfileMessage('Profile picture will be removed when you save.', '');
+    });
+    profileEl('profileBannerRemove').addEventListener('click', () => {
+        profileEditor.banner = null;
+        profileEl('profileBannerFile').value = '';
+        profileEl('profileBannerUrl').value = '';
+        setProfileBanner('');
+        setProfileMessage('Banner will be removed when you save.', '');
+    });
+    profileEl('profileBio').addEventListener('input', (event) => {
+        setText('profileBioCount', `${event.target.value.length}/${event.target.maxLength}`);
+    });
+    profileEl('profileAccent').addEventListener('input', () => {
+        profileEditor.accentTouched = true;
+        profileEl('profileAccentClear').checked = false;
+    });
+    profileEl('profileAccentClear').addEventListener('change', () => { profileEditor.accentTouched = true; });
+    profileEl('profileResetBtn').addEventListener('click', () => {
+        if (profileEditor.original) fillProfileForm(profileEditor.original);
+        setProfileMessage('', '');
+    });
+    profileEl('accountProfileForm').addEventListener('submit', (event) => {
+        event.preventDefault();
+        saveAccountProfile();
+    });
+}
+
+function collectProfileChanges() {
+    const original = profileEditor.original || {};
+    const payload = {};
+    const name = profileEl('profileDisplayName').value.trim();
+    if (name !== (original.global_name || '')) payload.global_name = name;
+    const pronouns = profileEl('profilePronouns').value.trim();
+    if (pronouns !== (original.pronouns || '')) payload.pronouns = pronouns;
+    const bio = profileEl('profileBio').value.trim();
+    if (bio !== (original.bio || '')) payload.bio = bio;
+    if (profileEditor.accentTouched) {
+        const clear = profileEl('profileAccentClear').checked;
+        const color = profileEl('profileAccent').value;
+        if (clear && original.accent_color) payload.accent_color = '';
+        else if (!clear && color.toLowerCase() !== String(original.accent_color || '').toLowerCase()) payload.accent_color = color;
+    }
+    if (profileEditor.avatar !== undefined) payload.avatar = profileEditor.avatar === null ? { remove: true } : profileEditor.avatar;
+    if (profileEditor.banner !== undefined) payload.banner = profileEditor.banner === null ? { remove: true } : profileEditor.banner;
+    return payload;
+}
+
+async function saveAccountProfile() {
+    const button = profileEl('profileSaveBtn');
+    const payload = collectProfileChanges();
+    if (!Object.keys(payload).length) {
+        setProfileMessage('No changes to save.', '');
+        return;
+    }
+    button.disabled = true;
+    setProfileMessage('Saving…', '');
+    const result = await postJSON('/api/account/profile', payload);
+    button.disabled = false;
+    if (!result) {
+        setProfileMessage('Could not reach Aria. Try again.', 'error');
+        return;
+    }
+    const failures = Array.isArray(result.failed) ? result.failed : [];
+    if (result.ok) {
+        setProfileMessage('Profile updated.', 'ok');
+    } else if (failures.length) {
+        const detail = failures.map(f => `${f.fields.join(', ')}: ${f.error}`).join(' · ');
+        const prefix = (result.updated || []).length ? 'Partly saved. ' : 'Not saved. ';
+        setProfileMessage(prefix + detail, 'error');
+    } else {
+        setProfileMessage(result.error || 'Update failed.', 'error');
+    }
+    if ((result.updated || []).length) {
+        await loadAccountProfile(true);
+        loadAccount();
+    }
 }
 
 async function loadAdministration() {

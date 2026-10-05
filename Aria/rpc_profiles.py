@@ -10,6 +10,23 @@ _STORE_LOCKS = {}
 _STORE_LOCKS_LOCK = threading.Lock()
 
 
+def snapshot_current_activity(bot) -> Optional[Any]:
+    """Return what the bot is showing: one activity dict, or the whole stack as a list.
+
+    ``bot.activity`` is only the first activity, so saving it would drop every
+    other stacked activity.
+    """
+    activities = getattr(bot, "activities", None)
+    if isinstance(activities, list):
+        items = [dict(item) for item in activities if isinstance(item, dict) and item]
+        if len(items) > 1:
+            return items
+        if items:
+            return items[0]
+    activity = getattr(bot, "activity", None)
+    return dict(activity) if isinstance(activity, dict) and activity else None
+
+
 class RPCProfileStore:
     MAX_PRESETS = 50
     MAX_NAME_LENGTH = 48
@@ -73,11 +90,12 @@ class RPCProfileStore:
             raise ValueError("RPC activity is too large to save")
         return json.loads(serialized)
 
-    def list_presets(self) -> Dict[str, dict]:
+    def list_presets(self) -> Dict[str, Any]:
         with self._lock:
             presets = self._read()["presets"]
             return {
-                name: dict(activity)
+                name: ([dict(item) for item in activity if isinstance(item, dict)]
+                       if isinstance(activity, list) else dict(activity))
                 for name, activity in presets.items()
                 if isinstance(name, str) and isinstance(activity, (dict, list))
             }

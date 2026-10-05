@@ -95,6 +95,70 @@ class APIChallengeTests(unittest.TestCase):
         self.assertEqual(second_call.kwargs["headers"]["X-Captcha-Rqtoken"], "rq-token")
         self.assertEqual(second_call.kwargs["headers"]["X-Captcha-Session-Id"], "session-id")
 
+    def test_unsolved_quest_captcha_pauses_only_quest_writes(self):
+        challenge = Mock()
+        challenge.status_code = 400
+        challenge.headers = {}
+        challenge.json.return_value = {"captcha_sitekey": "site-key"}
+        listing = Mock()
+        listing.status_code = 200
+        listing.headers = {}
+        client = make_client(challenge)
+        client.header_spoofer.session.get.return_value = listing
+        client._solve_captcha_challenge = Mock(return_value=None)
+
+        with patch("api_client.time.sleep"):
+            first = client.request("POST", "/quests/1/enroll", data={})
+            second = client.request("POST", "/quests/2/enroll", data={})
+            fetched = client.request("GET", "/quests/@me")
+
+        self.assertIs(first, challenge)
+        self.assertIsNone(second)
+        self.assertIs(fetched, listing)
+        self.assertFalse(client.verification_blocked)
+        self.assertEqual(client.header_spoofer.session.post.call_count, 1)
+
+    def test_quest_captcha_retries_with_solution_headers(self):
+        challenge = Mock()
+        challenge.status_code = 400
+        challenge.headers = {}
+        challenge.json.return_value = {
+            "captcha_sitekey": "site-key",
+            "captcha_rqtoken": "rq-token",
+            "captcha_session_id": "session-id",
+        }
+        success = Mock()
+        success.status_code = 200
+        success.headers = {}
+        client = make_client(challenge)
+        client.header_spoofer.session.post.side_effect = [challenge, success]
+        client._solve_captcha_challenge = Mock(return_value="solved-token")
+
+        with patch("api_client.time.sleep"):
+            response = client.request("POST", "/quests/1/enroll", data={})
+
+        self.assertIs(response, success)
+        retry_headers = client.header_spoofer.session.post.call_args_list[1].kwargs["headers"]
+        self.assertEqual(retry_headers["X-Captcha-Key"], "solved-token")
+        self.assertEqual(retry_headers["X-Captcha-Rqtoken"], "rq-token")
+        self.assertEqual(retry_headers["X-Captcha-Session-Id"], "session-id")
+
+    def test_yescaptcha_key_from_config_is_used_for_solving(self):
+        import os
+
+        class Settings:
+            def get(self, key, default=None):
+                return {"yes_captcha_api_key": "yes-config-key"}.get(key, default)
+
+        client = make_client(Mock())
+        env = {k: v for k, v in os.environ.items()
+               if k not in {"NOCAPTCHAAI_API_KEY", "YES_CAPTCHA_API_KEY"}}
+        with patch.dict(os.environ, env, clear=True), patch("config.Config", return_value=Settings()):
+            providers = client._get_captcha_provider_candidates()
+
+        self.assertEqual([(p["name"], p["client_key"]) for p in providers],
+                         [("YesCaptcha", "yes-config-key")])
+
     def test_429_write_is_returned_without_automatic_replay(self):
         rate_limited = Mock()
         rate_limited.status_code = 429

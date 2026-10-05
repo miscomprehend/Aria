@@ -79,6 +79,8 @@ def configure_token(
         settings.config["captcha_api_key"] = captcha_key
         if captcha_provider in CAPTCHA_PROVIDERS:
             settings.config["captcha_provider"] = captcha_provider
+            if captcha_provider == "yescaptcha":
+                settings.config["yes_captcha_api_key"] = captcha_key
     if owner_identity:
         _save_owner_identity(settings, owner_identity)
     settings.save_config()

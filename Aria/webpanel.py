@@ -32,7 +32,8 @@ from werkzeug.security import check_password_hash, generate_password_hash
 from mongo_store import get_mongo_store
 from api_client import DiscordAPIClient
 from panel_security import load_panel_secret_key
-from rpc_profiles import RPCProfileStore
+from rpc_profiles import RPCProfileStore, snapshot_current_activity
+import profile_editor
 from rpc_activity import RPC_APP_IDS, apply_rpc_spoofing
 from formatter import VERSION
 
@@ -191,7 +192,12 @@ class WebPanel:
     def start(self):
         """Start the web panel server."""
         try:
-            self._server = make_server(self.host, self.port, self.app, request_handler=_QuietWSGIRequestHandler)
+            # The dashboard loads many assets and polls APIs in parallel; a
+            # single-threaded server queues them and the page renders half-loaded.
+            self._server = make_server(
+                self.host, self.port, self.app,
+                threaded=True, request_handler=_QuietWSGIRequestHandler,
+            )
             self._thread = threading.Thread(
                 target=self._server.serve_forever,
                 daemon=os.environ.get("ARIA_DESKTOP_MODE") != "1",
@@ -3405,9 +3411,14 @@ class WebPanel:
                     elif submitted_activity is not None:
                         return jsonify({"ok": False, "error": "activity must be an object or list"}), 400
                     elif target:
-                        activity = self._read_hosted_runtime_state(target).get("rpc", {}).get("activity")
+                        hosted_rpc = self._read_hosted_runtime_state(target).get("rpc", {})
+                        hosted_items = hosted_rpc.get("activities")
+                        if isinstance(hosted_items, list) and len(hosted_items) > 1:
+                            activity = hosted_items
+                        else:
+                            activity = hosted_rpc.get("activity")
                     else:
-                        activity = getattr(b, "activity", None) if b else None
+                        activity = snapshot_current_activity(b) if b else None
                     store.save_preset(name, activity)
                 elif action == "load":
                     activity = store.get_preset(name)
@@ -3632,6 +3643,58 @@ class WebPanel:
             except Exception as e:
                 return jsonify({"ok": False, "error": str(e)}), 500
             return jsonify({"ok": True, **state})
+
+        def _profile_api_or_error(mutating: bool = False):
+            if not self._require_session():
+                return None, (jsonify({"ok": False, "error": "Unauthorized"}), 403)
+            requester_id = str(session.get("user_id") or "")
+            bot_user_id = str(getattr(self.bot, "user_id", "") or "")
+            owns_account = bool(bot_user_id) and requester_id == bot_user_id
+            if not owns_account and not self._is_owner_session():
+                return None, (jsonify({
+                    "ok": False,
+                    "error": "Profile editing is only available to the account this runtime is signed in to.",
+                }), 403)
+            if mutating and not self._valid_csrf_token(request.headers.get("X-CSRF-Token", "")):
+                return None, (jsonify({"ok": False, "error": "Session expired"}), 403)
+            api = getattr(self.bot, "api", None) if self.bot else None
+            if api is None:
+                return None, (jsonify({"ok": False, "error": "The Discord client is still starting"}), 503)
+            return api, None
+
+        @self.app.get("/api/account/profile")
+        def api_account_profile_get() -> Any:
+            api, err = _profile_api_or_error()
+            if err:
+                return err
+            try:
+                return jsonify({"ok": True, "profile": profile_editor.fetch_profile(api)})
+            except profile_editor.ProfileError as e:
+                return jsonify({"ok": False, "error": str(e)}), 502
+            except Exception as e:
+                return jsonify({"ok": False, "error": f"Could not load the profile: {str(e)[:120]}"}), 500
+
+        @self.app.post("/api/account/profile")
+        def api_account_profile_update() -> Any:
+            api, err = _profile_api_or_error(mutating=True)
+            if err:
+                return err
+            data = request.get_json(silent=True)
+            if not isinstance(data, dict):
+                return jsonify({"ok": False, "error": "Expected a JSON object"}), 400
+            try:
+                result = profile_editor.apply_update(api, data)
+            except profile_editor.ProfileError as e:
+                return jsonify({"ok": False, "error": str(e)}), 400
+            except Exception as e:
+                return jsonify({"ok": False, "error": f"Profile update failed: {str(e)[:120]}"}), 500
+            if result["updated"]:
+                try:
+                    api.get_user_info(force=True)
+                except Exception:
+                    pass
+            status = 200 if not result["failed"] else (207 if result["updated"] else 502)
+            return jsonify({"ok": not result["failed"], **result}), status
 
         @self.app.get("/api/command-tools")
         def api_command_tools_get() -> Any:

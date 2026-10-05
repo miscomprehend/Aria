@@ -15,6 +15,7 @@ from bot import DiscordBot
 from async_gateway import AsyncDiscordGateway
 from core.client.platform import CLIENT_PROFILES, build_identify_payload
 from voice import SimpleVoice, VoiceClient
+from discord_api_types import VoiceOpcodes
 
 
 def make_bot():
@@ -379,6 +380,174 @@ class GatewayLifecycleTests(unittest.TestCase):
 
         self.assertEqual(client.disconnect_calls, 1)
         self.assertIsNone(bot._voice_client)
+
+    def test_voice_ws_stops_retrying_on_e2ee_requirement(self):
+        client = VoiceClient(bot_ws=Mock(), user_id="12345")
+        attempts = {"count": 0}
+
+        async def fake_connect():
+            attempts["count"] += 1
+            client._voice_unsupported = True
+            client._ws_error = "Voice server requires E2EE/DAVE, which Aria voice does not support yet."
+
+        client._voice_ws_connect = fake_connect
+        client.running = True
+
+        with patch("voice.time.sleep") as sleep_mock:
+            client._run_voice_ws()
+
+        self.assertEqual(attempts["count"], 1)
+        self.assertTrue(client._voice_unsupported)
+        sleep_mock.assert_not_called()
+
+    def test_set_stream_in_dm_call_uses_call_stream(self):
+        bot_ws = Mock()
+        bot = Mock()
+        bot.ws = bot_ws
+        manager = SimpleVoice(Mock(), "token", bot)
+        client = VoiceClient(bot_ws=bot_ws, user_id="789")
+        client.gateway_joined = True
+        client.channel_id = "123"
+        client.is_dm_call = True
+        client.channel_type = 1
+        manager.active_connections["channel_123"] = client
+
+        ok, _ = manager.set_stream("123", True)
+
+        self.assertTrue(ok)
+        payloads = [json.loads(c.args[0]) for c in bot_ws.send.call_args_list]
+        create = next(p for p in payloads if p["op"] == 18)
+        self.assertEqual(create["d"]["type"], "call")
+        self.assertIsNone(create["d"]["guild_id"])
+
+    def test_join_vc_accepts_stage_channels(self):
+        class CapturingClient:
+            last_channel_type = None
+
+            def __init__(self, bot_ws, user_id):
+                self.gateway_joined = False
+                self._ws_error = ""
+
+            def connect(self, channel_id, guild_id, is_dm, channel_type=None):
+                CapturingClient.last_channel_type = channel_type
+                self.gateway_joined = True
+                return True
+
+        api = Mock()
+        api.request.return_value.status_code = 200
+        api.request.return_value.json.return_value = {"type": 13, "guild_id": "456"}
+        bot = Mock()
+        bot.ws = Mock()
+        bot.user_id = "789"
+        bot._voice_client = None
+        manager = SimpleVoice(api, "token", bot)
+
+        with patch("voice.VoiceClient", CapturingClient):
+            self.assertTrue(manager.join_vc("123"))
+
+        self.assertEqual(CapturingClient.last_channel_type, 13)
+
+    def test_set_stream_sends_stream_lifecycle_payloads(self):
+        api = Mock()
+        bot_ws = Mock()
+        bot = Mock()
+        bot.ws = bot_ws
+        bot.user_id = "789"
+        manager = SimpleVoice(api, "token", bot)
+
+        client = VoiceClient(bot_ws=bot_ws, user_id="789")
+        client.gateway_joined = True
+        client.guild_id = "456"
+        client.channel_id = "123"
+        client.channel_type = 2
+        manager.active_connections["channel_123"] = client
+
+        ok_start, _ = manager.set_stream("123", True)
+        ok_stop, _ = manager.set_stream("123", False)
+
+        self.assertTrue(ok_start)
+        self.assertTrue(ok_stop)
+
+        payloads = [json.loads(call.args[0]) for call in bot_ws.send.call_args_list]
+        self.assertTrue(any(p.get("op") == 18 for p in payloads))
+        self.assertTrue(any(p.get("op") == 19 for p in payloads))
+        self.assertTrue(any(
+            p.get("op") == 4 and isinstance(p.get("d"), dict) and p["d"].get("self_stream") is True
+            for p in payloads
+        ))
+
+    def test_set_stream_rejects_stage_channels(self):
+        api = Mock()
+        bot_ws = Mock()
+        bot = Mock()
+        bot.ws = bot_ws
+        bot.user_id = "789"
+        manager = SimpleVoice(api, "token", bot)
+
+        client = VoiceClient(bot_ws=bot_ws, user_id="789")
+        client.gateway_joined = True
+        client.guild_id = "456"
+        client.channel_id = "123"
+        client.channel_type = 13
+        manager.active_connections["channel_123"] = client
+
+        ok, detail = manager.set_stream("123", True)
+
+        self.assertFalse(ok)
+        self.assertIn("stage", detail.lower())
+
+    def test_voice_ready_selects_best_encryption_mode(self):
+        client = VoiceClient(bot_ws=Mock(), user_id="12345")
+
+        class FakeWs:
+            def __init__(self):
+                self.payloads = []
+
+            async def send(self, payload):
+                self.payloads.append(json.loads(payload))
+
+        ws = FakeWs()
+        ready = {
+            "op": VoiceOpcodes.Ready,
+            "d": {
+                "ssrc": 42,
+                "ip": "127.0.0.1",
+                "port": 5000,
+                "modes": ["xsalsa20_poly1305", "aead_xchacha20_poly1305_rtpsize"],
+            },
+        }
+
+        with patch.object(client, "_ip_discovery", return_value=("0.0.0.0", 0)):
+            asyncio.run(client._handle_voice_op(ws, ready))
+
+        self.assertEqual(client.encryption_mode, "aead_xchacha20_poly1305_rtpsize")
+        self.assertEqual(ws.payloads[-1]["op"], VoiceOpcodes.SelectProtocol)
+        self.assertEqual(
+            ws.payloads[-1]["d"]["data"]["mode"],
+            "aead_xchacha20_poly1305_rtpsize",
+        )
+
+    def test_secure_frames_prepare_acknowledges_transition(self):
+        client = VoiceClient(bot_ws=Mock(), user_id="12345")
+
+        class FakeWs:
+            def __init__(self):
+                self.payloads = []
+
+            async def send(self, payload):
+                self.payloads.append(json.loads(payload))
+
+        ws = FakeWs()
+        prepare = {
+            "op": VoiceOpcodes.SecureFramesPrepareProtocolTransition,
+            "d": {"protocol": "dave", "transition_id": "t1"},
+        }
+
+        asyncio.run(client._handle_voice_op(ws, prepare))
+
+        self.assertEqual(client.encryption_mode, "dave")
+        self.assertEqual(ws.payloads[-1]["op"], VoiceOpcodes.SecureFramesExecuteTransition)
+        self.assertEqual(ws.payloads[-1]["d"], {"protocol": "dave", "transition_id": "t1"})
 
 
 class CloseCodeTests(unittest.TestCase):

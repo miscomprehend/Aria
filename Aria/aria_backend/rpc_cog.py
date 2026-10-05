@@ -704,6 +704,7 @@ class RPC(Cog, ASCIIMixin):
             tot_ms = int(dur * 60000)
             start = t - cur_ms
             tid = "0VjIjW4GlUZAMYd2vXMi3b"
+            uid = getattr(getattr(self.bot, "user", None), "id", None)
             act = {
                 "type": 2, "name": "Spotify",
                 "details": cmd.get("details", cmd.get("name", "Unknown"))[:128],
@@ -711,9 +712,10 @@ class RPC(Cog, ASCIIMixin):
                 "timestamps": {"start": start, "end": start + tot_ms},
                 "application_id": "3201606009684",
                 "sync_id": tid, "session_id": f"spotify:{tid}",
-                "party": {"id": f"spotify:{tid}", "size": [1, 1]},
+                "party": {"id": f"spotify:{uid or tid}", "size": [1, 1]},
                 "secrets": {"join": tid, "spectate": tid, "match": tid},
                 "instance": True, "flags": 48,
+                "metadata": {"album_id": cmd.get("album_id") or "7pFKs0bdrEm8qTsQczwvr4"},
             }
             assets = mk_assets(asset_key, cmd.get("large_text", ""), small_key, cmd.get("small_text", ""))
             if assets: act["assets"] = assets
@@ -759,7 +761,7 @@ class RPC(Cog, ASCIIMixin):
             act = {
                 "type": 0, "name": cmd.get("name", "Game")[:128],
                 "application_id": "1470539864909943067",
-                "platform": cmd.get("platform", "ps5"), "timestamps": ts_now(),
+                "platform": cmd.get("platform") or ("ps4" if rpc_type == "ps4" else "ps5"), "timestamps": ts_now(),
             }
             if cmd.get("details"): act["details"] = cmd["details"][:128]
             if cmd.get("state"):   act["state"]   = cmd["state"][:128]
@@ -998,7 +1000,7 @@ class RPC(Cog, ASCIIMixin):
                 "usage: .rpc <type> [key=value ...]",
                 "  imglink=<url>  spoof=true  rotate_interval=20",
                 "presets: .rpc preset save/load/list/delete <name>",
-                "stack:   .rpc stack add <secs> <type> [kv...] | run | stop | list | clear",
+                "stack:   .rpc stack add <type> [kv...] | apply (or run) | remove <type> | list | clear",
                 "rotation:.rpc rotation add <secs> <type> [kv...] | start | stop | list | remove <#> | clear",
             ], delay=15)
             return
@@ -1035,6 +1037,7 @@ class RPC(Cog, ASCIIMixin):
                     return
                 for rt in list(self._rotation_tasks):
                     self._stop_rotation(rt)
+                self._stop_named_rotation()
                 self._active = dict(self._presets[name])
                 self._save_rpc()
                 acts = [a for a in [await self._build_activity(c) for c in self._active.values()] if a]
@@ -1094,12 +1097,13 @@ class RPC(Cog, ASCIIMixin):
                 else:
                     await self.aerror(ctx, f"'{rt}' not in stack", delay=15)
 
-            elif sub == "apply":
+            elif sub in ("apply", "run"):
                 if not self._stack:
                     await self.aerror(ctx, "stack is empty — add entries first", delay=15)
                     return
                 for rt in list(self._rotation_tasks):
                     self._stop_rotation(rt)
+                self._stop_named_rotation()
                 self._active = {e["rpc_type"]: e for e in self._stack}
                 self._save_rpc()
                 acts = [a for a in [await self._build_activity(e) for e in self._stack] if a]

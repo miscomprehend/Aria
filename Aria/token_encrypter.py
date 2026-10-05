@@ -26,6 +26,7 @@ SENSITIVE_KEYS = {
     "discord_client_secret",
     "discord_bot_token",
     "captcha_api_key",
+    "yes_captcha_api_key",
     "mongo_uri",
 }
 

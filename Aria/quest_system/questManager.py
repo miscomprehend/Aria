@@ -35,16 +35,10 @@ class QuestManager:
             fetch_excluded: Whether to include excluded quests
             
         Returns:
-            QuestManager instance
-            
-        Raises:
-            ValueError: If quest enrollment is blocked
+            QuestManager instance. A temporary enrollment block only prevents
+            enrolling, so it never hides the quests already on the account;
+            callers can read ``response.quest_enrollment_blocked_until``.
         """
-        if response.quest_enrollment_blocked_until:
-            raise ValueError(
-                f"Quest enrollment is blocked until {response.quest_enrollment_blocked_until}"
-            )
-        
         quests = [Quest(quest) for quest in response.quests]
         manager = cls(quests)
         

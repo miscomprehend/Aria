@@ -30,6 +30,19 @@ except ImportError:
     CommandOutputGuarantee = None
     InstanceSingletonManager = None
 
+
+def _console_print(message: str) -> None:
+    """Print a line without crashing on legacy Windows code pages."""
+    try:
+        print(message)
+    except UnicodeEncodeError:
+        import sys
+
+        stream = getattr(sys, "stdout", None)
+        encoding = getattr(stream, "encoding", None) or "utf-8"
+        safe = str(message).encode(encoding, "backslashreplace").decode(encoding, "replace")
+        print(safe)
+
 class Command:
     def __init__(self, func: Callable, name: str, aliases: Optional[List[str]] = None):
         self.func = func
@@ -1797,14 +1810,14 @@ class DiscordBot:
                         ActivityType.Watching: "watching",
                         ActivityType.Competing: "competing",
                     }.get(activity.get("type"), str(activity.get("type")))
-                    print(
+                    _console_print(
                         f"\033[1;36m[RPC]\033[0m type={activity_type} "
                         f"name={activity.get('name') or ''} "
                         f"details={activity.get('details') or ''} "
                         f"state={activity.get('state') or ''}"
                     )
             else:
-                print("\033[1;36m[RPC]\033[0m cleared")
+                _console_print("\033[1;36m[RPC]\033[0m cleared")
             self._last_activity_signature = signature
         self._sync_custom_status(normalized_activities)
         if self.identified and self.connection_active and self.ws:
@@ -1868,10 +1881,10 @@ class DiscordBot:
                 code = getattr(response, "status_code", 200)
                 if response is None or code not in (200, 204):
                     self._synced_custom_status = previous
-                    print(f"\033[1;31m[RPC]\033[0m Custom status sync failed (HTTP {code}).")
+                    _console_print(f"\033[1;31m[RPC]\033[0m Custom status sync failed (HTTP {code}).")
             except Exception as exc:
                 self._synced_custom_status = previous
-                print(f"\033[1;31m[RPC]\033[0m Custom status sync failed: {exc}")
+                _console_print(f"\033[1;31m[RPC]\033[0m Custom status sync failed: {exc}")
 
         threading.Thread(target=_push, daemon=True, name="custom-status-sync").start()
 

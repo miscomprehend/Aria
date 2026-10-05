@@ -20,6 +20,7 @@ class _FakeNoCaptchaSolver:
 
 class _FakeYesCaptchaSolver:
     called = 0
+    image_called = 0
 
     def __init__(self, api_key):
         self.api_key = api_key
@@ -27,6 +28,10 @@ class _FakeYesCaptchaSolver:
     async def hcaptcha(self, sitekey, website_url, options=None):
         _FakeYesCaptchaSolver.called += 1
         return {"gRecaptchaResponse": "yescaptcha-token"}
+
+    async def image_captcha(self, image_base64):
+        _FakeYesCaptchaSolver.image_called += 1
+        return {"text": "abcd"}
 
 
 class QuestCaptchaSolverTests(unittest.TestCase):
@@ -40,6 +45,7 @@ class QuestCaptchaSolverTests(unittest.TestCase):
 
         _FakeNoCaptchaSolver.called = 0
         _FakeYesCaptchaSolver.called = 0
+        _FakeYesCaptchaSolver.image_called = 0
         captcha_module.NoCaptchaSolver = _FakeNoCaptchaSolver
         captcha_module.YesCaptchaSolver = _FakeYesCaptchaSolver
         captcha_module._nocaptcha_available = True
@@ -96,6 +102,24 @@ class QuestCaptchaSolverTests(unittest.TestCase):
             asyncio.run(
                 solver.solve_captcha(CaptchaDataFromRequest("sitekey", "rqdata"))
             )
+
+    def test_solves_image_captcha_with_supported_provider(self):
+        os.environ.pop("NOCAPTCHAAI_API_KEY", None)
+        os.environ["YES_CAPTCHA_API_KEY"] = "yes-key"
+        solver = CaptchaSolver()
+
+        result = asyncio.run(solver.solve_image_captcha("ZmFrZS1pbWFnZQ=="))
+
+        self.assertEqual(result, "abcd")
+        self.assertEqual(_FakeYesCaptchaSolver.image_called, 1)
+
+    def test_raises_for_image_captcha_when_provider_does_not_support_it(self):
+        os.environ["NOCAPTCHAAI_API_KEY"] = "nocaptcha-key"
+        os.environ.pop("YES_CAPTCHA_API_KEY", None)
+        solver = CaptchaSolver()
+
+        with self.assertRaises(ValueError):
+            asyncio.run(solver.solve_image_captcha("ZmFrZS1pbWFnZQ=="))
 
 
 if __name__ == "__main__":

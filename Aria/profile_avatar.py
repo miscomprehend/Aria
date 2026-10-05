@@ -1,10 +1,28 @@
 import base64
+import ipaddress
+import socket
 from urllib.parse import urlparse
 
 import requests
 
 
 MAX_AVATAR_BYTES = 10 * 1024 * 1024
+
+
+def _reject_non_public_host(hostname: str) -> None:
+    """Refuse loopback/private/link-local targets so a URL can't probe the local network."""
+    try:
+        infos = socket.getaddrinfo(hostname, None)
+    except (socket.gaierror, UnicodeError):
+        return  # the download itself will fail to resolve
+    for info in infos:
+        address = info[4][0].split("%", 1)[0]
+        try:
+            if not ipaddress.ip_address(address).is_global:
+                raise ValueError("Provide a public HTTPS image URL")
+        except ValueError as exc:
+            if "public HTTPS" in str(exc):
+                raise
 
 _IMAGE_SIGNATURES = (
     (b"\x89PNG\r\n\x1a\n", "image/png"),
@@ -48,6 +66,8 @@ def download_avatar_data_uri(image_url: str) -> str:
         or parsed_url.password
     ):
         raise ValueError("Provide a public HTTPS image URL")
+
+    _reject_non_public_host(parsed_url.hostname)
 
     response = requests.get(
         parsed_url.geturl(),

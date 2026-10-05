@@ -68,6 +68,44 @@ class QuestSystemTests(unittest.TestCase):
         self.assertEqual(quests._get_progress(quests.quests["quest-active"]), ("WATCH_VIDEO", 25, 100))
         self.assertEqual(api.calls, [("GET", "/quests/@me", None)])
 
+    def test_enrollment_block_still_lists_account_quests(self):
+        payload = {
+            "quest_enrollment_blocked_until": "2026-10-20T00:00:00+00:00",
+            "quests": [{"id": "quest-a", "config": {"messages": {"quest_name": "A"}}}],
+        }
+        quests = QuestSystem(FakeApi(payload))
+
+        success, message = quests.fetch_quests()
+
+        self.assertTrue(success)
+        self.assertEqual(list(quests.quests), ["quest-a"])
+        self.assertIn("blocked until", message)
+
+    def test_one_unparseable_quest_does_not_hide_the_others(self):
+        from unittest.mock import patch
+        from quest_system.interface import Quest as QuestData
+
+        payload = {
+            "quests": [
+                {"id": "quest-bad", "config": {"messages": {"quest_name": "Bad"}}},
+                {"id": "quest-good", "config": {"messages": {"quest_name": "Good"}}},
+            ]
+        }
+        real_from_dict = QuestData.from_dict.__func__
+
+        def flaky(cls, data, user_id=""):
+            if data.get("id") == "quest-bad":
+                raise TypeError("unexpected shape")
+            return real_from_dict(cls, data, user_id)
+
+        quests = QuestSystem(FakeApi(payload))
+        with patch.object(QuestData, "from_dict", classmethod(flaky)):
+            success, _ = quests.fetch_quests()
+
+        self.assertTrue(success)
+        self.assertEqual(set(quests.quests), {"quest-bad", "quest-good"})
+        self.assertEqual([q.id for q in quests.quest_manager], ["quest-good"])
+
     def test_state_reflects_completion_and_claim_markers(self):
         quests = QuestSystem(FakeApi({}))
 

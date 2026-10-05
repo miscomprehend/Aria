@@ -120,9 +120,8 @@ release build.
 ### Runtime and optional component dependencies
 
 The main runtime uses packages from `requirements.txt`. Pillow is included for
-image-editing commands. The separate modules in `aria_backend/` use a
-different dependency set and are not the backend started by the current
-desktop launcher. To install those optional/separate components:
+image-editing commands. The separate modules in `aria_backend/` keep a matching
+Python dependency list so those components can also be installed standalone:
 
 ```bash
 python -m pip install -r aria_backend/requirements.txt

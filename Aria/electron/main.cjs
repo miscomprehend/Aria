@@ -165,7 +165,14 @@ function runBackendScript(scriptName, args = [], options = {}) {
     : [path.join(context.cwd, scriptName), ...args];
   return spawn(context.command, scriptArgs, {
     cwd: context.cwd,
-    env: { ...process.env, ARIA_DESKTOP_MODE: "1", PYTHONUNBUFFERED: "1", ...options.env },
+    env: {
+      ...process.env,
+      ARIA_DESKTOP_MODE: "1",
+      PYTHONUNBUFFERED: "1",
+      PYTHONUTF8: "1",
+      PYTHONIOENCODING: "utf-8",
+      ...options.env,
+    },
     stdio: options.stdio || ["ignore", "ignore", "pipe"],
     windowsHide: true,
   });
@@ -701,6 +708,21 @@ function createWindow() {
   mainWindow.webContents.on("page-title-updated", (event) => {
     event.preventDefault();
     mainWindow.setTitle("Aria Desktop");
+  });
+  let loadRetries = 0;
+  mainWindow.webContents.on("did-fail-load", (event, errorCode, errorDescription, validatedURL, isMainFrame) => {
+    // -3 is a navigation aborted by a newer load; not a real failure.
+    if (!isMainFrame || errorCode === -3 || loadRetries >= 5) return;
+    loadRetries += 1;
+    logMessage("WARN", `Dashboard load failed (${errorDescription}); retry ${loadRetries}/5.`);
+    setTimeout(() => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.loadURL(new URL("/dashboard", dashboardUrl).toString());
+      }
+    }, 1000 * loadRetries);
+  });
+  mainWindow.webContents.on("did-finish-load", () => {
+    loadRetries = 0;
   });
   mainWindow.loadURL(new URL("/dashboard", dashboardUrl).toString());
 }

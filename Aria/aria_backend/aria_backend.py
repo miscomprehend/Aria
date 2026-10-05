@@ -169,6 +169,7 @@ BOT_HELP = {
     "Logger": [("logger", "Track keywords/mentions, log deletes & edits")],
     "Profile": [("profile", "Set display name, avatar, banner, bio, pronouns, accent")],
     "Snipers": [("nitro", "Nitro gift sniper"), ("giveaway", "Giveaway sniper")],
+    "OwO": [("owofarm", "OwO farm loop (start/stop/once/config)")],
     "Anti-GC": [("antigc", "Auto-leave group-DM traps (+ block/msg/name/icon/webhook/whitelist)")],
     "Guild": [("guilds", "List your servers"),
               ("massleave", "Leave all non-owned servers"),
@@ -237,6 +238,7 @@ _guild_cog = None
 _reactions_cog = None
 _nitro_cog = None
 _giveaway_cog = None
+_owo_cog = None
 _DISCOVER_RPC_KEY = "aria_promo"
 
 def emit(obj: dict) -> None:
@@ -360,6 +362,12 @@ HELP = {
         "cmds": [
             ("nitro", "nitro <on/off/clear/stats>", "Toggle the Nitro sniper or show its stats."),
             ("giveaway", "giveaway <on/off/stats>", "Toggle the giveaway sniper or show its stats."),
+        ],
+    },
+    "owo": {
+        "desc": "OwO farm automation",
+        "cmds": [
+            ("owofarm", "owofarm <start/stop/once/status/check/channel/cmds/add/remove/up/down/delay>", "Run and configure the OwO farm loop."),
         ],
     },
     "reactions": {
@@ -1886,7 +1894,7 @@ async def _account_remove(aid: str) -> None:
 
 async def handle(cmd: dict, state: dict):
     global _bot, _bot_task, _rpc_cog, _realbot_task, OWNER_ID, _bot_app_id, _userapp_watch_task, _spotify_cog
-    global _logger_cog, _profile_cog, _antigc_cog, _friends_cog, _gc_cog, _gcextra_cog, _guild_cog, _reactions_cog, _nitro_cog, _giveaway_cog, _ACTIVE_ID
+    global _logger_cog, _profile_cog, _antigc_cog, _friends_cog, _gc_cog, _gcextra_cog, _guild_cog, _reactions_cog, _nitro_cog, _giveaway_cog, _owo_cog, _ACTIVE_ID
     c = cmd.get("cmd")
 
     if c == "login":
@@ -2014,6 +2022,15 @@ async def handle(cmd: dict, state: dict):
                 except Exception as e:
                     _giveaway_cog = None
                     log(f"giveaway cog failed to load: {e}\n" + traceback.format_exc())
+
+                try:
+                    import owo_cog
+                    _owo_cog = owo_cog.OwoFarm(_bot)
+                    _bot.add_cog(_owo_cog)
+                    log("OwO cog loaded")
+                except Exception as e:
+                    _owo_cog = None
+                    log(f"owo cog failed to load: {e}\n" + traceback.format_exc())
             stats = await build_stats(_bot)
         except Exception as e:
             emit({"type": "login_error", "msg": str(e)})

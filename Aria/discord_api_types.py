@@ -14,6 +14,7 @@ class GatewayOpcodes(IntEnum):
     Hello = 10
     HeartbeatAck = 11
     StreamCreate = 18
+    StreamDelete = 19
     StreamSetPaused = 22
 
 
