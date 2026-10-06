@@ -7281,7 +7281,6 @@ Example Usage:
             "afk": "AFK",
             "nitro": "Nitro & Giveaway",
             "owo": "OwO Farm",
-            "cogs": "Other Cog Commands",
             "agct": "AGCT",
             "owner": "Owner",
         }
