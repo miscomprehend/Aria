@@ -890,6 +890,18 @@ class DiscordAPIClient:
         print(f"[USER-INFO] /users/@me failed with status: {getattr(response, 'status_code', 'no response')}")
         return None
 
+    def edit_profile(self, **fields) -> Optional[Any]:
+        """Update account-level profile fields through the protected request path."""
+        if not fields:
+            raise ValueError("At least one profile field is required.")
+        return self.request("PATCH", "/users/@me", data=fields)
+
+    def edit_profile_details(self, **fields) -> Optional[Any]:
+        """Update bio/pronouns through the protected profile request path."""
+        if not fields:
+            raise ValueError("At least one profile detail is required.")
+        return self.request("PATCH", "/users/@me/profile", data=fields)
+
     def _normalize_outbound_text(self, content: str) -> str:
         """Preserve intentional Discord formatting while normalizing null content."""
         return "" if content is None else str(content)

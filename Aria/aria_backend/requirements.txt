@@ -1,17 +1,17 @@
-aiohttp>=3.9,<4.0
-Flask>=3.0,<4.0
-cryptography>=42.0,<48.0
-curl_cffi>=0.7
+aiohttp>=3.14.4,<4.0
+Flask>=3.1.3,<4.0
+cryptography>=50.0.2,<51.0
+curl_cffi>=0.16.3,<1.0
 # Components V2 (LayoutView/Container/TextDisplay/ActionRow-in-Container) was
 # added in discord.py 2.6.0 — the real bot's whole CV2 UI needs it.
-discord.py>=2.6.0,<3.0
-Pillow>=10.0,<13.0
-psutil>=5.9,<8.0
-pymongo>=4.6,<5.0
-PyInstaller>=6.10,<7.0
-requests>=2.31,<3.0
-websocket-client>=1.7,<2.0
-websockets>=12.0,<16.0
-urllib3>=2.0,<3.0
-wreq>=0.12
+discord.py>=2.7.1,<3.0
+Pillow>=12.3.0,<13.0
+psutil>=7.2.2,<8.0
+pymongo>=4.18.2,<5.0
+PyInstaller>=6.22.3,<7.0
+requests>=2.34.2,<3.0
+websocket-client>=1.9.2,<2.0
+websockets>=17.2,<18.0
+urllib3>=2.8.0,<3.0
+wreq>=0.13.0,<1.0
 modifyself @ git+https://github.com/sniffy-furry/modifyself.git@a73a469845f455edd1893f8e6326393bcde445f0
