@@ -121,6 +121,49 @@ class RequestBoundaryTests(unittest.TestCase):
             "active-account-token",
         )
 
+    def test_profile_updates_use_protected_json_patch_headers(self):
+        response = SimpleNamespace(status_code=200, headers={})
+        discord_session = Mock()
+        discord_session.patch.return_value = response
+        rate_limiter = Mock()
+        rate_limiter.get_wait_time.return_value = None
+        header_spoofer = Mock()
+        header_spoofer.session = discord_session
+        header_spoofer.get_protected_headers.return_value = {
+            "Authorization": "active-account-token",
+            "Referer": "https://discord.com/channels/@me",
+        }
+
+        client = object.__new__(DiscordAPIClient)
+        client.token = "active-account-token"
+        client.header_spoofer = header_spoofer
+        client.rate_limiter = rate_limiter
+        client.auth_failed = False
+        client.verification_blocked = False
+        client.health_monitor = None
+        client._rate_limit_log_times = {}
+        client._is_cacheable_get = Mock(return_value=False)
+        client._record_latency = Mock()
+
+        account_data = {"avatar": "data:image/png;base64,UE5H"}
+        profile_data = {"bio": "Profile text"}
+        self.assertIs(client.edit_profile(**account_data), response)
+        self.assertIs(client.edit_profile_details(**profile_data), response)
+
+        self.assertEqual(discord_session.patch.call_count, 2)
+        account_call, profile_call = discord_session.patch.call_args_list
+        self.assertTrue(account_call.args[0].endswith("/users/@me"))
+        self.assertTrue(profile_call.args[0].endswith("/users/@me/profile"))
+        for call, expected_data in (
+            (account_call, account_data),
+            (profile_call, profile_data),
+        ):
+            headers = call.kwargs["headers"]
+            self.assertEqual(headers["Authorization"], "active-account-token")
+            self.assertEqual(headers["Referer"], "https://discord.com/channels/@me")
+            self.assertEqual(headers["Content-Type"], "application/json")
+            self.assertEqual(call.kwargs["json"], expected_data)
+
     def test_external_request_rejects_non_https_and_embedded_credentials(self):
         for url in (
             "http://example.test/image.png",

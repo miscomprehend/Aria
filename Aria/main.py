@@ -9313,7 +9313,7 @@ Example Usage:
             for category_key in category_names:
                 category_lines.append(
                     f"{fmt.PURPLE}{category_header_map.get(category_key, category_key.title())}{fmt.RESET} "
-                    f"{fmt.DARK}—{fmt.RESET} "
+                    f"{fmt.DARK}::{fmt.RESET} "
                     f"{fmt.WHITE}{category_descriptions.get(category_key, 'Commands')}{fmt.RESET}"
                 )
             body_text = "\n".join(category_lines)
@@ -9623,8 +9623,11 @@ Example Usage:
                 # Keep VC feedback visible long enough to read, then auto-delete.
                 vc_delay = max(6.0, float(getattr(bot, "_auto_delete_delay", 3.0) or 3.0))
                 delete_after_delay(ctx["api"], ctx["channel_id"], msg.get("id"), vc_delay)
+            elif msg is None:
+                print("[Voice] Could not send voice-command response: API returned no message object")
             return msg
-        except Exception:
+        except Exception as exc:
+            print(f"[Voice] Could not send voice-command response: {exc}")
             return None
 
     def _start_vc_join(ctx, description, join_operation, channel_id=None):
@@ -9638,8 +9641,14 @@ Example Usage:
                     joined_channel = state.get("channel_id") or channel_id or "unknown"
                     ready = "ready" if state.get("ws_ready") else "starting"
                     issue = str(state.get("last_error") or "").strip()
-                    issue_suffix = f" | note: {issue}" if issue and ready != "ready" else ""
-                    result = f"> **✓ {description}** :: {joined_channel} | WS: {ready}{issue_suffix}"
+                    if "E2EE/DAVE" in issue:
+                        result = (
+                            f"> **✓ Joined voice** :: {joined_channel} | "
+                            "Gateway controls are available; voice media requires E2EE/DAVE."
+                        )
+                    else:
+                        issue_suffix = f" | note: {issue}" if issue and ready != "ready" else ""
+                        result = f"> **✓ {description}** :: {joined_channel} | WS: {ready}{issue_suffix}"
                 else:
                     detail = getattr(voice_manager, "last_error", "") or "Unknown voice error"
                     result = f"> **✗ {description}** :: {detail}"
@@ -13328,7 +13337,7 @@ Example Usage:
     try:
         from main_cog_adapter import install_cog_commands
 
-        cog_runtime = install_cog_commands(bot)
+        cog_runtime = install_cog_commands(bot, command_authorizer=is_control_user)
         print(
             f"[main-cogs] Loaded {len(cog_runtime.cogs)} cogs; "
             f"registered {len(cog_runtime.commands)} command names and aliases."

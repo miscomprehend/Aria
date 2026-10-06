@@ -31,6 +31,14 @@ _COGS = (
     ("giveaway_cog", "Giveaway"),
     ("owo_cog", "OwoFarm"),
 )
+_PROFILE_MUTATION_COMMANDS = {
+    "setdisplayname",
+    "setbio",
+    "setpronouns",
+    "setaccent",
+    "setpfp",
+    "setbanner",
+}
 
 
 class _WreqStatus:
@@ -158,6 +166,10 @@ class _HttpShim:
             files=files,
             timeout=timeout,
         )
+        return self._decode_response(response, method, path)
+
+    @staticmethod
+    def _decode_response(response, method, path):
         if response is None:
             raise RuntimeError(f"Discord request failed: {method} {path}")
         status = int(getattr(response, "status_code", 0) or 0)
@@ -175,10 +187,12 @@ class _HttpShim:
             return None
 
     async def edit_profile(self, **fields):
-        return await self.request(
-            SimpleNamespace(method="PATCH", path="/users/@me"),
-            json=fields,
-        )
+        response = await asyncio.to_thread(self._api.edit_profile, **fields)
+        return self._decode_response(response, "PATCH", "/users/@me")
+
+    async def edit_profile_details(self, **fields):
+        response = await asyncio.to_thread(self._api.edit_profile_details, **fields)
+        return self._decode_response(response, "PATCH", "/users/@me/profile")
 
 
 class _SpooferShim:
@@ -264,8 +278,9 @@ class _CogBotFacade:
 
 
 class MainCogRuntime:
-    def __init__(self, bot):
+    def __init__(self, bot, command_authorizer=None):
         self.bot = bot
+        self.command_authorizer = command_authorizer
         self.facade = _CogBotFacade(bot)
         self.loop = asyncio.new_event_loop()
         self._started = threading.Event()
@@ -361,10 +376,20 @@ class MainCogRuntime:
 
     def _make_handler(self, cog_command):
         def invoke(ctx, args):
+            author_id = str(ctx.get("author_id") or "")
+            if (
+                cog_command.name in _PROFILE_MUTATION_COMMANDS
+                and self.command_authorizer is not None
+                and not self.command_authorizer(author_id)
+            ):
+                self.bot.api.send_message(
+                    str(ctx.get("channel_id") or ""),
+                    "> **✗ Profile** :: Owner/Admin only",
+                )
+                return None
             content = str(ctx.get("content") or "")
             if not content:
                 content = f"{self.bot.prefix}{cog_command.name} {' '.join(args)}".strip()
-            author_id = str(ctx.get("author_id") or "")
             message = SimpleNamespace(
                 id=ctx.get("message_id"),
                 channel_id=ctx.get("channel_id"),
@@ -467,9 +492,9 @@ class MainCogRuntime:
             self._thread.join(timeout=5)
 
 
-def install_cog_commands(bot):
+def install_cog_commands(bot, command_authorizer=None):
     """Register every aria_backend cog command over any duplicate main.py handler."""
-    runtime = MainCogRuntime(bot)
+    runtime = MainCogRuntime(bot, command_authorizer=command_authorizer)
     bot._cog_runtime = runtime
     _LOGGER.info(
         "Registered %d aria_backend cog command names and aliases across %d cogs",

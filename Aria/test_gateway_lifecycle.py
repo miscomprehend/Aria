@@ -7,8 +7,7 @@ import json
 import time
 from concurrent.futures import ThreadPoolExecutor
 from types import SimpleNamespace
-from unittest.mock import patch
-from unittest.mock import Mock
+from unittest.mock import AsyncMock, Mock, patch
 
 sys.path.insert(0, os.path.dirname(__file__))
 
@@ -415,6 +414,7 @@ class GatewayLifecycleTests(unittest.TestCase):
 
         async def fake_connect():
             attempts["count"] += 1
+            client._start_voice_task(asyncio.sleep(60), "test-pending-heartbeat")
             client._voice_unsupported = True
             client._ws_error = "Voice server requires E2EE/DAVE, which Aria voice does not support yet."
 
@@ -426,7 +426,68 @@ class GatewayLifecycleTests(unittest.TestCase):
 
         self.assertEqual(attempts["count"], 1)
         self.assertTrue(client._voice_unsupported)
+        self.assertIsNone(client.voice_loop)
+        self.assertFalse(client._voice_tasks)
+        self.assertFalse(client.running)
         sleep_mock.assert_not_called()
+
+    def test_voice_websocket_close_waits_for_transport_shutdown(self):
+        client = VoiceClient(bot_ws=Mock(), user_id="12345")
+        websocket = Mock()
+        websocket.close = AsyncMock()
+        websocket.wait_closed = AsyncMock()
+        client.voice_ws = websocket
+
+        asyncio.run(client._close_ws())
+
+        websocket.close.assert_awaited_once()
+        websocket.wait_closed.assert_awaited_once()
+        self.assertIsNone(client.voice_ws)
+
+    def test_voice_heartbeat_tasks_are_cancelled_during_cleanup(self):
+        client = VoiceClient(bot_ws=Mock(), user_id="12345")
+        client.running = True
+        loop = asyncio.new_event_loop()
+        try:
+            asyncio.set_event_loop(loop)
+            loop.run_until_complete(client._handle_voice_op(
+                Mock(),
+                {
+                    "op": VoiceOpcodes.Hello,
+                    "d": {"heartbeat_interval": 60_000},
+                },
+            ))
+            loop.run_until_complete(asyncio.sleep(0))
+
+            loop.run_until_complete(client._cancel_voice_tasks())
+
+            self.assertFalse(client._voice_tasks)
+            self.assertFalse([
+                task for task in asyncio.all_tasks(loop)
+                if task is not asyncio.current_task(loop) and not task.done()
+            ])
+        finally:
+            loop.close()
+            asyncio.set_event_loop(None)
+
+    def test_gateway_mute_still_works_when_voice_media_requires_dave(self):
+        gateway_ws = Mock()
+        bot = Mock()
+        bot.ws = gateway_ws
+        client = VoiceClient(bot_ws=gateway_ws, user_id="12345")
+        client.channel_id = "123"
+        client.guild_id = "456"
+        client.gateway_joined = True
+        client._voice_unsupported = True
+        manager = SimpleVoice(Mock(), "token", bot)
+        manager.active_connections["channel_123"] = client
+
+        ok, detail = manager.set_mute_deaf(channel_id="123", mute=True)
+
+        self.assertTrue(ok, detail)
+        payload = json.loads(gateway_ws.send.call_args.args[0])
+        self.assertTrue(payload["d"]["self_mute"])
+        self.assertFalse(client.ws_ready())
 
     def test_set_stream_in_dm_call_uses_call_stream(self):
         bot_ws = Mock()

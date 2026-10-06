@@ -41,6 +41,7 @@ class VoiceClient:
         self.voice_ws = None
         self.voice_thread: Optional[threading.Thread] = None
         self.voice_loop: Optional[asyncio.AbstractEventLoop] = None
+        self._voice_tasks = set()
         self.running = False
         self.gateway_joined = False
 
@@ -230,14 +231,16 @@ class VoiceClient:
                 asyncio.run_coroutine_threadsafe(
                     self._close_ws(), self.voice_loop
                 ).result(timeout=5)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning("[Voice] Error closing voice WebSocket: %s", e)
 
         if self.voice_thread and self.voice_thread.is_alive():
             try:
-                self.voice_thread.join(timeout=2)
-            except Exception:
-                pass
+                self.voice_thread.join(timeout=8)
+                if self.voice_thread.is_alive():
+                    logger.warning("[Voice] Voice WebSocket thread did not stop within 8 seconds")
+            except RuntimeError as e:
+                logger.warning("[Voice] Could not join voice WebSocket thread: %s", e)
 
         logger.info("[Voice] Disconnected from channel %s", self.channel_id)
         return True
@@ -246,12 +249,18 @@ class VoiceClient:
         return bool(self._connected_event.is_set() and self.voice_ws is not None)
 
     async def _close_ws(self):
-        if self.voice_ws:
+        ws = self.voice_ws
+        if ws:
             try:
-                await self.voice_ws.close()
-            except Exception:
-                pass
-            self.voice_ws = None
+                await ws.close()
+                wait_closed = getattr(ws, "wait_closed", None)
+                if callable(wait_closed):
+                    await wait_closed()
+            except Exception as e:
+                logger.debug("[Voice] WebSocket close completed with error: %s", e)
+            finally:
+                if self.voice_ws is ws:
+                    self.voice_ws = None
 
     # ── voice WebSocket thread ───────────────────────────────────────────
 
@@ -259,33 +268,64 @@ class VoiceClient:
         self.voice_loop = asyncio.new_event_loop()
         asyncio.set_event_loop(self.voice_loop)
         backoff = 2
-        while self.running:
-            try:
-                self.voice_loop.run_until_complete(self._voice_ws_connect())
-            except Exception as e:
-                logger.error("[Voice] WS thread error: %s", e)
-                self._ws_error = str(e)
-            if self._voice_unsupported:
-                # Presence-only mode: stop media retries but stay joined via gateway.
-                break
-            if not self.running:
-                break
-            logger.warning("[Voice] Reconnecting in %ss", backoff)
-            for _ in range(backoff):
+        try:
+            while self.running:
+                try:
+                    self.voice_loop.run_until_complete(self._voice_ws_connect())
+                except Exception as e:
+                    logger.error("[Voice] WS thread error: %s", e)
+                    self._ws_error = str(e)
+                if self._voice_unsupported:
+                    # Gateway voice state remains available when media transport is unsupported.
+                    break
                 if not self.running:
                     break
-                time.sleep(1)
-            backoff = min(backoff * 2, 60)
-        try:
-            self.voice_loop.close()
-        except Exception:
-            pass
+                logger.warning("[Voice] Reconnecting in %ss", backoff)
+                for _ in range(backoff):
+                    if not self.running:
+                        break
+                    time.sleep(1)
+                backoff = min(backoff * 2, 60)
+        finally:
+            try:
+                self.voice_loop.run_until_complete(self._cancel_voice_tasks())
+                self.voice_loop.run_until_complete(self.voice_loop.shutdown_asyncgens())
+            except Exception as e:
+                logger.warning("[Voice] Voice loop cleanup failed: %s", e)
+            try:
+                self.voice_loop.close()
+            except Exception as e:
+                logger.warning("[Voice] Could not close voice event loop: %s", e)
+            self.voice_loop = None
+            self.running = False
+
+    def _start_voice_task(self, coroutine, name):
+        task = asyncio.create_task(coroutine, name=name)
+        self._voice_tasks.add(task)
+        task.add_done_callback(self._voice_tasks.discard)
+        return task
+
+    async def _cancel_voice_tasks(self):
+        current = asyncio.current_task()
+        tasks = [
+            task for task in self._voice_tasks
+            if task is not current and not task.done()
+        ]
+        for task in tasks:
+            task.cancel()
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
 
     async def _voice_ws_connect(self):
         url = f"wss://{self.endpoint}/?v={_VOICE_WS_VERSION}"
         logger.info("[Voice] Connecting to voice server: %s", url)
         try:
-            async with websockets.connect(url, max_size=None) as ws:
+            async with websockets.connect(
+                url,
+                max_size=None,
+                open_timeout=5,
+                close_timeout=2,
+            ) as ws:
                 self.voice_ws = ws
                 self._ws_error = ""
 
@@ -314,7 +354,7 @@ class VoiceClient:
             if code == 4017 or "E2EE/DAVE protocol required" in reason:
                 self._voice_unsupported = True
                 self._ws_error = "Voice server requires E2EE/DAVE, which Aria voice does not support yet."
-                logger.error("[Voice] %s", self._ws_error)
+                logger.warning("[Voice] %s", self._ws_error)
             else:
                 logger.error("[Voice] WS error: %s", e)
                 self._ws_error = str(e)
@@ -322,6 +362,7 @@ class VoiceClient:
             logger.error("[Voice] WS error: %s", e)
             self._ws_error = str(e)
         finally:
+            await self._cancel_voice_tasks()
             self.voice_ws = None
             self._connected_event.clear()
 
@@ -331,7 +372,7 @@ class VoiceClient:
         if op == VoiceOpcodes.Hello:
             # Hello — start heartbeat
             interval = msg["d"]["heartbeat_interval"] / 1000
-            asyncio.create_task(self._heartbeat(ws, interval))
+            self._start_voice_task(self._heartbeat(ws, interval), "voice-heartbeat")
 
         elif op == VoiceOpcodes.Ready:
             # Voice Ready — do UDP IP discovery then select protocol
@@ -372,7 +413,10 @@ class VoiceClient:
                 "d": {"speaking": 0, "delay": 0, "ssrc": self.ssrc},
             }))
             # Start silence keepalive so Discord doesn't evict the idle connection
-            asyncio.create_task(self._silence_keepalive(ws))
+            self._start_voice_task(
+                self._silence_keepalive(ws),
+                "voice-silence-keepalive",
+            )
 
         elif op == VoiceOpcodes.Resumed:
             logger.info("[Voice] Session resumed")

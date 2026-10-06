@@ -1,6 +1,9 @@
 import unittest
 import sys
+from contextlib import redirect_stderr, redirect_stdout
+from io import StringIO
 from pathlib import Path
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from bot import DiscordBot
@@ -23,19 +26,31 @@ class _API:
     def __init__(self):
         self.sent = []
         self.requests = []
+        self.return_none = False
+        self.request_returns_none = False
 
     def send_message(self, channel_id, content, **kwargs):
         self.sent.append((str(channel_id), content))
+        if self.return_none:
+            return None
         return {"id": "9001", "channel_id": str(channel_id)}
 
     def request(self, method, endpoint, data=None, **kwargs):
         self.requests.append((method, endpoint, data))
+        if self.request_returns_none:
+            return None
         payload = {}
         if method == "GET" and endpoint == "/users/@me":
             payload = {"id": "42", "username": "test", "global_name": "Test"}
         elif method == "GET" and endpoint.endswith("/profile"):
             payload = {"user_profile": {}}
         return _Response(200, payload)
+
+    def edit_profile(self, **fields):
+        return self.request("PATCH", "/users/@me", data=fields)
+
+    def edit_profile_details(self, **fields):
+        return self.request("PATCH", "/users/@me/profile", data=fields)
 
 
 class _Response:
@@ -72,12 +87,15 @@ class MainCogAdapterTests(unittest.TestCase):
         def existing_avatar(_ctx, _args):
             return None
 
-        self.runtime = install_cog_commands(self.bot)
+        self.runtime = install_cog_commands(
+            self.bot,
+            command_authorizer=lambda user_id: user_id == "42",
+        )
         self.addCleanup(self.runtime.shutdown)
 
     def test_all_cog_names_and_aliases_resolve_to_cog_adapters(self):
         self.assertEqual(len(self.runtime.cogs), 13)
-        self.assertEqual(len(self.runtime.commands), 104)
+        self.assertEqual(len(self.runtime.commands), 111)
         for name in self.runtime.commands:
             command = self.bot._resolve_command(name)
             self.assertIsNotNone(command, name)
@@ -93,6 +111,28 @@ class MainCogAdapterTests(unittest.TestCase):
         self.assertEqual(command.name, "setdisplayname")
         self.assertEqual(command.func.__module__, "main_cog_adapter")
         self.assertIsNone(self.bot._resolve_command("legacysetname"))
+
+    def test_profile_picture_aliases_resolve_to_the_cog_command(self):
+        for alias in ("setpfp", "setavatar", "spfp", "changepfp"):
+            with self.subTest(alias=alias):
+                command = self.bot._resolve_command(alias)
+                self.assertIsNotNone(command)
+                self.assertEqual(command.name, "setpfp")
+                self.assertEqual(command.func.__module__, "main_cog_adapter")
+
+    def test_profile_setter_legacy_aliases_resolve_to_canonical_commands(self):
+        expected = {
+            "setglobalname": "setdisplayname",
+            "changename": "setdisplayname",
+            "setdn": "setdisplayname",
+            "sbanner": "setbanner",
+            "changebanner": "setbanner",
+        }
+        for alias, canonical in expected.items():
+            with self.subTest(alias=alias):
+                command = self.bot._resolve_command(alias)
+                self.assertIsNotNone(command)
+                self.assertEqual(command.name, canonical)
 
     def test_cog_help_catalog_removes_static_duplicates_and_lists_every_cog_once(self):
         import aria_backend
@@ -203,6 +243,61 @@ class MainCogAdapterTests(unittest.TestCase):
         self.assertEqual(len(self.bot.api.sent), 1)
         self.assertIn("UwU", self.bot.api.sent[0][1])
 
+    def test_null_send_response_does_not_escape_command_execution(self):
+        self.bot.api.return_none = True
+        self.bot.api.request_returns_none = True
+
+        @self.bot.command(name="explode")
+        def explode(_ctx, _args):
+            raise RuntimeError("simulated command failure")
+
+        output = StringIO()
+        diagnostics = StringIO()
+        with redirect_stdout(output), redirect_stderr(diagnostics):
+            self.bot.run_command(
+                "setname",
+                {
+                    "author_id": "42",
+                    "guild_id": None,
+                    "channel_id": "123",
+                    "message_id": "8",
+                    "content": ".setname Test Name",
+                    "bot": self.bot,
+                    "api": self.bot.api,
+                },
+                ["Test", "Name"],
+            )
+            self.bot.run_command(
+                "explode",
+                {
+                    "author_id": "42",
+                    "guild_id": None,
+                    "channel_id": "123",
+                    "bot": self.bot,
+                    "api": self.bot.api,
+                },
+                [],
+            )
+            self.bot.run_command(
+                "uwu",
+                {
+                    "author_id": "42",
+                    "guild_id": None,
+                    "channel_id": "123",
+                    "message_id": "9",
+                    "content": ".uwu",
+                    "bot": self.bot,
+                    "api": self.bot.api,
+                },
+                [],
+            )
+
+        self.assertIn(("PATCH", "/users/@me", {"global_name": "Test Name"}), self.bot.api.requests)
+        self.assertIn("send() returned no message object", diagnostics.getvalue())
+        self.assertIn("API returned no message object", output.getvalue())
+        self.assertEqual(self.bot.command_count, 3)
+        self.assertTrue(self.runtime.loop.is_running())
+
     def test_gateway_events_reach_cog_listeners(self):
         self.runtime.dispatch(
             "MESSAGE_CREATE",
@@ -231,6 +326,99 @@ class MainCogAdapterTests(unittest.TestCase):
         )
         self.assertIn(
             ("PATCH", "/users/@me", {"global_name": "Test Name"}),
+            self.bot.api.requests,
+        )
+
+    def test_profile_details_use_the_dedicated_protected_api_method(self):
+        self.bot.run_command(
+            "setbio",
+            {
+                "author_id": "42",
+                "guild_id": None,
+                "channel_id": "123",
+                "message_id": "8",
+                "content": ".setbio Profile text",
+                "bot": self.bot,
+                "api": self.bot.api,
+            },
+            ["Profile", "text"],
+        )
+        self.assertIn(
+            ("PATCH", "/users/@me/profile", {"bio": "Profile text"}),
+            self.bot.api.requests,
+        )
+
+    def test_profile_set_commands_patch_the_expected_fields(self):
+        commands = (
+            ("setdisplayname", ["Aria", "Name"], "global_name", "Aria Name", "/users/@me"),
+            ("setbio", ["clear"], "bio", "", "/users/@me/profile"),
+            ("setpronouns", ["they/them"], "pronouns", "they/them", "/users/@me/profile"),
+            ("setaccent", ["#5b8cff"], "accent_color", 0x5B8CFF, "/users/@me"),
+            ("setbanner", ["remove"], "banner", None, "/users/@me"),
+        )
+        for index, (name, args, field, value, endpoint) in enumerate(commands):
+            with self.subTest(command=name):
+                self.bot.run_command(
+                    name,
+                    {
+                        "author_id": "42",
+                        "guild_id": None,
+                        "channel_id": "123",
+                        "message_id": str(20 + index),
+                        "content": f".{name} {' '.join(args)}",
+                        "bot": self.bot,
+                        "api": self.bot.api,
+                    },
+                    args,
+                )
+                self.assertIn(("PATCH", endpoint, {field: value}), self.bot.api.requests)
+
+    def test_profile_set_commands_retain_owner_admin_restriction(self):
+        self.bot.run_command(
+            "setbio",
+            {
+                "author_id": "77",
+                "guild_id": None,
+                "channel_id": "123",
+                "message_id": "8",
+                "content": ".setbio unauthorized change",
+                "bot": self.bot,
+                "api": self.bot.api,
+            },
+            ["unauthorized", "change"],
+        )
+
+        self.assertFalse(any(
+            method == "PATCH" and endpoint == "/users/@me/profile"
+            for method, endpoint, _data in self.bot.api.requests
+        ))
+        self.assertIn("Owner/Admin only", self.bot.api.sent[-1][1])
+
+    def test_setpfp_downloads_validated_image_and_patches_current_account(self):
+        import profile_cog
+
+        with patch.object(
+            profile_cog,
+            "download_avatar_data_uri",
+            return_value="data:image/png;base64,UE5H",
+        ) as download:
+            self.bot.run_command(
+                "setpfp",
+                {
+                    "author_id": "42",
+                    "guild_id": None,
+                    "channel_id": "123",
+                    "message_id": "10",
+                    "content": ".setpfp https://images.example/avatar.png",
+                    "bot": self.bot,
+                    "api": self.bot.api,
+                },
+                ["https://images.example/avatar.png"],
+            )
+
+        download.assert_called_once_with("https://images.example/avatar.png")
+        self.assertIn(
+            ("PATCH", "/users/@me", {"avatar": "data:image/png;base64,UE5H"}),
             self.bot.api.requests,
         )
 

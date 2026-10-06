@@ -16,11 +16,12 @@ Only touches YOUR OWN account through Discord's normal profile endpoints.
 
 import asyncio
 import base64
+import binascii
 import re
-import urllib.request as _ur
 from typing import Optional
 
 import ansi
+from profile_avatar import download_avatar_data_uri, image_to_data_uri
 
 from modifyself.commands.cog import Cog
 from modifyself.commands.core import command
@@ -40,17 +41,13 @@ def _parse_accent(value) -> Optional[int]:
     if value is None or value == "":
         return None
     if isinstance(value, int):
-        return value
+        return value if 0 <= value <= 0xFFFFFF else None
     s = str(value).strip().lstrip("#")
     if s.lower().startswith("0x"):
         s = s[2:]
-    try:
-        return int(s, 16)
-    except Exception:
-        try:
-            return int(s)
-        except Exception:
-            return None
+    if not re.fullmatch(r"[0-9a-fA-F]{6}", s):
+        return None
+    return int(s, 16)
 
 async def _url_to_data_uri(url: str) -> Optional[str]:
     """Download an image URL and return a base64 data URI Discord accepts."""
@@ -58,25 +55,14 @@ async def _url_to_data_uri(url: str) -> Optional[str]:
     if not url:
         return None
     if url.startswith("data:"):
-        return url
-
-    loop = asyncio.get_event_loop()
-
-    def _download():
-        req = _ur.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-        with _ur.urlopen(req, timeout=20) as r:
-            return r.read(), r.headers.get("Content-Type", "")
-
-    data, ct = await loop.run_in_executor(None, _download)
-    if not data:
-        return None
-    if not ct or not ct.startswith("image"):
-
-        ext = url.split("?")[0].rsplit(".", 1)[-1].lower()
-        ct = {"png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg",
-              "gif": "image/gif", "webp": "image/webp"}.get(ext, "image/png")
-    b64 = base64.b64encode(data).decode()
-    return f"data:{ct};base64,{b64}"
+        _, separator, encoded = url.partition(",")
+        if not separator:
+            raise ValueError("Invalid image data URI")
+        try:
+            return image_to_data_uri(base64.b64decode(encoded, validate=True))
+        except (ValueError, binascii.Error) as exc:
+            raise ValueError(f"Invalid image data URI: {exc}") from exc
+    return await asyncio.to_thread(download_avatar_data_uri, url)
 
 class Profile(Cog):
 
@@ -136,7 +122,11 @@ class Profile(Cog):
 
         me_patch: dict = {}
         if "display_name" in fields:
-            me_patch["global_name"] = str(fields["display_name"])[:32]
+            display_name = str(fields["display_name"]).strip()
+            if len(display_name) > 32:
+                errors.append("Display name must be 32 characters or fewer.")
+            else:
+                me_patch["global_name"] = display_name or None
         if "accent" in fields or "accent_color" in fields:
             acc = _parse_accent(fields.get("accent", fields.get("accent_color")))
             if acc is not None:
@@ -171,12 +161,20 @@ class Profile(Cog):
 
         prof_patch: dict = {}
         if "bio" in fields:
-            prof_patch["bio"] = str(fields["bio"])[:190]
+            bio = str(fields["bio"]).strip()
+            if len(bio) > 190:
+                errors.append("Bio must be 190 characters or fewer.")
+            else:
+                prof_patch["bio"] = bio
         if "pronouns" in fields:
-            prof_patch["pronouns"] = str(fields["pronouns"])[:40]
+            pronouns = str(fields["pronouns"]).strip()
+            if len(pronouns) > 40:
+                errors.append("Pronouns must be 40 characters or fewer.")
+            else:
+                prof_patch["pronouns"] = pronouns
         if prof_patch:
             try:
-                await self.bot._http.request(Route("PATCH", "/users/@me/profile"), json=prof_patch)
+                await self.bot._http.edit_profile_details(**prof_patch)
                 if "bio" in prof_patch:
                     changed.append("bio")
                 if "pronouns" in prof_patch:
@@ -193,19 +191,30 @@ class Profile(Cog):
 
     async def _run(self, ctx, field: str, value: str, label: str):
         value = (value or "").strip()
-        if not value and field not in ("avatar", "banner"):
+        if field in ("bio", "pronouns") and value.casefold() in {"clear", "remove"}:
+            value = ""
+        if not value and field not in ("avatar", "banner", "bio", "pronouns"):
             cmd = ctx.message.content.split()[0].lstrip(".")
             await self._reply(ctx, ansi.command_usage(cmd, f"{cmd} <{label}>",
                                                       f"Set your {label}.", "."))
+            return
+        if field in ("avatar", "banner") and not value:
+            cmd = ctx.message.content.split()[0].lstrip(".")
+            await self._reply(ctx, ansi.command_usage(cmd, f"{cmd} <image_url|remove>",
+                                                      f"Set or clear your {label}.", "."))
             return
         result = await self.apply({field: value})
         _emit(await self.snapshot())
         if result.get("errors"):
             await self._reply(ctx, ansi.error("; ".join(result["errors"])))
         else:
-            await self._reply(ctx, ansi.success(f"{label.capitalize()} updated."))
+            action = "cleared" if value.casefold() in {"clear", "remove"} or (not value and field in ("bio", "pronouns")) else "updated"
+            await self._reply(ctx, ansi.success(f"{label.capitalize()} {action}."))
 
-    @command(name="setdisplayname", aliases=["setname", "setdisplay"])
+    @command(
+        name="setdisplayname",
+        aliases=["setname", "setdisplay", "setglobalname", "changename", "setdn"],
+    )
     async def setdisplayname(self, ctx, *, value: str = ""):
         await self._run(ctx, "display_name", value, "display name")
 
@@ -221,11 +230,11 @@ class Profile(Cog):
     async def setaccent(self, ctx, *, value: str = ""):
         await self._run(ctx, "accent", value, "accent colour")
 
-    @command(name="setpfp", aliases=["setavatar"])
+    @command(name="setpfp", aliases=["setavatar", "spfp", "changepfp"])
     async def setpfp(self, ctx, *, value: str = ""):
         await self._run(ctx, "avatar", value, "avatar URL (blank/`remove` to clear)")
 
-    @command(name="setbanner")
+    @command(name="setbanner", aliases=["sbanner", "changebanner"])
     async def setbanner(self, ctx, *, value: str = ""):
         await self._run(ctx, "banner", value, "banner URL (blank/`remove` to clear)")
 

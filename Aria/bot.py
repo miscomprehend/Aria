@@ -414,9 +414,20 @@ class DiscordBot:
                     api = ctx.get("api")
                     ch = ctx.get("channel_id")
                     if api and ch:
-                        api.send_message(ch, f"> **Command failed** :: `{cmd.name}` | {str(e)[:220]}")
-                except Exception:
-                    pass
+                        failure_notice = api.send_message(
+                            ch,
+                            f"> **Command failed** :: `{cmd.name}` | {str(e)[:220]}",
+                        )
+                        if failure_notice is None:
+                            print(
+                                f"\033[1;33m[WARNING]\033[0m Could not send failure notice "
+                                f"for {self.prefix}{cmd.name}: API returned no message object"
+                            )
+                except Exception as notice_error:
+                    print(
+                        f"\033[1;33m[WARNING]\033[0m Could not send failure notice "
+                        f"for {self.prefix}{cmd.name}: {notice_error}"
+                    )
     
     def on_message(self, ws, message):
         try:
