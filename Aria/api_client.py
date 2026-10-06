@@ -47,12 +47,26 @@ class RoutedSession:
         "range",
     }
 
-    def __init__(self, internal_request: Callable[..., Any], external_session: Any = None):
+    def __init__(self, internal_request: Callable[..., Any], external_session: Any = None, spoofer: Any = None):
         self._internal_request = internal_request
-        self._external_session = external_session or Session()
+        # The spoofer owns the transport and may tear it down + rebuild it
+        # during header/TLS rotation. Always dereference the *current* session
+        # at request time instead of caching a stale (possibly closed) one.
+        self._spoofer = spoofer
+        self._external_session = external_session
         self._external_lock = threading.RLock()
-        self._external_session.trust_env = False
-        self._external_session.headers.clear()
+        session = self._resolve_session()
+        session.trust_env = False
+        session.headers.clear()
+
+    def _resolve_session(self) -> Any:
+        if self._spoofer is not None:
+            session = getattr(self._spoofer, "session", None)
+            if session is not None:
+                return session
+        if self._external_session is not None:
+            return self._external_session
+        return Session()
 
     @staticmethod
     def _parse_url(url: str):
@@ -138,12 +152,13 @@ class RoutedSession:
         kwargs.pop("verify", None)
         kwargs["timeout"] = kwargs.get("timeout", 15)
         with self._external_lock:
-            cookies = getattr(self._external_session, "cookies", None)
+            session = self._resolve_session()
+            cookies = getattr(session, "cookies", None)
             clear_cookies = getattr(cookies, "clear", None)
             if callable(clear_cookies):
                 clear_cookies()
             try:
-                response = self._external_session.request(
+                response = session.request(
                     method,
                     parsed.geturl(),
                     headers=safe_headers,
@@ -171,13 +186,14 @@ class RoutedSession:
     def delete(self, url: str, **kwargs):
         return self.request("DELETE", url, **kwargs)
 
+
 class DiscordAPIClient:
     def __init__(self, token: str):
         self.system_check = "ui_theme_customization_297588166653902849_scheme"
         self.token = token
         self.header_spoofer = HeaderSpoofer()
         self.header_spoofer.initialize_with_token(token)
-        self.session = RoutedSession(self.request, self.header_spoofer.session)
+        self.session = RoutedSession(self.request, spoofer=self.header_spoofer)
         self.rate_limiter = RateLimiter()
         self.cache = DiscordCache(token)
         self.user_id: Optional[str] = None
@@ -1135,233 +1151,4 @@ class DiscordAPIClient:
             data={"type": int(RelationshipType.Blocked)},
         )
         return response.status_code == 204 if response else False
-    # ── Slash / Interaction API (ported from KrishnaSSH/discoself) ─────────────
-
-    def _generate_nonce(self) -> str:
-        """Generate a Discord nonce from current time snowflake."""
-        epoch = 1420070400000
-        ts = int(__import__('time').time() * 1000) - epoch
-        return str((ts << 22) & 0x7FFFFFFFFFFFFFFF)
-
-    def _session_id(self) -> str:
-        """Return or generate a session_id for interaction payloads."""
-        sid = getattr(self, '_gateway_session_id', None)
-        if not sid:
-            import random, string
-            sid = ''.join(random.choices(string.ascii_lowercase + string.digits, k=16))
-            self._gateway_session_id = sid
-        return sid
-
-    def get_slash_commands(self, guild_id: str):
-        """GET /guilds/{guild_id}/application-command-index"""
-        response = self.request(
-            'GET',
-            f'/guilds/{guild_id}/application-command-index',
-            headers={'referer': f'https://discord.com/channels/{guild_id}'},
-        )
-        if response and response.status_code == 200:
-            return response.json()
-        return None
-
-    def get_user_slash_commands(self):
-        """GET /users/@me/application-command-index"""
-        response = self.request(
-            'GET',
-            '/users/@me/application-command-index',
-            headers={'referer': 'https://discord.com/channels/@me'},
-        )
-        if response and response.status_code == 200:
-            return response.json()
-        return None
-
-    def send_slash_command(self, channel_id: str, guild_id: str, command, options=None) -> bool:
-        """POST /interactions  type=2 (APPLICATION_COMMAND).
-        Mirrors discoself SendSlashCommand / SendSlashCommandWithOptions."""
-        import time as _t
-        cmd_id = command.get('id', '')
-        app_id = command.get('application_id', '')
-        version = command.get('version', '')
-        name = command.get('name', '')
-        description = command.get('description', '')
-        payload = {
-            'type': 2,
-            'application_id': app_id,
-            'guild_id': guild_id,
-            'channel_id': channel_id,
-            'session_id': self._session_id(),
-            'nonce': self._generate_nonce(),
-            'data': {
-                'version': version,
-                'id': cmd_id,
-                'name': name,
-                'type': 1,
-                'options': options or [],
-                'application_command': {
-                    'id': cmd_id,
-                    'type': 1,
-                    'application_id': app_id,
-                    'version': version,
-                    'name': name,
-                    'description': description,
-                    'dm_permission': True,
-                    'options': [],
-                    'integration_types': [0],
-                },
-                'attachments': [],
-            },
-            'analytics_location': 'slash_ui',
-        }
-        response = self.request(
-            'POST',
-            '/interactions',
-            data=payload,
-            headers={'referer': f'https://discord.com/channels/{guild_id}/{channel_id}'},
-        )
-        return bool(response and response.status_code == 204)
-
-    def click_button(self, guild_id: str, channel_id: str, message_id: str,
-                     application_id: str, custom_id: str, message_flags: int = 0) -> bool:
-        """POST /interactions  type=3 (MESSAGE_COMPONENT).
-        Mirrors discoself ClickButton."""
-        payload = {
-            'type': 3,
-            'nonce': self._generate_nonce(),
-            'guild_id': guild_id,
-            'channel_id': channel_id,
-            'message_flags': message_flags,
-            'message_id': message_id,
-            'application_id': application_id,
-            'session_id': self._session_id(),
-            'data': {
-                'component_type': 2,
-                'custom_id': custom_id,
-            },
-        }
-        response = self.request(
-            'POST',
-            '/interactions',
-            data=payload,
-            headers={'referer': f'https://discord.com/channels/{guild_id}/{channel_id}'},
-        )
-        return bool(response and response.status_code == 204)
-
-    # ── Bulk read helpers ──────────────────────────────────────────────────────
-
-    def read_all_guild_messages(self, guild_id: str, limit_per_channel: int = 50,
-                                channel_types=None):
-        """Fetch recent messages from all readable text channels in a guild."""
-        import time as _t
-        if channel_types is None:
-            channel_types = [0, 5, 10, 11, 12]
-        channels_resp = self.request('GET', f'/guilds/{guild_id}/channels')
-        if not channels_resp or channels_resp.status_code != 200:
-            return {}
-        channels = [c for c in (channels_resp.json() or []) if c.get('type') in channel_types]
-        result = {}
-        for ch in channels:
-            cid = ch.get('id')
-            if not cid:
-                continue
-            msgs_resp = self.request('GET', f'/channels/{cid}/messages?limit={min(limit_per_channel, 100)}')
-            if msgs_resp and msgs_resp.status_code == 200:
-                result[cid] = msgs_resp.json() or []
-            _t.sleep(0.1)
-        return result
-
-    def read_all_dms(self, limit_per_dm: int = 50):
-        """Fetch recent messages from all open DM channels."""
-        import time as _t
-        dms_resp = self.request('GET', '/users/@me/channels')
-        if not dms_resp or dms_resp.status_code != 200:
-            return {}
-        dms = [c for c in (dms_resp.json() or []) if c.get('type') in (1, 3)]
-        result = {}
-        for dm in dms:
-            cid = dm.get('id')
-            if not cid:
-                continue
-            msgs_resp = self.request('GET', f'/channels/{cid}/messages?limit={min(limit_per_dm, 100)}')
-            if msgs_resp and msgs_resp.status_code == 200:
-                result[cid] = msgs_resp.json() or []
-            _t.sleep(0.15)
-        return result
-
-    def acknowledge_all_guilds(self):
-        """Acknowledge the latest message in each accessible guild text channel."""
-        result = {
-            "guilds": 0,
-            "channels": 0,
-            "acked": 0,
-            "guilds_failed": 0,
-            "channels_failed": 0,
-            "error": None,
-        }
-
-        try:
-            guilds_response = self.request("GET", "/users/@me/guilds")
-        except Exception as exc:
-            result["error"] = f"Guild list request failed: {exc}"
-            return result
-
-        if not guilds_response or guilds_response.status_code != 200:
-            status = getattr(guilds_response, "status_code", "no response")
-            result["error"] = f"Guild list request failed ({status})"
-            return result
-
-        try:
-            guilds = guilds_response.json()
-        except Exception as exc:
-            result["error"] = f"Guild list response could not be parsed: {exc}"
-            return result
-        if not isinstance(guilds, list):
-            result["error"] = "Guild list response was not a list"
-            return result
-
-        result["guilds"] = len(guilds)
-        text_channel_types = {0, 5, 10, 11, 12}
-        for guild in guilds:
-            guild_id = str(guild.get("id") or "") if isinstance(guild, dict) else ""
-            if not guild_id:
-                result["guilds_failed"] += 1
-                continue
-
-            try:
-                channels_response = self.request("GET", f"/guilds/{guild_id}/channels")
-                if not channels_response or channels_response.status_code != 200:
-                    result["guilds_failed"] += 1
-                    continue
-                channels = channels_response.json()
-                if not isinstance(channels, list):
-                    result["guilds_failed"] += 1
-                    continue
-            except Exception as exc:
-                print(f"[READALL] Could not fetch channels for guild {guild_id}: {exc}")
-                result["guilds_failed"] += 1
-                continue
-
-            for channel in channels:
-                if not isinstance(channel, dict) or channel.get("type") not in text_channel_types:
-                    continue
-                channel_id = str(channel.get("id") or "")
-                message_id = str(channel.get("last_message_id") or "")
-                if not channel_id or not message_id:
-                    continue
-
-                result["channels"] += 1
-                try:
-                    response = self.request(
-                        "POST",
-                        f"/channels/{channel_id}/messages/{message_id}/ack",
-                        data={"token": None},
-                    )
-                    if response and response.status_code in (200, 204):
-                        result["acked"] += 1
-                    else:
-                        result["channels_failed"] += 1
-                        status = getattr(response, "status_code", "no response")
-                        print(f"[READALL] Channel acknowledgement failed ({status})")
-                except Exception as exc:
-                    result["channels_failed"] += 1
-                    print(f"[READALL] Channel acknowledgement failed: {exc}")
-
-        return result
+    # ── Slash / Interaction API (ported from KrishnaSS
