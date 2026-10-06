@@ -1,8 +1,12 @@
+import importlib.util
+import asyncio
 import unittest
 import sys
+import threading
 from contextlib import redirect_stderr, redirect_stdout
 from io import StringIO
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -26,6 +30,8 @@ class _API:
     def __init__(self):
         self.sent = []
         self.requests = []
+        self.deleted_messages = []
+        self.delete_event = threading.Event()
         self.return_none = False
         self.request_returns_none = False
 
@@ -51,6 +57,11 @@ class _API:
 
     def edit_profile_details(self, **fields):
         return self.request("PATCH", "/users/@me/profile", data=fields)
+
+    def delete_message(self, channel_id, message_id):
+        self.deleted_messages.append((channel_id, message_id))
+        self.delete_event.set()
+        return True
 
 
 class _Response:
@@ -135,7 +146,10 @@ class MainCogAdapterTests(unittest.TestCase):
                 self.assertEqual(command.name, canonical)
 
     def test_cog_help_catalog_removes_static_duplicates_and_lists_every_cog_once(self):
-        import aria_backend
+        help_path = Path(__file__).resolve().parent / "aria_backend" / "aria_backend.py"
+        help_spec = importlib.util.spec_from_file_location("aria_backend_help_test", help_path)
+        help_module = importlib.util.module_from_spec(help_spec)
+        help_spec.loader.exec_module(help_module)
 
         pages = {
             "profile": {
@@ -168,7 +182,7 @@ class MainCogAdapterTests(unittest.TestCase):
         }
         command_help = merge_cog_help_pages(
             pages,
-            aria_backend.HELP,
+            help_module.HELP,
             self.runtime,
             category_targets,
         )
@@ -242,6 +256,22 @@ class MainCogAdapterTests(unittest.TestCase):
         )
         self.assertEqual(len(self.bot.api.sent), 1)
         self.assertIn("UwU", self.bot.api.sent[0][1])
+
+    def test_cog_http_shim_deletes_temporary_replies_through_main_api(self):
+        import ascii_helper
+
+        async def send_temporary_reply():
+            ctx = SimpleNamespace(
+                message=SimpleNamespace(delete=self.runtime._ignore_command_delete),
+                bot=self.runtime.facade,
+                send=self.runtime._make_send("123"),
+            )
+            await ascii_helper.send_temp(ctx, "temporary reply", delay=1)
+            return await asyncio.to_thread(self.bot.api.delete_event.wait, 2)
+
+        future = asyncio.run_coroutine_threadsafe(send_temporary_reply(), self.runtime.loop)
+        self.assertTrue(future.result(timeout=3))
+        self.assertEqual(self.bot.api.deleted_messages, [("123", "9001")])
 
     def test_null_send_response_does_not_escape_command_execution(self):
         self.bot.api.return_none = True

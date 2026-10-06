@@ -194,6 +194,13 @@ class _HttpShim:
         response = await asyncio.to_thread(self._api.edit_profile_details, **fields)
         return self._decode_response(response, "PATCH", "/users/@me/profile")
 
+    async def delete_message(self, channel_id, message_id):
+        return await asyncio.to_thread(
+            self._api.delete_message,
+            str(channel_id),
+            str(message_id),
+        )
+
 
 class _SpooferShim:
     def __init__(self, spoofer):

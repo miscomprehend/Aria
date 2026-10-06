@@ -1093,6 +1093,78 @@ class DiscordAPIClient:
             return guilds
         return []
 
+    def acknowledge_all_guilds(self) -> Dict[str, Any]:
+        """Mark every guild text channel with a latest message as read."""
+        result: Dict[str, Any] = {
+            "guilds": 0,
+            "channels": 0,
+            "acked": 0,
+            "guilds_failed": 0,
+            "channels_failed": 0,
+            "error": "",
+        }
+
+        guild_response = self.request("GET", "/users/@me/guilds")
+        if guild_response is None or getattr(guild_response, "status_code", None) != 200:
+            status = getattr(guild_response, "status_code", "no response")
+            result["error"] = f"Could not fetch guild list (HTTP {status})."
+            return result
+
+        try:
+            guilds = guild_response.json()
+        except (TypeError, ValueError):
+            result["error"] = "Discord returned an invalid guild list."
+            return result
+        if not isinstance(guilds, list):
+            result["error"] = "Discord returned an invalid guild list."
+            return result
+
+        result["guilds"] = len(guilds)
+        readable_channel_types = {0, 5, 10, 11, 12, 15, 16}
+        for guild in guilds:
+            if not isinstance(guild, dict) or not guild.get("id"):
+                result["guilds_failed"] += 1
+                continue
+
+            channels_response = self.request("GET", f"/guilds/{guild['id']}/channels")
+            if channels_response is None or getattr(channels_response, "status_code", None) != 200:
+                result["guilds_failed"] += 1
+                continue
+
+            try:
+                channels = channels_response.json()
+            except (TypeError, ValueError):
+                result["guilds_failed"] += 1
+                continue
+            if not isinstance(channels, list):
+                result["guilds_failed"] += 1
+                continue
+
+            for channel in channels:
+                if not isinstance(channel, dict):
+                    continue
+                try:
+                    channel_type = int(channel.get("type", -1))
+                except (TypeError, ValueError):
+                    continue
+                channel_id = channel.get("id")
+                last_message_id = channel.get("last_message_id")
+                if channel_type not in readable_channel_types or not channel_id or not last_message_id:
+                    continue
+
+                result["channels"] += 1
+                response = self.request(
+                    "POST",
+                    f"/channels/{channel_id}/messages/{last_message_id}/ack",
+                    data={"token": None, "manual": True},
+                )
+                if response is not None and getattr(response, "status_code", None) in (200, 204):
+                    result["acked"] += 1
+                else:
+                    result["channels_failed"] += 1
+
+        return result
+
     def get_channels(self, guild_id: str, force: bool = False) -> List[Dict[str, Any]]:
         if not force:
             cached = self.cache.get_channels(guild_id)
