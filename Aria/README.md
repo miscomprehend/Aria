@@ -84,6 +84,9 @@ dashboard or public site in your system browser.
 
 Some useful runtime modules:
 
+- Prefix commands in `aria_backend/*_cog.py` are loaded by `main.py`; their
+  implementations are shared with the backend rather than duplicated in the
+  main command dispatcher.
 - RPC activities and presets: `main.py`, `rpc_activity.py`, and
   `rpc_profiles.py`.
 - Message logging: `main.py` and `message_logger.py`.
@@ -121,15 +124,15 @@ release build.
 
 The main runtime uses packages from `requirements.txt`. Pillow is included for
 image-editing commands. The separate modules in `aria_backend/` keep a matching
-Python dependency list so those components can also be installed standalone:
+Python dependency list so those components can also be installed standalone.
+The main requirements already include the cog framework used by `main.py`:
 
 ```bash
 python -m pip install -r aria_backend/requirements.txt
 ```
 
-That file pins `modifyself` to a source revision because it is not published
-on PyPI. Keep this dependency separate from the main runtime environment
-unless you intend to work on those components.
+That file also pins `modifyself` to a source revision because it is not
+published on PyPI.
 
 ## Quick start: desktop app
 

@@ -4,6 +4,7 @@ import threading
 import ssl
 import os
 import re
+from concurrent.futures import ThreadPoolExecutor
 from urllib.parse import urlparse
 from typing import Dict, Any, Callable, List, Optional, Union
 from api_client import DiscordAPIClient
@@ -84,6 +85,11 @@ class DiscordBot:
         self.username = None
         self.auto_react_emoji = None
         self.message_queue = queue.Queue()
+        self._message_executor = ThreadPoolExecutor(
+            max_workers=4,
+            thread_name_prefix="GatewayMessage",
+        )
+        self._message_slots = threading.BoundedSemaphore(100)
         self.last_heartbeat = time.time()
         self.heartbeat_interval: Optional[float] = None
         self._heartbeat_sent_at: Optional[float] = None
@@ -501,6 +507,7 @@ class DiscordBot:
                             daemon=True,
                             name="ready-sync",
                         ).start()
+                    self._dispatch_cog_event("READY", ready_payload)
 
                 elif t == "RESUMED":
                     self.identified = True
@@ -513,9 +520,10 @@ class DiscordBot:
                     # Clear resume timeout since we succeeded
                     if hasattr(self, '_resume_timeout'):
                         self._resume_timeout = None
+                    self._dispatch_cog_event("RESUMED")
                     
                 elif t == "MESSAGE_CREATE":
-                    self._handle_message(data["d"])
+                    self._dispatch_message_create(data["d"])
                     # Giveaway sniper
                     try:
                         self.giveaway_sniper.check_message(data["d"])
@@ -538,6 +546,7 @@ class DiscordBot:
                         pass
 
                 elif t == "MESSAGE_DELETE":
+                    self._dispatch_cog_event("MESSAGE_DELETE", data["d"])
                     try:
                         mid = data["d"].get("id")
                         cid = data["d"].get("channel_id")
@@ -559,6 +568,7 @@ class DiscordBot:
                         pass
 
                 elif t == "MESSAGE_UPDATE":
+                    self._dispatch_cog_event("MESSAGE_UPDATE", data["d"])
                     try:
                         mid = data["d"].get("id")
                         cid = data["d"].get("channel_id")
@@ -578,17 +588,26 @@ class DiscordBot:
                         pass
 
                 elif t == "CHANNEL_CREATE":
+                    self._dispatch_cog_event("CHANNEL_CREATE", data["d"])
                     self._handle_channel_create(data["d"])
 
                 elif t == "CHANNEL_RECIPIENT_ADD":
+                    self._dispatch_cog_event("CHANNEL_RECIPIENT_ADD", data["d"])
                     self._handle_group_chat_recipient_event(
                         "on_channel_recipient_add", data["d"]
                     )
 
                 elif t == "CHANNEL_RECIPIENT_REMOVE":
+                    self._dispatch_cog_event("CHANNEL_RECIPIENT_REMOVE", data["d"])
                     self._handle_group_chat_recipient_event(
                         "on_channel_recipient_remove", data["d"]
                     )
+
+                elif t == "PRESENCE_UPDATE":
+                    self._dispatch_cog_event("PRESENCE_UPDATE", data["d"])
+
+                elif t == "SESSIONS_REPLACE":
+                    self._dispatch_cog_event("SESSIONS_REPLACE", data["d"])
                     
                 elif t == "GUILD_UPDATE":
                     self._handle_guild_update(data["d"])
@@ -1683,6 +1702,8 @@ class DiscordBot:
                 "author_id": author_id,
                 "guild_id": guild_id,
                 "channel_id": channel_id,
+                "message_id": message_data.get("id"),
+                "content": content,
                 "api": self.api,
                 "bot": self,
             }
@@ -1695,6 +1716,40 @@ class DiscordBot:
                     self.run_command(cmd_name, ctx, args)
         except Exception as e:
             print(f"\033[1;31m[MSG ERROR]\033[0m {e}")
+
+    def _dispatch_cog_event(self, event: str, data: Any = None) -> None:
+        runtime = getattr(self, "_cog_runtime", None)
+        if runtime is not None:
+            runtime.dispatch(event, data)
+
+    def _dispatch_message_create(self, message_data: dict) -> None:
+        """Keep synchronous message handlers off the gateway receive thread."""
+        if not self.running:
+            return
+        if not self._message_slots.acquire(blocking=False):
+            _console_print(
+                "[GATEWAY-WARNING] Message worker capacity reached; processing this message inline."
+            )
+            self._handle_message(message_data)
+            return
+
+        try:
+            future = self._message_executor.submit(self._handle_message, message_data)
+        except RuntimeError as exc:
+            self._message_slots.release()
+            if self.running:
+                _console_print(f"[GATEWAY-ERROR] Could not queue message handler: {exc}")
+                self._handle_message(message_data)
+            return
+
+        future.add_done_callback(self._finish_message_create)
+
+    def _finish_message_create(self, future) -> None:
+        self._message_slots.release()
+        try:
+            future.result()
+        except Exception as exc:
+            _console_print(f"[MSG ERROR] Background message handler failed: {exc}")
 
     def _handle_channel_create(self, channel_data: dict):
         """Handle CHANNEL_CREATE — used for Anti-GC-trap detection."""
@@ -1902,6 +1957,12 @@ class DiscordBot:
         self.connection_active = False
         self._reconnect_stop.set()
         self._reconnect_signal.set()
+        message_executor = getattr(self, "_message_executor", None)
+        if message_executor is not None:
+            message_executor.shutdown(wait=False)
+        cog_runtime = getattr(self, "_cog_runtime", None)
+        if cog_runtime is not None:
+            cog_runtime.shutdown()
 
         for manager_name, stop_method in (
             ("guild_tools", "stop_rotation"),

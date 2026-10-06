@@ -23,6 +23,7 @@ import re
 import secrets
 import sys
 import traceback
+from types import SimpleNamespace
 
 import ansi
 
@@ -169,7 +170,9 @@ BOT_HELP = {
     "Logger": [("logger", "Track keywords/mentions, log deletes & edits")],
     "Profile": [("profile", "Set display name, avatar, banner, bio, pronouns, accent")],
     "Snipers": [("nitro", "Nitro gift sniper"), ("giveaway", "Giveaway sniper")],
-    "OwO": [("owofarm", "OwO farm loop (start/stop/once/config)")],
+    "OwO": [("owofarm", "OwO farm loop (start/stop/once/config)"),
+            ("owo", "Send a friendly OwO reply"),
+            ("uwu", "Send a friendly UwU reply")],
     "Anti-GC": [("antigc", "Auto-leave group-DM traps (+ block/msg/name/icon/webhook/whitelist)")],
     "Guild": [("guilds", "List your servers"),
               ("massleave", "Leave all non-owned servers"),
@@ -1639,6 +1642,66 @@ async def start_realbot(token: str, app_id: str, guild_id: str = ""):
         if _need_react():
             await _rpc_reply(interaction, "Log into your account in Aria first."); return
         await _rpc_reply(interaction, _reactions_cog.unset("multi", user))
+
+    async def _invoke_owo_cog(interaction, command_name: str, value: str = ""):
+        if _owo_cog is None or _bot is None:
+            await _rpc_reply(interaction, "Log into your account in Aria first.")
+            return
+
+        async def _ignore_delete():
+            return None
+
+        class _InteractionReply:
+            def __init__(self, channel_id):
+                self.id = 0
+                self.channel_id = channel_id
+
+            async def delete(self):
+                return None
+
+        async def _send(text):
+            await _rpc_reply(interaction, text)
+            return _InteractionReply(str(getattr(interaction, "channel_id", "") or "0"))
+
+        ctx = SimpleNamespace(
+            channel_id=str(getattr(interaction, "channel_id", "") or ""),
+            message=SimpleNamespace(
+                content=f".{command_name} {value}".strip(),
+                delete=_ignore_delete,
+            ),
+            bot=_bot,
+            send=_send,
+        )
+        if command_name == "owofarm":
+            await _owo_cog.owofarm(ctx, value=value)
+            if not interaction.response.is_done():
+                await _rpc_reply(interaction, "OwO farm cycle sent.")
+            return
+        await getattr(_owo_cog, command_name)(ctx)
+
+    @tree.command(name="owofarm", description="Run and configure the OwO farm loop")
+    @user_installable
+    @app_commands.describe(action="Farm action", value="Optional channel, command, position, or delay values")
+    async def _owofarm(
+        interaction,
+        action: Literal[
+            "start", "stop", "once", "status", "check", "channel",
+            "cmds", "add", "remove", "up", "down", "delay",
+        ] = "status",
+        value: _Opt[str] = None,
+    ):
+        args = " ".join(part for part in (action, value or "") if part)
+        await _invoke_owo_cog(interaction, "owofarm", args)
+
+    @tree.command(name="owo", description="Send a friendly OwO reply")
+    @user_installable
+    async def _owo(interaction):
+        await _invoke_owo_cog(interaction, "owo")
+
+    @tree.command(name="uwu", description="Send a friendly UwU reply")
+    @user_installable
+    async def _uwu(interaction):
+        await _invoke_owo_cog(interaction, "uwu")
 
     @tree.command(name="nitro", description="Nitro gift sniper")
     @user_installable

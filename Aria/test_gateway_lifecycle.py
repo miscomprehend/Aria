@@ -5,6 +5,7 @@ import unittest
 import asyncio
 import json
 import time
+from concurrent.futures import ThreadPoolExecutor
 from types import SimpleNamespace
 from unittest.mock import patch
 from unittest.mock import Mock
@@ -54,6 +55,33 @@ def make_bot():
 
 
 class GatewayLifecycleTests(unittest.TestCase):
+    def test_message_create_does_not_wait_for_blocking_handler(self):
+        bot = make_bot()
+        bot._message_executor = ThreadPoolExecutor(
+            max_workers=2,
+            thread_name_prefix="GatewayMessageTest",
+        )
+        bot._message_slots = threading.BoundedSemaphore(100)
+        bot.giveaway_sniper = Mock()
+        bot.nitro_sniper = Mock()
+        bot._msg_cache = {}
+        handler_started = threading.Event()
+        release_handler = threading.Event()
+        bot._handle_message = lambda _message: (
+            handler_started.set(),
+            release_handler.wait(1),
+        )
+        self.addCleanup(bot._message_executor.shutdown, wait=True)
+        self.addCleanup(release_handler.set)
+
+        bot.on_message(
+            None,
+            json.dumps({"op": 0, "t": "MESSAGE_CREATE", "d": {"id": "1"}}),
+        )
+
+        self.assertTrue(handler_started.wait(1))
+        self.assertFalse(release_handler.is_set())
+
     def test_group_chat_recipient_event_dispatches_to_security_manager(self):
         bot = make_bot()
         bot.user_id = "123"
