@@ -7281,7 +7281,6 @@ Example Usage:
             "afk": "AFK",
             "nitro": "Nitro & Giveaway",
             "owo": "OwO Farm",
-            "cogs": "Other Cog Commands",
             "agct": "AGCT",
             "owner": "Owner",
         }
@@ -9278,6 +9277,8 @@ Example Usage:
                     command_category_primary[first_token] = category_title
 
         if not args:
+            from main_cog_adapter import visible_help_category_keys
+
             category_descriptions = {
                 "general": "Basics & setup",
                 "utility": "Everyday tools",
@@ -9307,7 +9308,7 @@ Example Usage:
                 "quest": "Quest progress",
                 "owner": "Owner commands",
             }
-            category_names = [key for key in help_pages if key != "cogs"]
+            category_names = visible_help_category_keys(help_pages, category_header_map)
             category_lines = []
             for category_key in category_names:
                 category_lines.append(

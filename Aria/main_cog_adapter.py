@@ -590,3 +590,12 @@ def merge_cog_help_pages(help_pages, help_catalog, runtime, category_targets):
         page["lines"] = unique_lines
 
     return command_help
+
+
+def visible_help_category_keys(help_pages, category_header_map):
+    """Return visible category pages, excluding command-detail and hidden pages."""
+    return [
+        key
+        for key in category_header_map
+        if key != "cogs" and key in help_pages
+    ]

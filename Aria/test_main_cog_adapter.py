@@ -4,7 +4,11 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from bot import DiscordBot
-from main_cog_adapter import install_cog_commands, merge_cog_help_pages
+from main_cog_adapter import (
+    install_cog_commands,
+    merge_cog_help_pages,
+    visible_help_category_keys,
+)
 
 
 class _Spoofer:
@@ -160,6 +164,27 @@ class MainCogAdapterTests(unittest.TestCase):
         self.assertIn(("avatar <url>", "main-only command"), pages["profile"]["lines"])
         self.assertNotIn("cogs", pages)
         self.assertIn("general", pages)
+
+    def test_root_help_menu_excludes_command_detail_pages(self):
+        pages = {
+            "general": {},
+            "profile": {},
+            "nitro": {},
+            "ping": {},
+            "purge": {},
+            "nitro on": {},
+            "cogs": {},
+        }
+        labels = {
+            "general": "General",
+            "profile": "Profile",
+            "nitro": "Nitro",
+            "cogs": "Cog commands",
+        }
+        self.assertEqual(
+            visible_help_category_keys(pages, labels),
+            ["general", "profile", "nitro"],
+        )
 
     def test_command_executes_cog_callback_and_sends_reply(self):
         self.bot.run_command(
