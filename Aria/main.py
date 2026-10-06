@@ -7279,7 +7279,9 @@ Example Usage:
             "hosting": "Hosting",
             "token": "Token",
             "afk": "AFK",
-            "nitro": "Nitro",
+            "nitro": "Nitro & Giveaway",
+            "owo": "OwO Farm",
+            "cogs": "Other Cog Commands",
             "agct": "AGCT",
             "owner": "Owner",
         }
@@ -7306,6 +7308,10 @@ Example Usage:
             "anti_nuke": "antinuke",
             "anti-nuke": "antinuke",
             "tokens": "token",
+            "sniper": "nitro",
+            "snipers": "nitro",
+            "giveaways": "nitro",
+            "farm": "owo",
         }
         command_category_exact = {}
         command_category_primary = {}
@@ -7327,6 +7333,13 @@ Example Usage:
                 parent_page = normalized_page.split()[0]
                 return f"{fmt.GREEN}{p}help {parent_page}{fmt.RESET} {fmt.DARK}1/1{fmt.RESET}"
             return f"{fmt.GREEN}{p}help {normalized_page or 'help'}{fmt.RESET} {fmt.DARK}1/1{fmt.RESET}"
+
+        def _compact_help_text(value, limit):
+            text = str(value).replace("[", "").replace("]", "").replace("|", " ")
+            text = " ".join(text.split()).rstrip(".")
+            if len(text) <= limit:
+                return text
+            return text[:limit - 1].rstrip() + "…"
 
         def render_help_page(page_name, content, current_page, total_pages):
             lines = content.get("lines", [])
@@ -7353,9 +7366,9 @@ Example Usage:
             out = []
             for line in lines:
                 if isinstance(line, tuple) and len(line) == 2:
-                    left = _clean_page_text(line[0])
-                    right = _clean_page_text(line[1])
-                    out.append(f"{fmt.PINK}{left}{fmt.DARK} :: {fmt.RESET}{fmt.GREEN}{right}{fmt.RESET}")
+                    left = _compact_help_text(line[0], 54)
+                    right = _compact_help_text(line[1], 48)
+                    out.append(f"{fmt.PINK}{left}{fmt.DARK} · {fmt.RESET}{fmt.GREEN}{right}{fmt.RESET}")
                 elif isinstance(line, dict) and line.get("type") == "section":
                     continue
                 elif line == "":
@@ -9185,44 +9198,22 @@ Example Usage:
             "gc": "groupchat",
             "gcextra": "gcextra",
             "guild": "server",
+            "snipers": "nitro",
+            "owo": "owo",
             "reactions": "reactions",
             "antigc": "agct",
         }
-        unsupported_backend_commands = {"multiplatform"}
-        for backend_category, target_category in backend_category_targets.items():
-            backend_page = backend_help.get(backend_category) or {}
-            backend_lines = [
-                (usage, description)
-                for _, usage, description in backend_page.get("cmds", [])
-                if str(usage).strip().split()[:1]
-                and str(usage).strip().split()[0].casefold() not in unsupported_backend_commands
-            ]
-            if not backend_lines:
-                continue
-            existing_page = help_pages.get(target_category, {})
-            existing_lines = existing_page.get("lines", [])
-            backend_names = {
-                str(line[0]).strip().split()[0].casefold()
-                for line in backend_lines
-                if isinstance(line, tuple) and line and str(line[0]).strip()
-            }
-            remaining_lines = [
-                line for line in existing_lines
-                if not (
-                    isinstance(line, tuple)
-                    and line
-                    and str(line[0]).strip()
-                    and str(line[0]).strip().split()[0].casefold() in backend_names
-                )
-            ]
-            title = existing_page.get(
-                "title",
-                f"{p}help {category_header_map.get(target_category, target_category.title())}",
+        cog_runtime = getattr(bot, "_cog_runtime", None)
+        cog_command_help = {}
+        if cog_runtime is not None:
+            from main_cog_adapter import merge_cog_help_pages
+
+            cog_command_help = merge_cog_help_pages(
+                help_pages,
+                backend_help,
+                cog_runtime,
+                backend_category_targets,
             )
-            help_pages[target_category] = {
-                "title": title,
-                "lines": backend_lines + remaining_lines,
-            }
 
         help_page_lookup = {}
         for help_key in help_pages.keys():
@@ -9287,38 +9278,43 @@ Example Usage:
                     command_category_primary[first_token] = category_title
 
         if not args:
-            categories = [
-                ("General", "Starter & config"),
-                ("Utility", "Everyday tools"),
-                ("Messaging", "DM / GC / spam"),
-                ("Profile", "Identity & account"),
-                ("Server", "Guild management"),
-                ("Voice", "VC / calls"),
-                ("Social", "Interactions"),
-                ("Fun", "Entertainment"),
-                ("RPC", "Rich presence"),
-                ("Boost", "Server boosts"),
-                ("Backup", "Recovery tools"),
-                ("Moderation", "Mod tools"),
-                ("Antinuke", "Protection"),
-                ("Nuke", "Destructive ops"),
-                ("Hosting", "Hosted tokens"),
-                ("Token", "Session tools"),
-                ("Friends", "Relationship tools"),
-                ("Group Chat", "Explicit group-DM tools"),
-                ("Group Chat Extra", "Group-DM tools and member controls"),
-                ("Logger", "Message logging controls"),
-                ("Reactions", "Reaction automation"),
-                ("AFK", "AFK system"),
-                ("Nitro", "Nitro sniper"),
-                ("AGCT", "Anti-GC trap"),
-                ("Quests", "Quest progress"),
-                ("Owner", "Admin / owner only"),
-            ]
-            category_lines = [
-                f"{fmt.PURPLE}{name}{fmt.DARK} :: {fmt.RESET}{fmt.WHITE}{desc}{fmt.RESET}"
-                for name, desc in categories
-            ]
+            category_descriptions = {
+                "general": "Basics & setup",
+                "utility": "Everyday tools",
+                "messaging": "DM & messaging",
+                "profile": "Profile settings",
+                "server": "Guild tools",
+                "voice": "Voice & calls",
+                "social": "Social tools",
+                "fun": "Entertainment",
+                "rpc": "Rich presence",
+                "boost": "Server boosts",
+                "backup": "Backup & restore",
+                "moderation": "Moderation",
+                "antinuke": "Server protection",
+                "nuke": "Server actions",
+                "hosting": "Hosted accounts",
+                "token": "Token tools",
+                "friends": "Friend controls",
+                "groupchat": "Group chat security",
+                "gcextra": "Group chat tools",
+                "logger": "Message logging",
+                "reactions": "Reaction automation",
+                "afk": "AFK settings",
+                "nitro": "Nitro & giveaways",
+                "owo": "OwO farming",
+                "agct": "Anti-GC trap",
+                "quest": "Quest progress",
+                "owner": "Owner commands",
+            }
+            category_names = [key for key in help_pages if key != "cogs"]
+            category_lines = []
+            for category_key in category_names:
+                category_lines.append(
+                    f"{fmt.PURPLE}{category_header_map.get(category_key, category_key.title())}{fmt.RESET} "
+                    f"{fmt.DARK}—{fmt.RESET} "
+                    f"{fmt.WHITE}{category_descriptions.get(category_key, 'Commands')}{fmt.RESET}"
+                )
             body_text = "\n".join(category_lines)
             msg = ctx["api"].send_message(
                 ctx["channel_id"],
@@ -9354,7 +9350,7 @@ Example Usage:
                 return
             content = help_pages[page]
             lines = content.get("lines", [])
-            lines_per_page = backend_help_per_page
+            lines_per_page = max(1, backend_help_per_page)
             pages = []
             for index in range(0, len(lines), lines_per_page):
                 page_slice = lines[index:index + lines_per_page]
@@ -9363,8 +9359,12 @@ Example Usage:
                     "lines": page_slice,
                 })
 
-            if page_num < 1 or page_num > len(pages):
-                page_num = 1
+            if not pages:
+                pages.append({
+                    "title": content.get("title", "Help"),
+                    "lines": [],
+                })
+            page_num = max(1, min(page_num, len(pages)))
 
             content_to_send = pages[page_num - 1]
             rendered = render_help_page(page, content_to_send, page_num, len(pages))
@@ -9376,9 +9376,13 @@ Example Usage:
             # Fallback: if the user asked for a real command name that lacks a static help page,
             # show command details dynamically so new commands remain discoverable.
             lookup = (full_page or (args[0] if args else "")).strip().lower()
-            cmd = ctx["bot"].commands.get(lookup) if lookup else None
+            cmd = ctx["bot"]._resolve_command(lookup) if lookup else None
             if cmd:
                 canonical_name = str(getattr(cmd, "name", "") or "").strip().lower()
+                cog_summary = (
+                    cog_command_help.get(lookup)
+                    or cog_command_help.get(canonical_name)
+                )
                 canonical_help_key = (
                     help_page_lookup.get(canonical_name)
                     or help_page_lookup.get(canonical_name.replace("_", ""))
@@ -9391,20 +9395,37 @@ Example Usage:
 
                 aliases = ", ".join(cmd.aliases) if getattr(cmd, "aliases", None) else "none"
                 summary = command_help_summary.get(canonical_name, {})
-                category_name = command_category_exact.get(canonical_name) or command_category_primary.get(canonical_name.split()[0], "General")
-                usage_value = "\n".join(summary.get("usage") or [f"{p}{cmd.name}"])
-                description_value = summary.get("description") or (getattr(cmd.func, "__doc__", None) or "No description available.").strip()
+                category_name = (
+                    cog_summary.get("category")
+                    if cog_summary
+                    else command_category_exact.get(canonical_name)
+                    or command_category_primary.get(canonical_name.split()[0], "General")
+                )
+                usage_value = (
+                    _compact_help_text(f"{p}{cog_summary['usage']}", 72)
+                    if cog_summary
+                    else _compact_help_text(
+                        "\n".join(summary.get("usage") or [f"{p}{cmd.name}"]),
+                        72,
+                    )
+                )
+                description_value = _compact_help_text((
+                    cog_summary.get("description")
+                    if cog_summary
+                    else summary.get("description")
+                    or (getattr(cmd.func, "__doc__", None) or "No description available.").strip()
+                ), 72)
                 msg = ctx["api"].send_message(
                     ctx["channel_id"],
                     fmt.sections(
                         cmd.name,
                         "\n".join(
                             [
-                                f"{fmt.CYAN}Name{fmt.DARK} :: {fmt.RESET}{fmt.WHITE}{cmd.name}{fmt.RESET}",
-                                f"{fmt.CYAN}Category{fmt.DARK} :: {fmt.RESET}{fmt.WHITE}{category_name}{fmt.RESET}",
-                                f"{fmt.CYAN}Aliases{fmt.DARK} :: {fmt.RESET}{fmt.WHITE}{aliases}{fmt.RESET}",
-                                f"{fmt.CYAN}Usage{fmt.DARK} :: {fmt.RESET}{fmt.WHITE}{usage_value}{fmt.RESET}",
-                                f"{fmt.CYAN}Description{fmt.DARK} :: {fmt.RESET}{fmt.WHITE}{description_value}{fmt.RESET}",
+                                f"{fmt.CYAN}Name{fmt.DARK} · {fmt.RESET}{fmt.WHITE}{cmd.name}{fmt.RESET}",
+                                f"{fmt.CYAN}Cat{fmt.DARK} · {fmt.RESET}{fmt.WHITE}{category_name}{fmt.RESET}",
+                                f"{fmt.CYAN}Aliases{fmt.DARK} · {fmt.RESET}{fmt.WHITE}{_compact_help_text(aliases, 72)}{fmt.RESET}",
+                                f"{fmt.CYAN}Use{fmt.DARK} · {fmt.RESET}{fmt.WHITE}{usage_value}{fmt.RESET}",
+                                f"{fmt.CYAN}Info{fmt.DARK} · {fmt.RESET}{fmt.WHITE}{description_value}{fmt.RESET}",
                             ]
                         ),
                         f"{fmt.GREEN}{p}help <category>{fmt.RESET}",
@@ -10703,6 +10724,10 @@ Example Usage:
             and host_manager.has_active_hosted_instance(author_id)
         ):
             return
+
+        cog_runtime = getattr(bot, "_cog_runtime", None)
+        if cog_runtime is not None:
+            cog_runtime.dispatch("MESSAGE_CREATE", message_data)
 
         def _encode_reaction_emoji(emoji_text):
             emoji_text = str(emoji_text or "").strip()
@@ -13299,6 +13324,18 @@ Example Usage:
                 msg = api.send_message(ctx["channel_id"], f"> **✗ Reply** :: Failed: HTTP {code}")
         except Exception as e:
             msg = api.send_message(ctx["channel_id"], f"> **✗ Reply** :: Error: {str(e)[:80]}")
+    try:
+        from main_cog_adapter import install_cog_commands
+
+        cog_runtime = install_cog_commands(bot)
+        print(
+            f"[main-cogs] Loaded {len(cog_runtime.cogs)} cogs; "
+            f"registered {len(cog_runtime.commands)} command names and aliases."
+        )
+    except Exception as exc:
+        print(f"[main-cogs] Failed to load aria_backend commands: {exc}")
+        raise
+
     bot._handle_message = new_process_message
     
     # Cleanup function for bot shutdown
