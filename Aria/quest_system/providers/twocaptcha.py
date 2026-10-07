@@ -21,11 +21,157 @@ caller can rotate the browser/header profile in sync with the fresh task.
 """
 
 import asyncio
-from typing import Callable, Dict, Any, Optional
+import os
+import tempfile
+import time
+import zipfile
+from typing import Callable, Dict, Any, Optional, Tuple
 
 import aiohttp
 
 from .base import RetryMixin
+
+
+def _selenium_verify_hcaptcha(
+    page_url: str,
+    token: str,
+    proxy: Optional[str] = None,
+    user_agent: Optional[str] = None,
+    timeout: int = 45,
+) -> Tuple[bool, str]:
+    """Inject a solved hCaptcha token into the live widget with Selenium.
+
+    Opens the challenge page in headless Chrome, waits for the hCaptcha
+    widget, writes the token into every ``h-captcha-response`` and
+    ``g-recaptcha-response`` field (inside the widget iframes and the top
+    document), and pokes the common onVerify callbacks.
+
+    Returns ``(accepted, detail)``. Never raises: any failure is reported as
+    ``(False, reason)`` so the caller can fall back to the plain token.
+    """
+    try:
+        from selenium import webdriver
+        from selenium.webdriver.chrome.options import Options
+        from selenium.webdriver.support.ui import WebDriverWait
+    except Exception as exc:
+        return False, f"selenium unavailable: {exc}"
+
+    opts = Options()
+    opts.add_argument("--headless=new")
+    opts.add_argument("--no-sandbox")
+    opts.add_argument("--disable-dev-shm-usage")
+    opts.add_argument("--disable-gpu")
+    opts.add_argument("--window-size=1280,900")
+    opts.add_argument("--log-level=3")
+    if user_agent:
+        opts.add_argument(f"--user-agent={user_agent}")
+
+    temp_ext = None
+    if proxy:
+        from urllib.parse import urlsplit
+        parts = urlsplit(str(proxy).strip())
+        scheme = (parts.scheme or "http").lower()
+        if scheme == "https":
+            scheme = "http"
+        host_port = f"{parts.hostname or ''}:{parts.port or ('' if parts.hostname else '')}".rstrip(":")
+        if not parts.hostname:
+            return False, "invalid proxy URL"
+        if parts.username:
+            # Chrome needs an extension for authenticated proxies.
+            try:
+                import base64 as _b64
+                manifest = (
+                    '{"version":"1.0.0","manifest_version":2,"name":"aria-proxy",'
+                    '"permissions":["proxy","tabs","unlimitedStorage","storage",'
+                    '"<all_urls>","webRequest","webRequestBlocking"],'
+                    '"background":{"scripts":["background.js"]}}'
+                )
+                js = (
+                    f'var config={{mode:"fixed_servers",rules:{{singleProxy:{{scheme:"{scheme}",'
+                    f'host:"{parts.hostname}",port:parseInt({parts.port or 80})}},'
+                    f'bypassList:[]}}}};chrome.proxy.settings.set({{value:config,scope:"regular"}},'
+                    'function(){});function callbackFn(details){return{authCredentials:{username:"'
+                    f'{parts.username}",password:"{parts.password or ""}"}}}}'
+                    'chrome.webRequest.onAuthRequired.addListener("callbackFn",'
+                    '{urls:["<all_urls>"]},["blocking"]);'
+                )
+                temp_ext = tempfile.mkdtemp(prefix="aria_proxy_ext_")
+                with open(os.path.join(temp_ext, "manifest.json"), "w") as f:
+                    f.write(manifest)
+                with open(os.path.join(temp_ext, "background.js"), "w") as f:
+                    f.write(js)
+                with zipfile.ZipFile(os.path.join(temp_ext, "ext.zip"), "w") as zf:
+                    zf.write(os.path.join(temp_ext, "manifest.json"), "manifest.json")
+                    zf.write(os.path.join(temp_ext, "background.js"), "background.js")
+                opts.add_argument(f"--load-extension={os.path.join(temp_ext, 'ext.zip')}")
+            except Exception as exc:
+                return False, f"proxy extension failed: {exc}"
+        else:
+            opts.add_argument(f"--proxy-server={scheme}://{parts.hostname}:{parts.port or 80}")
+
+    driver = None
+    try:
+        driver = webdriver.Chrome(options=opts)
+        driver.set_page_load_timeout(timeout)
+        driver.get(page_url)
+
+        WebDriverWait(driver, timeout).until(
+            lambda d: d.find_elements("css selector", 'iframe[src*="hcaptcha"]')
+            or d.find_elements("css selector", '[data-hcaptcha-widget-id]')
+        )
+
+        # Write the token into every response textarea, both inside the
+        # hCaptcha iframes and in the top-level document.
+        for frame in driver.find_elements("css selector", 'iframe[src*="hcaptcha"]'):
+            try:
+                driver.switch_to.frame(frame)
+                driver.execute_script(
+                    "const t=document.getElementsByName('h-captcha-response');"
+                    "const g=document.getElementsByName('g-recaptcha-response');"
+                    "for (const el of [...t, ...g]) { el.value = arguments[0]; }",
+                    token,
+                )
+                driver.switch_to.default_content()
+            except Exception:
+                driver.switch_to.default_content()
+
+        driver.execute_script(
+            "const set=(sel)=>{for (const el of document.querySelectorAll(sel))"
+            "{el.value = arguments[0]; el.innerHTML = arguments[0];}};"
+            "set('[name=h-captcha-response]'); set('[name=g-recaptcha-response]');",
+            token,
+        )
+
+        # Poke the widget: hidden anchor click + onVerify callbacks, best effort.
+        driver.execute_script(
+            "try { const a=document.querySelector('iframe[data-hcaptcha-widget-id]');"
+            "if (a) a.contentWindow.postMessage(JSON.stringify({source:'hcaptcha',"
+            "label:'challenge-closed'}),'*'); } catch(e) {}"
+            "try { if (window.hcaptcha && hcaptcha.execute) hcaptcha.execute(); } catch(e) {}"
+        )
+        time.sleep(1.5)
+
+        accepted = driver.execute_script(
+            "const el=document.querySelector('[name=h-captcha-response]') ||"
+            "document.querySelector('[name=g-recaptcha-response]');"
+            "return !!(el && el.value);"
+        )
+        return bool(accepted), "token injected into widget"
+    except Exception as exc:
+        return False, f"selenium verification failed: {exc}"
+    finally:
+        if driver:
+            try:
+                driver.quit()
+            except Exception:
+                pass
+        if temp_ext:
+            try:
+                import shutil
+                shutil.rmtree(temp_ext, ignore_errors=True)
+            except Exception:
+                pass
+
 
 
 class TwoCaptchaSolver(RetryMixin):
@@ -211,6 +357,17 @@ class TwoCaptchaSolver(RetryMixin):
         token = str(result.get('token') or result.get('gRecaptchaResponse') or '').strip()
         if not token:
             raise ValueError("2Captcha returned an empty hCaptcha solution")
+
+        # Optional Selenium step: load the live page, inject the token into the
+        # widget and confirm it sticks. Enabled with ARIA_CAPTCHA_SELENIUM=1.
+        if str(os.environ.get('ARIA_CAPTCHA_SELENIUM', '')).strip() == '1':
+            accepted, detail = _selenium_verify_hcaptcha(
+                website_url, token, proxy=proxy,
+                user_agent=options.get('userAgent'),
+            )
+            print(f"[CAPTCHA] 2Captcha selenium verification: "
+                  f"{'OK' if accepted else 'skipped/failed'} ({detail})")
+
         return {'gRecaptchaResponse': token}
 
     async def image_captcha(

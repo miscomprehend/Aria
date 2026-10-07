@@ -70,3 +70,5 @@ Aria/release/
 .xgrok/BEST_PRACTICES.md
 AGENTS.md
 .xgrok/SECURITY.md
+Aria/aria_backend/aria_state.json
+Aria/afk_state.json

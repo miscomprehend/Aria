@@ -377,6 +377,17 @@ class DiscordAPIClient:
         }
         if challenge.get("rqdata"):
             payload["task"]["rqdata"] = challenge["rqdata"]
+
+        # YesCaptcha-compatible providers that support the proxied task type
+        # get the active proxy so solving happens over the same IP.
+        try:
+            proxy_manager = getattr(self.header_spoofer, "proxy_manager", None)
+            proxy_str = proxy_manager.get_yescaptcha_proxy() if proxy_manager else ""
+            if proxy_str and proxy_str.split(":")[0] in {"http", "socks4", "socks5"}:
+                payload["task"]["type"] = "HCaptchaTask"
+                payload["task"]["proxy"] = proxy_str
+        except Exception:
+            pass
         try:
             response = self.session.post(
                 f'{provider["base_url"]}/createTask',
@@ -414,7 +425,9 @@ class DiscordAPIClient:
         """Submit a task to the native 2Captcha ``in.php`` endpoint.
 
         2Captcha uses flat form parameters and returns ``OK|<taskId>`` or an
-        ``ERROR_*`` string, unlike the YesCaptcha JSON task envelope.
+        ``ERROR_*`` string, unlike the YesCaptcha JSON task envelope. When an
+        active proxy is available from the proxy manager it is passed along so
+        2Captcha solves the challenge through the same IP the session uses.
         """
         params = {
             "key": provider["client_key"],
@@ -426,6 +439,16 @@ class DiscordAPIClient:
         }
         if challenge.get("rqdata"):
             params["data"] = challenge["rqdata"]
+
+        try:
+            proxy_manager = getattr(self.header_spoofer, "proxy_manager", None)
+            if proxy_manager:
+                proxy_str, proxytype = proxy_manager.get_2captcha_proxy()
+                if proxy_str:
+                    params["proxy"] = proxy_str
+                    params["proxytype"] = proxytype
+        except Exception as exc:
+            print(f'[CAPTCHA] proxy lookup failed, continuing proxyless: {exc}')
         try:
             response = self.session.post(
                 f'{provider["base_url"]}/in.php',

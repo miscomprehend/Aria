@@ -123,6 +123,48 @@ class ProxyManager:
         self._save_rotation_state(0)
         return {}
     
+    def get_active_proxy(self):
+        """Return the current proxy string ('http://user:pass@host:port') or ''."""
+        if not self.current_proxy and self.proxies:
+            self.current_proxy = self.proxies[0]
+        return str(self.current_proxy or "")
+
+    def get_2captcha_proxy(self):
+        """Return the active proxy as a 2Captcha (proxy, proxytype) pair.
+
+        2Captcha expects ``proxy`` as ``user:pass@host:port`` and ``proxytype``
+        as one of HTTP / SOCKS4 / SOCKS5. Returns ('', '') when no proxy is set.
+        """
+        raw = self.get_active_proxy()
+        if not raw:
+            return "", ""
+        parsed = urlparse(raw)
+        if not parsed.hostname or not parsed.port:
+            return "", ""
+        scheme = (parsed.scheme or 'http').lower()
+        if scheme == 'https':
+            scheme = 'http'
+        proxytype = {'http': 'HTTP', 'socks4': 'SOCKS4', 'socks5': 'SOCKS5'}.get(scheme, 'HTTP')
+        credentials = ""
+        if parsed.username:
+            credentials = f"{parsed.username}:{parsed.password or ''}@"
+        return f"{credentials}{parsed.hostname}:{parsed.port}", proxytype
+
+    def get_yescaptcha_proxy(self):
+        """Return the active proxy in YesCaptcha 'type:host:port:user:pass' form."""
+        raw = self.get_active_proxy()
+        if not raw:
+            return ""
+        parsed = urlparse(raw)
+        if not parsed.hostname or not parsed.port:
+            return ""
+        scheme = (parsed.scheme or 'http').lower()
+        if scheme == 'https':
+            scheme = 'http'
+        username = parsed.username or ""
+        password = parsed.password or ""
+        return f"{scheme}:{parsed.hostname}:{parsed.port}:{username}:{password}"
+
     def test_proxy(self, proxy):
         """Test if a proxy is working."""
         try:

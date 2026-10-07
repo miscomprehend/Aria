@@ -150,17 +150,14 @@ class BrowserProfile:
 
     # Chrome versions (2025-2026) used when rotating.
     _CHROME_VERSIONS = [
-        "150.0.0.0",
-        "136.0.0.0",
-        "135.0.0.0",
-        "134.0.0.0",
+        "146.0.0.0",
         "133.0.0.0",
-        "132.0.0.0",
         "131.0.0.0",
+        "120.0.0.0",
         "124.0.0.0",
     ]
 
-    def __init__(self, browser_version: str = "150.0.0.0"):
+    def __init__(self, browser_version: str = "146.0.0.0"):
         timestamp = int(time.time())
         # Private RNG: seeded from OS entropy, never touches the global RNG.
         self._rng = random.Random()
@@ -316,7 +313,7 @@ class HeaderSpoofer:
         major = self._profile_major()
 
         candidates = []
-        for value in (major, max(major, 124), 136, 135, 134, 133, 132, 131, 124, 110):
+        for value in (major, max(major, 124), 134, 131, 124, 133, 110):
             if value not in candidates and value >= 110:
                 candidates.append(value)
 
@@ -343,7 +340,7 @@ class HeaderSpoofer:
             try:
                 session = CurlSession(impersonate=impersonation)
             except Exception:
-                for _imp in ("chrome136", "chrome124", "chrome110"):
+                for _imp in ("chrome120", "chrome124", "chrome133"):
                     try:
                         session = CurlSession(impersonate=_imp)
                         break

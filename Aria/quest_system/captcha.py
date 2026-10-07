@@ -6,13 +6,24 @@ from typing import Optional, Any, Callable
 from .interface import CaptchaDataFromRequest
 from .constants import Constants
 
-# Import captcha solver if available
-try:
-    from .providers.nocaptcha import NoCaptchaSolver
-    _nocaptcha_available = True
-except ImportError:
-    _nocaptcha_available = False
-    NoCaptchaSolver = None
+
+def _get_active_proxy_2captcha():
+    """Return (proxy, proxytype) for 2Captcha from the shared ProxyManager, or ('', '')."""
+    try:
+        from proxy_manager import ProxyManager
+        return ProxyManager().get_2captcha_proxy()
+    except Exception:
+        return "", ""
+
+
+def _get_active_proxy_yescaptcha() -> str:
+    """Return the active proxy in YesCaptcha 'type:host:port:user:pass' form, or ''."""
+    try:
+        from proxy_manager import ProxyManager
+        return ProxyManager().get_yescaptcha_proxy()
+    except Exception:
+        return ""
+
 
 try:
     from .providers.yescaptcha import YesCaptchaSolver
@@ -35,6 +46,14 @@ except ImportError:
     _twocaptcha_available = False
     TwoCaptchaSolver = None
 
+
+# Import captcha solver if available
+try:
+    from .providers.nocaptcha import NoCaptchaSolver
+    _nocaptcha_available = True
+except ImportError:
+    _nocaptcha_available = False
+    NoCaptchaSolver = None
 
 def _accepts_rotate(func: Any, *args: Any) -> bool:
     """Return True when ``func`` can be called with a ``rotate`` keyword."""
@@ -147,11 +166,24 @@ class CaptchaSolver:
                 'userAgent': getattr(data, 'user_agent', None) or Constants.USER_AGENT,
             }
 
+            # Pass the active proxy so the provider solves the challenge over
+            # the same IP this session uses (2Captcha/YesCaptcha support it).
+            proxy_kwargs = {}
+            if self._provider_name == '2Captcha':
+                proxy_str, _ = _get_active_proxy_2captcha()
+                if proxy_str:
+                    proxy_kwargs['proxy'] = proxy_str
+            elif self._provider_name in {'YesCaptcha', '2Captcha-compatible provider'}:
+                proxy_str = _get_active_proxy_yescaptcha()
+                if proxy_str:
+                    proxy_kwargs['proxy'] = proxy_str
+
             result = await self._solver.hcaptcha(
                 data.captcha_sitekey,
                 'https://discord.com/channels/@me',
                 options=options,
                 rotate=self._rotate_callback,
+                **proxy_kwargs,
             )
             return result.get('gRecaptchaResponse', '')
         except Exception as e:
