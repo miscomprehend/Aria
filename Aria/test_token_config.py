@@ -20,7 +20,7 @@ class TokenConfigTests(unittest.TestCase):
             with open(config_path, encoding="utf-8") as handle:
                 saved = json.load(handle)
             self.assertIn("captcha_api_key", saved)
-            self.assertEqual(saved["captcha_api_url"], "https://api.2captcha.com")
+            self.assertEqual(saved["captcha_api_url"], "https://2captcha.com")
             self.assertIn("yes_captcha_api_key", saved)
 
             configure_token("", remember=False, config_path=config_path,

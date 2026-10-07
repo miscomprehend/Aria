@@ -55,14 +55,15 @@
             <select id="captcha-provider" aria-label="Captcha provider">
               <option value="nocaptchaai">NoCaptchaAI</option>
               <option value="yescaptcha">YesCaptcha</option>
-              <option value="twocaptcha">2Captcha-compatible</option>
+              <option value="twocaptcha">2Captcha</option>
+              <option value="twocaptcha-compatible">2Captcha-compatible (custom URL)</option>
             </select>
             <input id="captcha-key" type="password" autocomplete="off" spellcheck="false" placeholder="Saved to config.json" />
           </div>
           <label id="captcha-url-label" for="captcha-url" hidden>Provider API base URL</label>
           <input id="captcha-url" type="url" autocomplete="url" spellcheck="false"
-            value="https://api.2captcha.com" placeholder="https://api.2captcha.com" hidden />
-          <p class="hint">The API key is stored encrypted in Aria's local config.json. The compatible provider must support hCaptcha.</p>
+            value="https://2captcha.com" placeholder="https://2captcha.com" hidden />
+          <p class="hint">The API key is stored encrypted in Aria's local config.json. 2Captcha supports hCaptcha out of the box; the compatible option targets third-party hosts that speak the same task protocol.</p>
         </section>
 
         <section class="step" data-panel="2" hidden>

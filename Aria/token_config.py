@@ -101,7 +101,13 @@ def configure_token(
         if captcha_provider == "yescaptcha":
             settings.config["yes_captcha_api_key"] = captcha_key
         elif captcha_provider == "twocaptcha":
-            settings.config["captcha_api_url"] = _validate_captcha_api_url(captcha_api_url)
+            # Native 2Captcha uses the default https://2captcha.com endpoint; a
+            # custom URL is only stored when the user supplies a compatible host.
+            api_url = str(captcha_api_url or "").strip()
+            if api_url and api_url.rstrip("/") != "https://2captcha.com":
+                settings.config["captcha_api_url"] = _validate_captcha_api_url(api_url)
+            else:
+                settings.config["captcha_api_url"] = "https://2captcha.com"
     if owner_identity:
         _save_owner_identity(settings, owner_identity)
     settings.save_config()

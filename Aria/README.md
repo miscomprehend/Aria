@@ -432,11 +432,14 @@ provider keys:
 - `NOCAPTCHAAI_API_KEY` (preferred)
 - `YES_CAPTCHA_API_KEY` (fallback)
 
-Desktop setup also supports any provider implementing the 2Captcha-compatible
-`createTask` / `getTaskResult` API and Discord hCaptcha tasks. Select
-**2Captcha-compatible**, enter its API key, and configure its HTTPS API base URL
-(default: `https://api.2captcha.com`). The provider must accept
-`HCaptchaTaskProxyless` tasks and Discord `rqdata` when present.
+Desktop setup supports native **2Captcha** as well as any provider implementing
+the 2Captcha-compatible `createTask` / `getTaskResult` API and Discord hCaptcha
+tasks. For native 2Captcha, select **2Captcha** and enter your API key; Aria
+uses the official `https://2captcha.com` endpoints (`in.php` / `res.php`). To
+target a third-party host that speaks the same task protocol, select
+**2Captcha-compatible (custom URL)**, enter its API key, and configure its HTTPS
+API base URL. Compatible providers must accept `HCaptchaTaskProxyless` tasks and
+Discord `rqdata` when present.
 
 These retries also cover Nitro gift redemption and giveaway-entry actions
 (button interactions and reaction joins) because they use the shared API

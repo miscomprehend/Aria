@@ -6,8 +6,16 @@ from unittest.mock import AsyncMock, patch
 from quest_system.captcha import CaptchaSolver
 from quest_system.constants import Constants
 from quest_system.interface import CaptchaDataFromRequest
+from quest_system.providers.twocaptcha import TwoCaptchaSolver
 from quest_system.providers.yescaptcha import TwoCaptchaCompatibleSolver, YesCaptchaSolver
 import quest_system.captcha as captcha_module
+
+
+class _EmptySettings:
+    """Config stub with no captcha keys, isolating tests from the real config.json."""
+
+    def get(self, key, default=None):
+        return default
 
 
 class _FakeNoCaptchaSolver:
@@ -50,6 +58,23 @@ class _FakeTwoCaptchaCompatibleSolver(_FakeYesCaptchaSolver):
         _FakeTwoCaptchaCompatibleSolver.last_base_url = base_url
 
 
+class _FakeTwoCaptchaSolver:
+    called = 0
+    last_key = None
+
+    def __init__(self, api_key):
+        self.api_key = api_key
+        self.provider_name = "2Captcha"
+        _FakeTwoCaptchaSolver.called += 1
+        _FakeTwoCaptchaSolver.last_key = api_key
+
+    async def hcaptcha(self, sitekey, website_url, options=None, rotate=None):
+        return {"gRecaptchaResponse": "twocaptcha-token"}
+
+    async def image_captcha(self, image_base64, rotate=None):
+        return {"text": "wxyz"}
+
+
 class QuestCaptchaSolverTests(unittest.TestCase):
     def setUp(self):
         self.original_no_key = os.environ.get("NOCAPTCHAAI_API_KEY")
@@ -57,20 +82,26 @@ class QuestCaptchaSolverTests(unittest.TestCase):
         self.original_no_solver = captcha_module.NoCaptchaSolver
         self.original_yes_solver = captcha_module.YesCaptchaSolver
         self.original_twocaptcha_solver = captcha_module.TwoCaptchaCompatibleSolver
+        self.original_native_twocaptcha_solver = captcha_module.TwoCaptchaSolver
         self.original_no_available = captcha_module._nocaptcha_available
         self.original_yes_available = captcha_module._yescaptcha_available
         self.original_twocaptcha_available = captcha_module._twocaptcha_compatible_available
+        self.original_native_twocaptcha_available = captcha_module._twocaptcha_available
 
         _FakeNoCaptchaSolver.called = 0
         _FakeNoCaptchaSolver.last_call = None
         _FakeYesCaptchaSolver.called = 0
         _FakeYesCaptchaSolver.image_called = 0
         _FakeYesCaptchaSolver.last_call = None
+        _FakeTwoCaptchaSolver.called = 0
+        _FakeTwoCaptchaSolver.last_key = None
         captcha_module.NoCaptchaSolver = _FakeNoCaptchaSolver
         captcha_module.YesCaptchaSolver = _FakeYesCaptchaSolver
+        captcha_module.TwoCaptchaSolver = _FakeTwoCaptchaSolver
         captcha_module._nocaptcha_available = True
         captcha_module._yescaptcha_available = True
         captcha_module._twocaptcha_compatible_available = True
+        captcha_module._twocaptcha_available = True
 
     def tearDown(self):
         if self.original_no_key is None:
@@ -86,9 +117,11 @@ class QuestCaptchaSolverTests(unittest.TestCase):
         captcha_module.NoCaptchaSolver = self.original_no_solver
         captcha_module.YesCaptchaSolver = self.original_yes_solver
         captcha_module.TwoCaptchaCompatibleSolver = self.original_twocaptcha_solver
+        captcha_module.TwoCaptchaSolver = self.original_native_twocaptcha_solver
         captcha_module._nocaptcha_available = self.original_no_available
         captcha_module._yescaptcha_available = self.original_yes_available
         captcha_module._twocaptcha_compatible_available = self.original_twocaptcha_available
+        captcha_module._twocaptcha_available = self.original_native_twocaptcha_available
 
     def test_uses_configured_2captcha_compatible_provider(self):
         class Settings:
@@ -119,7 +152,8 @@ class QuestCaptchaSolverTests(unittest.TestCase):
     def test_prefers_nocaptcha_when_both_keys_are_set(self):
         os.environ["NOCAPTCHAAI_API_KEY"] = "nocaptcha-key"
         os.environ["YES_CAPTCHA_API_KEY"] = "yes-key"
-        solver = CaptchaSolver()
+        with patch("config.Config", return_value=_EmptySettings()):
+            solver = CaptchaSolver()
 
         result = asyncio.run(
             solver.solve_captcha(CaptchaDataFromRequest("sitekey", "rqdata"))
@@ -132,7 +166,8 @@ class QuestCaptchaSolverTests(unittest.TestCase):
     def test_falls_back_to_yescaptcha_when_nocaptcha_key_missing(self):
         os.environ.pop("NOCAPTCHAAI_API_KEY", None)
         os.environ["YES_CAPTCHA_API_KEY"] = "yes-key"
-        solver = CaptchaSolver()
+        with patch("config.Config", return_value=_EmptySettings()):
+            solver = CaptchaSolver()
 
         result = asyncio.run(
             solver.solve_captcha(CaptchaDataFromRequest("sitekey", "rqdata"))
@@ -145,7 +180,8 @@ class QuestCaptchaSolverTests(unittest.TestCase):
     def test_passes_sitekey_and_user_agent_to_yescaptcha(self):
         os.environ.pop("NOCAPTCHAAI_API_KEY", None)
         os.environ["YES_CAPTCHA_API_KEY"] = "yes-key"
-        solver = CaptchaSolver()
+        with patch("config.Config", return_value=_EmptySettings()):
+            solver = CaptchaSolver()
 
         result = asyncio.run(
             solver.solve_captcha(
@@ -166,7 +202,8 @@ class QuestCaptchaSolverTests(unittest.TestCase):
     def test_raises_when_no_provider_is_available(self):
         os.environ.pop("NOCAPTCHAAI_API_KEY", None)
         os.environ.pop("YES_CAPTCHA_API_KEY", None)
-        solver = CaptchaSolver()
+        with patch("config.Config", return_value=_EmptySettings()):
+            solver = CaptchaSolver()
 
         with self.assertRaises(ValueError):
             asyncio.run(
@@ -176,7 +213,8 @@ class QuestCaptchaSolverTests(unittest.TestCase):
     def test_solves_image_captcha_with_supported_provider(self):
         os.environ.pop("NOCAPTCHAAI_API_KEY", None)
         os.environ["YES_CAPTCHA_API_KEY"] = "yes-key"
-        solver = CaptchaSolver()
+        with patch("config.Config", return_value=_EmptySettings()):
+            solver = CaptchaSolver()
 
         result = asyncio.run(solver.solve_image_captcha("ZmFrZS1pbWFnZQ=="))
 
@@ -186,10 +224,51 @@ class QuestCaptchaSolverTests(unittest.TestCase):
     def test_raises_for_image_captcha_when_provider_does_not_support_it(self):
         os.environ["NOCAPTCHAAI_API_KEY"] = "nocaptcha-key"
         os.environ.pop("YES_CAPTCHA_API_KEY", None)
-        solver = CaptchaSolver()
+        with patch("config.Config", return_value=_EmptySettings()):
+            solver = CaptchaSolver()
 
         with self.assertRaises(ValueError):
             asyncio.run(solver.solve_image_captcha("ZmFrZS1pbWFnZQ=="))
+
+    def test_uses_native_2captcha_by_default(self):
+        class Settings:
+            def get(self, key, default=None):
+                return {
+                    "captcha_api_key": "native-key",
+                    "captcha_provider": "twocaptcha",
+                    "captcha_api_url": "https://2captcha.com",
+                }.get(key, default)
+
+        os.environ.pop("NOCAPTCHAAI_API_KEY", None)
+        os.environ.pop("YES_CAPTCHA_API_KEY", None)
+        with patch("config.Config", return_value=Settings()):
+            solver = CaptchaSolver()
+
+        result = asyncio.run(
+            solver.solve_captcha(CaptchaDataFromRequest("site-key", "rqdata"))
+        )
+
+        self.assertEqual(result, "twocaptcha-token")
+        self.assertEqual(_FakeTwoCaptchaSolver.called, 1)
+        self.assertEqual(_FakeTwoCaptchaSolver.last_key, "native-key")
+
+    def test_solves_image_captcha_with_native_2captcha(self):
+        class Settings:
+            def get(self, key, default=None):
+                return {
+                    "captcha_api_key": "native-key",
+                    "captcha_provider": "twocaptcha",
+                    "captcha_api_url": "https://2captcha.com",
+                }.get(key, default)
+
+        os.environ.pop("NOCAPTCHAAI_API_KEY", None)
+        os.environ.pop("YES_CAPTCHA_API_KEY", None)
+        with patch("config.Config", return_value=Settings()):
+            solver = CaptchaSolver()
+
+        result = asyncio.run(solver.solve_image_captcha("ZmFrZS1pbWFnZQ=="))
+
+        self.assertEqual(result, "wxyz")
 
 
 class YesCaptchaTaskTests(unittest.IsolatedAsyncioTestCase):
@@ -265,6 +344,59 @@ class YesCaptchaTaskTests(unittest.IsolatedAsyncioTestCase):
                 "userAgent": "Mozilla/5.0 current-browser",
             }
         )
+
+
+class TwoCaptchaNativeSolverTests(unittest.IsolatedAsyncioTestCase):
+    def test_rejects_non_https_base_url(self):
+        with self.assertRaisesRegex(ValueError, "must be HTTPS"):
+            TwoCaptchaSolver("key", base_url="http://2captcha.com")
+
+    def test_rejects_credentials_in_base_url(self):
+        with self.assertRaisesRegex(ValueError, "must be HTTPS"):
+            TwoCaptchaSolver("key", base_url="https://user:pass@2captcha.com")
+
+    def test_requires_api_key(self):
+        with self.assertRaisesRegex(ValueError, "API key is required"):
+            TwoCaptchaSolver("")
+
+    async def test_hcaptcha_submits_and_polls_native_api(self):
+        solver = TwoCaptchaSolver("test-key", max_attempts=1)
+        solver.create_task = AsyncMock(return_value={"taskId": "12345"})
+        solver.get_task_result = AsyncMock(return_value={"solution": {"token": "solved-token"}})
+
+        result = await solver.hcaptcha(
+            "site-key",
+            "https://discord.com/channels/@me",
+            options={"rqdata": "challenge-data", "userAgent": "Discord client"},
+        )
+
+        self.assertEqual(result, {"gRecaptchaResponse": "solved-token"})
+        params = solver.create_task.await_args.args[0]
+        self.assertEqual(params["method"], "hcaptcha")
+        self.assertEqual(params["sitekey"], "site-key")
+        self.assertEqual(params["pageurl"], "https://discord.com/channels/@me")
+        self.assertEqual(params["data"], "challenge-data")
+        self.assertEqual(params["userAgent"], "Discord client")
+        solver.get_task_result.assert_awaited_once_with("12345")
+
+    async def test_image_captcha_uses_base64_method(self):
+        solver = TwoCaptchaSolver("test-key", max_attempts=1)
+        solver.create_task = AsyncMock(return_value={"taskId": "99"})
+        solver.get_task_result = AsyncMock(return_value={"solution": {"token": "abcd"}})
+
+        result = await solver.image_captcha("data:image/png;base64,ZmFrZQ==")
+
+        self.assertEqual(result, {"text": "abcd"})
+        params = solver.create_task.await_args.args[0]
+        self.assertEqual(params["method"], "base64")
+        self.assertEqual(params["body"], "ZmFrZQ==")
+
+    async def test_normalize_response_parses_ok_prefix(self):
+        self.assertEqual(TwoCaptchaSolver._normalize_response("OK|9876"), "9876")
+
+    async def test_normalize_response_raises_on_error(self):
+        with self.assertRaisesRegex(ValueError, "ERROR_WRONG_USER_KEY"):
+            TwoCaptchaSolver._normalize_response("ERROR_WRONG_USER_KEY")
 
 
 if __name__ == "__main__":

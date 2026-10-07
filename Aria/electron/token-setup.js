@@ -15,7 +15,7 @@ const LAST_STEP = panels.length - 1;
 let step = 0;
 
 captchaProviderInput.addEventListener("change", () => {
-  const customProvider = captchaProviderInput.value === "twocaptcha";
+  const customProvider = captchaProviderInput.value === "twocaptcha-compatible";
   captchaUrlInput.hidden = !customProvider;
   captchaUrlLabel.hidden = !customProvider;
 });
@@ -83,12 +83,17 @@ form.addEventListener("submit", async (event) => {
   status.dataset.state = "pending";
   status.textContent = "Verifying your account and detecting the owner...";
   try {
+    const provider = captchaProviderInput.value;
+    // The backend stores both native 2Captcha and compatible hosts under the
+    // "twocaptcha" provider; a non-empty URL selects the compatible protocol.
+    const normalizedProvider = provider === "twocaptcha-compatible" ? "twocaptcha" : provider;
+    const normalizedUrl = provider === "twocaptcha-compatible" ? captchaUrlInput.value.trim() : "";
     const result = await window.ariaSetup.saveToken(
       token,
       rememberInput.checked,
       captchaInput.value.trim(),
-      captchaProviderInput.value,
-      captchaUrlInput.value.trim(),
+      normalizedProvider,
+      normalizedUrl,
     );
     if (!result.ok) throw new Error(result.error || "Could not save the token.");
     tokenInput.value = "";

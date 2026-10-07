@@ -20,7 +20,7 @@ class Config:
             "token": "token here",
             "captcha_api_key": "",
             "captcha_provider": "nocaptchaai",
-            "captcha_api_url": "https://api.2captcha.com",
+            "captcha_api_url": "https://2captcha.com",
             "yes_captcha_api_key": "",
             "prefix": ";",
             "owner_id": "REDACTED_OWNER_ID",
