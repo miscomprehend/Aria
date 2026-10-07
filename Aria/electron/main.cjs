@@ -479,7 +479,9 @@ function normalizeCaptcha(payload) {
   if (!supportedProviders.has(provider)) throw new Error("Choose a supported captcha provider.");
   const apiUrl = typeof payload?.captchaApiUrl === "string" ? payload.captchaApiUrl.trim() : "";
   if (apiUrl.length > 2048 || /[\r\n]/.test(apiUrl)) throw new Error("Enter a valid captcha provider API URL.");
-  if (provider === "twocaptcha") {
+  // A URL is optional: native 2Captcha uses its default endpoint, while a
+  // supplied URL selects a compatible third-party host and must be validated.
+  if (provider === "twocaptcha" && apiUrl) {
     let parsedUrl;
     try {
       parsedUrl = new URL(apiUrl);

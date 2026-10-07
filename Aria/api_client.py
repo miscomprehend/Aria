@@ -303,27 +303,39 @@ class DiscordAPIClient:
             configured_yes_key = ""
         nocaptcha_key = str(os.environ.get("NOCAPTCHAAI_API_KEY") or "").strip()
         yescaptcha_key = str(os.environ.get("YES_CAPTCHA_API_KEY") or "").strip() or configured_yes_key
-        if configured_provider == "twocaptcha" and configured_key and configured_api_url:
-            try:
-                parsed = urlsplit(configured_api_url)
-                valid_api_url = (
-                    parsed.scheme.lower() == "https"
-                    and parsed.hostname
-                    and parsed.username is None
-                    and parsed.password is None
-                    and not parsed.query
-                    and not parsed.fragment
-                )
-            except ValueError:
-                valid_api_url = False
-            if valid_api_url:
-                providers.append({
-                    "name": "2Captcha-compatible provider",
-                    "base_url": configured_api_url,
-                    "client_key": configured_key,
-                })
+        if configured_provider == "twocaptcha" and configured_key:
+            # Native 2Captcha unless a custom (non-2captcha.com) base URL is set,
+            # in which case the YesCaptcha-compatible task protocol is used.
+            normalized_api_url = configured_api_url.rstrip("/")
+            if normalized_api_url and normalized_api_url != "https://2captcha.com":
+                try:
+                    parsed = urlsplit(normalized_api_url)
+                    valid_api_url = (
+                        parsed.scheme.lower() == "https"
+                        and parsed.hostname
+                        and parsed.username is None
+                        and parsed.password is None
+                        and not parsed.query
+                        and not parsed.fragment
+                    )
+                except ValueError:
+                    valid_api_url = False
+                if valid_api_url:
+                    providers.append({
+                        "name": "2Captcha-compatible provider",
+                        "base_url": normalized_api_url,
+                        "client_key": configured_key,
+                        "protocol": "yescaptcha",
+                    })
+                else:
+                    print("[CAPTCHA] Configured compatible-provider API URL is invalid; it must be a credential-free HTTPS URL.")
             else:
-                print("[CAPTCHA] Configured compatible-provider API URL is invalid; it must be a credential-free HTTPS URL.")
+                providers.append({
+                    "name": "2Captcha",
+                    "base_url": "https://2captcha.com",
+                    "client_key": configured_key,
+                    "protocol": "twocaptcha",
+                })
         if configured_key:
             if configured_provider == "yescaptcha":
                 yescaptcha_key = yescaptcha_key or configured_key
@@ -334,12 +346,14 @@ class DiscordAPIClient:
                 "name": "NoCaptchaAI",
                 "base_url": "https://api.nocaptchaai.com",
                 "client_key": nocaptcha_key,
+                "protocol": "yescaptcha",
             })
         if yescaptcha_key:
             providers.append({
                 "name": "YesCaptcha",
                 "base_url": "https://api.yescaptcha.com",
                 "client_key": yescaptcha_key,
+                "protocol": "yescaptcha",
             })
         return providers
 
@@ -347,6 +361,9 @@ class DiscordAPIClient:
         website_url = str(challenge.get("website_url") or challenge.get("page_url") or "https://discord.com/channels/@me").strip()
         if not website_url.startswith("https://"):
             website_url = "https://discord.com/channels/@me"
+
+        if provider.get("protocol") == "twocaptcha":
+            return self._create_twocaptcha_task(provider, challenge, website_url)
 
         payload = {
             "clientKey": provider["client_key"],
@@ -393,7 +410,52 @@ class DiscordAPIClient:
             return None
         return task_id
 
+    def _create_twocaptcha_task(self, provider: Dict[str, str], challenge: Dict[str, str], website_url: str) -> Optional[str]:
+        """Submit a task to the native 2Captcha ``in.php`` endpoint.
+
+        2Captcha uses flat form parameters and returns ``OK|<taskId>`` or an
+        ``ERROR_*`` string, unlike the YesCaptcha JSON task envelope.
+        """
+        params = {
+            "key": provider["client_key"],
+            "method": "hcaptcha",
+            "sitekey": challenge["sitekey"],
+            "pageurl": website_url,
+            "userAgent": self.header_spoofer.profile.user_agent,
+            "json": 0,
+        }
+        if challenge.get("rqdata"):
+            params["data"] = challenge["rqdata"]
+        try:
+            response = self.session.post(
+                f'{provider["base_url"]}/in.php',
+                data=params,
+                headers={"Content-Type": "application/x-www-form-urlencoded", "Accept": "text/plain"},
+                timeout=30,
+            )
+        except Exception as exc:
+            print(f'[CAPTCHA] {provider["name"]} in.php request failed: {exc}')
+            return None
+
+        if not response or getattr(response, "status_code", 0) != 200:
+            print(f'[CAPTCHA] {provider["name"]} in.php failed with HTTP {getattr(response, "status_code", "no response")}')
+            return None
+
+        body = str(getattr(response, "text", "") or "").strip()
+        if body.startswith("OK|"):
+            task_id = body[3:].strip()
+            if task_id:
+                return task_id
+            print(f'[CAPTCHA] {provider["name"]} in.php returned an empty task ID')
+            return None
+        hint = " (check your 2Captcha API key or balance)" if body.startswith("ERROR_") else ""
+        print(f'[CAPTCHA] {provider["name"]} in.php error: {body[:200]}{hint}')
+        return None
+
     def _poll_captcha_result(self, provider: Dict[str, str], task_id: str, timeout_seconds: float = 120.0) -> Optional[str]:
+        if provider.get("protocol") == "twocaptcha":
+            return self._poll_twocaptcha_result(provider, task_id, timeout_seconds)
+
         deadline = time.time() + timeout_seconds
         while time.time() < deadline:
             payload = {
@@ -442,6 +504,63 @@ class DiscordAPIClient:
         print(f'[CAPTCHA] {provider["name"]} timed out waiting for task {task_id}')
         return None
 
+    def _poll_twocaptcha_result(self, provider: Dict[str, str], task_id: str, timeout_seconds: float = 120.0) -> Optional[str]:
+        """Poll the native 2Captcha ``res.php`` endpoint for the solved token."""
+        deadline = time.time() + timeout_seconds
+        while time.time() < deadline:
+            time.sleep(5)
+            try:
+                response = self.session.get(
+                    f'{provider["base_url"]}/res.php',
+                    params={
+                        "key": provider["client_key"],
+                        "action": "get",
+                        "id": task_id,
+                        "json": 0,
+                    },
+                    headers={"Accept": "text/plain"},
+                    timeout=30,
+                )
+            except Exception as exc:
+                print(f'[CAPTCHA] {provider["name"]} res.php request failed: {exc}')
+                continue
+
+            if not response or getattr(response, "status_code", 0) != 200:
+                print(f'[CAPTCHA] {provider["name"]} res.php failed with HTTP {getattr(response, "status_code", "no response")}')
+                continue
+
+            body = str(getattr(response, "text", "") or "").strip()
+            if body == "CAPCHA_NOT_READY":
+                continue
+            if body.startswith("OK|"):
+                token = body[3:].strip()
+                if token:
+                    return token
+                print(f'[CAPTCHA] {provider["name"]} returned OK without a token')
+                return None
+            if body.startswith("ERROR_"):
+                print(f'[CAPTCHA] {provider["name"]} res.php error: {body}')
+                return None
+
+        print(f'[CAPTCHA] {provider["name"]} timed out waiting for task {task_id}')
+        return None
+
+    def _rotate_captcha_transport(self):
+        """Rotate the browser profile and rebuild the TLS transport safely.
+
+        Uses ``HeaderSpoofer.rebuild_session`` which validates the Chrome
+        impersonation against the installed ``curl_cffi`` and falls back to a
+        supported version. This avoids crashes such as
+        "Impersonating chrome132 is not supported" that happened when the old
+        code built ``CurlSession(impersonate=browser_target)`` directly from an
+        arbitrary ``chrome<major>`` profile value.
+        """
+        try:
+            self.header_spoofer.rotate_profile()
+            self.header_spoofer.rebuild_session()
+        except Exception as exc:
+            print(f"[CAPTCHA] TLS transport rotation failed: {exc}")
+
     def _solve_captcha_challenge(self, challenge: Dict[str, str]) -> Optional[str]:
         if challenge.get("service") not in {"hcaptcha", ""}:
             print(f'[CAPTCHA] Unsupported captcha service: {challenge.get("service")}')
@@ -455,27 +574,7 @@ class DiscordAPIClient:
         for provider in providers:
             self._captcha_provider_name = provider["name"]
 
-            # Full teardown on rotation: if the current session is still alive,
-            # drop the transport before reassociating the next browser/TLS profile.
-            if hasattr(self.header_spoofer, "rotate_user_agent"):
-                try:
-                    rotation = self.header_spoofer.rotate_user_agent()
-                    browser_target = rotation.get("browser_target", "chrome124")
-                    if hasattr(self.header_spoofer, "session") and self.header_spoofer.session is not None:
-                        close = getattr(self.header_spoofer.session, "close", None)
-                        if callable(close):
-                            close()
-                    self.header_spoofer.session = self.header_spoofer._create_session()
-                    self.header_spoofer._update_session_headers()
-                    if browser_target:
-                        try:
-                            from curl_cffi.requests import Session as CurlSession
-                            self.header_spoofer.session = CurlSession(impersonate=browser_target)
-                            self.header_spoofer.session.trust_env = False
-                        except Exception:
-                            pass
-                except Exception:
-                    pass
+            self._rotate_captcha_transport()
 
             task_id = self._create_captcha_task(provider, challenge)
             if not task_id:
@@ -484,25 +583,7 @@ class DiscordAPIClient:
             if token:
                 return token
 
-            if hasattr(self.header_spoofer, "rotate_user_agent"):
-                try:
-                    rotation = self.header_spoofer.rotate_user_agent()
-                    browser_target = rotation.get("browser_target", "chrome124")
-                    if hasattr(self.header_spoofer, "session") and self.header_spoofer.session is not None:
-                        close = getattr(self.header_spoofer.session, "close", None)
-                        if callable(close):
-                            close()
-                    self.header_spoofer.session = self.header_spoofer._create_session()
-                    self.header_spoofer._update_session_headers()
-                    if browser_target:
-                        try:
-                            from curl_cffi.requests import Session as CurlSession
-                            self.header_spoofer.session = CurlSession(impersonate=browser_target)
-                            self.header_spoofer.session.trust_env = False
-                        except Exception:
-                            pass
-                except Exception:
-                    pass
+            self._rotate_captcha_transport()
         return None
 
     def _check_circuit_breaker(self) -> bool:

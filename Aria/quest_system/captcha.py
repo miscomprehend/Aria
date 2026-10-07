@@ -28,6 +28,13 @@ except ImportError:
     _twocaptcha_compatible_available = False
     TwoCaptchaCompatibleSolver = None
 
+try:
+    from .providers.twocaptcha import TwoCaptchaSolver
+    _twocaptcha_available = True
+except ImportError:
+    _twocaptcha_available = False
+    TwoCaptchaSolver = None
+
 
 def _accepts_rotate(func: Any, *args: Any) -> bool:
     """Return True when ``func`` can be called with a ``rotate`` keyword."""
@@ -76,18 +83,28 @@ class CaptchaSolver:
             if configured_provider == "yescaptcha":
                 yescaptcha_key = yescaptcha_key or configured_key
             elif configured_provider == "twocaptcha":
-                if _twocaptcha_compatible_available and TwoCaptchaCompatibleSolver:
+                # Native 2Captcha by default; only fall back to the
+                # YesCaptcha-compatible protocol when a custom API base URL is
+                # supplied (i.e. a self-hosted or third-party compatible host).
+                if configured_api_url and configured_api_url.rstrip("/") != "https://2captcha.com":
+                    if _twocaptcha_compatible_available and TwoCaptchaCompatibleSolver:
+                        try:
+                            self._solver = TwoCaptchaCompatibleSolver(configured_key, configured_api_url)
+                            self._provider_name = self._solver.provider_name
+                        except Exception as error:
+                            print(f"Failed to initialize compatible captcha provider: {error}")
+                elif _twocaptcha_available and TwoCaptchaSolver:
                     try:
-                        self._solver = TwoCaptchaCompatibleSolver(configured_key, configured_api_url)
+                        self._solver = TwoCaptchaSolver(configured_key)
                         self._provider_name = self._solver.provider_name
                     except Exception as error:
-                        print(f"Failed to initialize compatible captcha provider: {error}")
+                        print(f"Failed to initialize 2Captcha: {error}")
             else:
                 nocaptcha_key = nocaptcha_key or configured_key
 
         if self._solver is None and configured_provider == "twocaptcha" and configured_key:
-            if not _twocaptcha_compatible_available:
-                print("Compatible captcha provider support is unavailable.")
+            if not _twocaptcha_available and not _twocaptcha_compatible_available:
+                print("2Captcha provider support is unavailable.")
 
         if self._solver is None and nocaptcha_key and _nocaptcha_available and NoCaptchaSolver:
             try:

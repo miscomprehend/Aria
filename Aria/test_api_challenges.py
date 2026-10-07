@@ -44,7 +44,10 @@ class APIChallengeTests(unittest.TestCase):
         self.assertTrue(client.verification_blocked)
         self.assertEqual(client.verification_endpoint, "/guilds/123/channels")
         client.header_spoofer.session.post.assert_called_once()
+        # No actual captcha solving here (challenge is missing a sitekey), so
+        # the TLS transport must NOT be rotated.
         client.header_spoofer.rotate_profile.assert_not_called()
+        client.header_spoofer.rebuild_session.assert_not_called()
 
         self.assertIsNone(client.request("POST", "/channels/456/messages", data={"content": "later"}))
         client.header_spoofer.session.post.assert_called_once()
@@ -62,7 +65,10 @@ class APIChallengeTests(unittest.TestCase):
         self.assertIs(response, challenge)
         self.assertTrue(client.verification_blocked)
         client.header_spoofer.session.post.assert_called_once()
-        client.header_spoofer.rotate_profile.assert_not_called()
+        # Captcha solving rotates the transport to obtain a supported Chrome TLS
+        # impersonation rather than crashing on unsupported versions.
+        client.header_spoofer.rotate_profile.assert_called_once()
+        client.header_spoofer.rebuild_session.assert_called_once()
 
     def test_nested_captcha_payload_is_extracted_for_profile_updates(self):
         client = make_client(Mock())
@@ -199,7 +205,92 @@ class APIChallengeTests(unittest.TestCase):
             "name": "2Captcha-compatible provider",
             "base_url": "https://captcha.example/api",
             "client_key": "compatible-key",
+            "protocol": "yescaptcha",
         }])
+
+    def test_native_2captcha_provider_is_used_without_custom_url(self):
+        import os
+
+        class Settings:
+            def get(self, key, default=None):
+                return {
+                    "captcha_api_key": "native-key",
+                    "captcha_provider": "twocaptcha",
+                    "captcha_api_url": "https://2captcha.com",
+                }.get(key, default)
+
+        client = make_client(Mock())
+        env = {k: v for k, v in os.environ.items()
+               if k not in {"NOCAPTCHAAI_API_KEY", "YES_CAPTCHA_API_KEY"}}
+        with patch.dict(os.environ, env, clear=True), patch("config.Config", return_value=Settings()):
+            providers = client._get_captcha_provider_candidates()
+
+        self.assertEqual(providers, [{
+            "name": "2Captcha",
+            "base_url": "https://2captcha.com",
+            "client_key": "native-key",
+            "protocol": "twocaptcha",
+        }])
+
+    def test_native_2captcha_task_uses_in_php_flat_params(self):
+        client = make_client(Mock())
+        client.header_spoofer.profile.user_agent = "Discord client"
+        response = Mock()
+        response.status_code = 200
+        response.text = "OK|task-123"
+        client.session.post.return_value = response
+        provider = {
+            "name": "2Captcha",
+            "base_url": "https://2captcha.com",
+            "client_key": "native-key",
+            "protocol": "twocaptcha",
+        }
+
+        task_id = client._create_captcha_task(provider, {
+            "sitekey": "discord-site-key",
+            "rqdata": "discord-rqdata",
+            "website_url": "https://discord.com/channels/@me",
+        })
+
+        self.assertEqual(task_id, "task-123")
+        client.session.post.assert_called_once_with(
+            "https://2captcha.com/in.php",
+            data={
+                "key": "native-key",
+                "method": "hcaptcha",
+                "sitekey": "discord-site-key",
+                "pageurl": "https://discord.com/channels/@me",
+                "userAgent": "Discord client",
+                "json": 0,
+                "data": "discord-rqdata",
+            },
+            headers={"Content-Type": "application/x-www-form-urlencoded", "Accept": "text/plain"},
+            timeout=30,
+        )
+
+    def test_native_2captcha_result_polls_res_php(self):
+        client = make_client(Mock())
+        response = Mock()
+        response.status_code = 200
+        response.text = "OK|solved-token"
+        client.session.get.return_value = response
+        provider = {
+            "name": "2Captcha",
+            "base_url": "https://2captcha.com",
+            "client_key": "native-key",
+            "protocol": "twocaptcha",
+        }
+
+        with patch("api_client.time.sleep"):
+            token = client._poll_twocaptcha_result(provider, "task-123")
+
+        self.assertEqual(token, "solved-token")
+        client.session.get.assert_called_once_with(
+            "https://2captcha.com/res.php",
+            params={"key": "native-key", "action": "get", "id": "task-123", "json": 0},
+            headers={"Accept": "text/plain"},
+            timeout=30,
+        )
 
     def test_2captcha_compatible_provider_receives_discord_hcaptcha_task(self):
         client = make_client(Mock())
