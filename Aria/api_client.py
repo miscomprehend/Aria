@@ -290,21 +290,44 @@ class DiscordAPIClient:
         providers: List[Dict[str, str]] = []
         configured_key = ""
         configured_provider = "nocaptchaai"
+        configured_api_url = ""
         try:
             import config as aria_config
             with contextlib.redirect_stdout(io.StringIO()):
                 settings = aria_config.Config()
             configured_key = str(settings.get("captcha_api_key") or "").strip()
             configured_provider = str(settings.get("captcha_provider") or "nocaptchaai").strip().lower()
+            configured_api_url = str(settings.get("captcha_api_url") or "").strip().rstrip("/")
             configured_yes_key = str(settings.get("yes_captcha_api_key") or "").strip()
         except Exception:
             configured_yes_key = ""
         nocaptcha_key = str(os.environ.get("NOCAPTCHAAI_API_KEY") or "").strip()
         yescaptcha_key = str(os.environ.get("YES_CAPTCHA_API_KEY") or "").strip() or configured_yes_key
+        if configured_provider == "twocaptcha" and configured_key and configured_api_url:
+            try:
+                parsed = urlsplit(configured_api_url)
+                valid_api_url = (
+                    parsed.scheme.lower() == "https"
+                    and parsed.hostname
+                    and parsed.username is None
+                    and parsed.password is None
+                    and not parsed.query
+                    and not parsed.fragment
+                )
+            except ValueError:
+                valid_api_url = False
+            if valid_api_url:
+                providers.append({
+                    "name": "2Captcha-compatible provider",
+                    "base_url": configured_api_url,
+                    "client_key": configured_key,
+                })
+            else:
+                print("[CAPTCHA] Configured compatible-provider API URL is invalid; it must be a credential-free HTTPS URL.")
         if configured_key:
             if configured_provider == "yescaptcha":
                 yescaptcha_key = yescaptcha_key or configured_key
-            else:
+            elif configured_provider == "nocaptchaai":
                 nocaptcha_key = nocaptcha_key or configured_key
         if nocaptcha_key:
             providers.append({

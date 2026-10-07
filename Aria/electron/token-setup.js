@@ -1,6 +1,9 @@
 const form = document.getElementById("token-form");
 const tokenInput = document.getElementById("token");
 const captchaInput = document.getElementById("captcha-key");
+const captchaProviderInput = document.getElementById("captcha-provider");
+const captchaUrlInput = document.getElementById("captcha-url");
+const captchaUrlLabel = document.getElementById("captcha-url-label");
 const rememberInput = document.getElementById("remember-token");
 const storageNote = document.getElementById("storage-note");
 const status = document.getElementById("status");
@@ -10,6 +13,12 @@ const keyHint = document.getElementById("key-hint");
 const panels = [...document.querySelectorAll("[data-panel]")];
 const LAST_STEP = panels.length - 1;
 let step = 0;
+
+captchaProviderInput.addEventListener("change", () => {
+  const customProvider = captchaProviderInput.value === "twocaptcha";
+  captchaUrlInput.hidden = !customProvider;
+  captchaUrlLabel.hidden = !customProvider;
+});
 
 document.querySelectorAll("[data-window-action]").forEach((button) => {
   button.addEventListener("click", () => {
@@ -78,7 +87,8 @@ form.addEventListener("submit", async (event) => {
       token,
       rememberInput.checked,
       captchaInput.value.trim(),
-      document.getElementById("captcha-provider").value,
+      captchaProviderInput.value,
+      captchaUrlInput.value.trim(),
     );
     if (!result.ok) throw new Error(result.error || "Could not save the token.");
     tokenInput.value = "";

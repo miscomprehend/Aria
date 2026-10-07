@@ -1723,6 +1723,10 @@ async function loadAccount() {
 
     const botResponse = await fetchJSON('/api/bot');
     const bot = botResponse && botResponse.data ? botResponse.data : {};
+    profileEditor.runtime = {
+        connected: !!bot.connected,
+        clientType: String(bot.client_type || '').trim().toLowerCase(),
+    };
     setText('accountInstance', bot.instance_id || profile.instance_id || '—');
     const connected = !!bot.connected;
     setText('accountConnection', connected ? 'Runtime connected' : 'Runtime offline');
@@ -1738,9 +1742,100 @@ async function loadAccount() {
 
 // ── Account profile editor (avatar, banner, name, bio, pronouns, accent) ──
 const PROFILE_MAX_IMAGE_BYTES = 8 * 1024 * 1024;
-const profileEditor = { original: null, avatar: undefined, banner: undefined, accentTouched: false, bound: false };
+const profileEditor = { original: null, avatar: undefined, banner: undefined, accentTouched: false, bound: false, runtime: { connected: false, clientType: '' } };
+
+const PROFILE_PLATFORM_LABELS = {
+    battlenet: ['Battle.net', 'B'],
+    discord: ['Discord', 'D'],
+    github: ['GitHub', 'GH'],
+    playstation: ['PlayStation', 'PS'],
+    reddit: ['Reddit', 'R'],
+    spotify: ['Spotify', '♪'],
+    steam: ['Steam', 'S'],
+    twitch: ['Twitch', 'T'],
+    xbox: ['Xbox', 'X'],
+    youtube: ['YouTube', '▶'],
+};
 
 function profileEl(id) { return document.getElementById(id); }
+
+function safeProfilePreviewUrl(value) {
+    const source = String(value || '').trim();
+    if (/^data:image\/(?:png|jpeg|gif|webp);base64,[a-z0-9+/=]+$/i.test(source)) return source;
+    try {
+        const parsed = new URL(source);
+        if (parsed.protocol === 'https:' && parsed.hostname && !parsed.username && !parsed.password) return parsed.href;
+    } catch (e) {
+        return '';
+    }
+    return '';
+}
+
+function renderProfilePreview(profile = profileEditor.original || {}) {
+    const name = profileEl('profileDisplayName').value.trim() || profile.global_name || profile.username || 'Aria user';
+    const pronouns = profileEl('profilePronouns').value.trim();
+    const bio = profileEl('profileBio').value.trim();
+    const nameEl = profileEl('profilePreviewName');
+    if (nameEl) nameEl.textContent = name;
+    setText('profilePreviewHandle', `@${profile.username || 'account'}`);
+    const pronounsEl = profileEl('profilePreviewPronouns');
+    if (pronounsEl) {
+        pronounsEl.textContent = pronouns;
+        pronounsEl.hidden = !pronouns;
+    }
+    const bioEl = profileEl('profilePreviewBio');
+    if (bioEl) bioEl.textContent = bio || 'Your profile bio will appear here.';
+
+    const formAvatar = profileEl('profileAvatarPreview');
+    const previewAvatar = profileEl('profilePreviewAvatar');
+    if (formAvatar && previewAvatar) previewAvatar.src = formAvatar.src;
+    const guildTag = profileEl('profileGuildTag');
+    if (guildTag) {
+        const tag = String(profile.guild_tag || '').trim().slice(0, 4);
+        guildTag.textContent = tag;
+        guildTag.hidden = !tag;
+    }
+
+    const card = profileEl('profilePreviewCard');
+    if (card) {
+        const accent = profileEl('profileAccentClear').checked ? '' : profileEl('profileAccent').value;
+        card.style.setProperty('--profile-accent', accent || '#69b7ff');
+    }
+    const status = profileEl('profilePreviewStatus');
+    if (status) {
+        const connected = !!profileEditor.runtime.connected;
+        status.classList.toggle('is-online', connected);
+        status.setAttribute('aria-label', connected ? 'Runtime connected' : 'Runtime offline');
+    }
+
+    const badgeRow = profileEl('profilePlatformBadges');
+    if (!badgeRow) return;
+    badgeRow.replaceChildren();
+    const platforms = Array.isArray(profile.connected_platforms)
+        ? [...new Set(profile.connected_platforms.map(value => String(value || '').trim().toLowerCase()).filter(Boolean))]
+        : [];
+    if (!platforms.length && profileEditor.runtime.connected && profileEditor.runtime.clientType) {
+        platforms.push(profileEditor.runtime.clientType);
+    }
+    platforms.forEach(platform => {
+        const metadata = PROFILE_PLATFORM_LABELS[platform] || [platform.replace(/[_-]+/g, ' '), platform.slice(0, 2).toUpperCase()];
+        const badge = document.createElement('span');
+        badge.className = 'profile-platform-badge';
+        const icon = document.createElement('span');
+        icon.className = 'profile-platform-icon';
+        icon.setAttribute('aria-hidden', 'true');
+        icon.textContent = metadata[1];
+        badge.append(icon, document.createTextNode(metadata[0]));
+        badgeRow.append(badge);
+    });
+    if (Number(profile.premium_type || 0) > 0) {
+        const badge = document.createElement('span');
+        badge.className = 'profile-premium-badge';
+        badge.textContent = 'NITRO';
+        badgeRow.append(badge);
+    }
+    badgeRow.setAttribute('aria-label', platforms.length ? `Connected platforms: ${platforms.join(', ')}` : 'No connected platforms');
+}
 
 function setProfileMessage(text, kind) {
     const el = profileEl('profileMessage');
@@ -1752,8 +1847,9 @@ function setProfileMessage(text, kind) {
 function setProfileBanner(url) {
     const el = profileEl('profileBannerPreview');
     if (!el) return;
-    if (url) {
-        el.style.backgroundImage = `url("${String(url).replace(/"/g, '%22')}")`;
+    const safeUrl = safeProfilePreviewUrl(url);
+    if (safeUrl) {
+        el.style.backgroundImage = `url("${safeUrl}")`;
         el.classList.add('has-image');
     } else {
         el.style.backgroundImage = '';
@@ -1798,6 +1894,7 @@ function fillProfileForm(profile) {
     setProfileBanner(profile.banner_url);
     const note = profileEl('profileBannerNote');
     if (note) note.hidden = Number(profile.premium_type || 0) > 0;
+    renderProfilePreview(profile);
 }
 
 async function loadAccountProfile(force) {
@@ -1835,6 +1932,7 @@ function bindAccountProfileForm() {
                 profileEditor[kind] = { data: dataUri };
                 profileEl(urlId).value = '';
                 previewFn(dataUri);
+                renderProfilePreview();
                 setProfileMessage('', '');
             } catch (e) {
                 event.target.value = '';
@@ -1846,8 +1944,17 @@ function bindAccountProfileForm() {
             if (value) {
                 profileEditor[kind] = { url: value };
                 profileEl(fileId).value = '';
+                const safeUrl = safeProfilePreviewUrl(value);
+                if (kind === 'avatar' && safeUrl) profileEl('profileAvatarPreview').src = safeUrl;
+                if (kind === 'banner') setProfileBanner(safeUrl);
+                renderProfilePreview();
             } else if (profileEditor[kind] && profileEditor[kind].url) {
                 profileEditor[kind] = undefined;
+                if (kind === 'avatar' && profileEditor.original) {
+                    setAvatarImage(profileEl('profileAvatarPreview'), profileEditor.original.avatar_url, profileEditor.original.user_id, { allowFallback: true });
+                }
+                if (kind === 'banner' && profileEditor.original) setProfileBanner(profileEditor.original.banner_url);
+                renderProfilePreview();
             }
         });
     };
@@ -1859,6 +1966,7 @@ function bindAccountProfileForm() {
         profileEl('profileAvatarFile').value = '';
         profileEl('profileAvatarUrl').value = '';
         profileEl('profileAvatarPreview').src = '/static/images/aria-favicon.png';
+        renderProfilePreview();
         setProfileMessage('Profile picture will be removed when you save.', '');
     });
     profileEl('profileBannerRemove').addEventListener('click', () => {
@@ -1866,7 +1974,12 @@ function bindAccountProfileForm() {
         profileEl('profileBannerFile').value = '';
         profileEl('profileBannerUrl').value = '';
         setProfileBanner('');
+        renderProfilePreview();
         setProfileMessage('Banner will be removed when you save.', '');
+    });
+    ['profileDisplayName', 'profilePronouns', 'profileBio', 'profileAccent', 'profileAccentClear'].forEach(id => {
+        profileEl(id).addEventListener('input', () => renderProfilePreview());
+        if (id === 'profileAccentClear') profileEl(id).addEventListener('change', () => renderProfilePreview());
     });
     profileEl('profileBio').addEventListener('input', (event) => {
         setText('profileBioCount', `${event.target.value.length}/${event.target.maxLength}`);

@@ -20,6 +20,7 @@ class TokenConfigTests(unittest.TestCase):
             with open(config_path, encoding="utf-8") as handle:
                 saved = json.load(handle)
             self.assertIn("captcha_api_key", saved)
+            self.assertEqual(saved["captcha_api_url"], "https://api.2captcha.com")
             self.assertIn("yes_captcha_api_key", saved)
 
             configure_token("", remember=False, config_path=config_path,
@@ -29,6 +30,35 @@ class TokenConfigTests(unittest.TestCase):
             self.assertEqual(settings.get("captcha_api_key"), "solver-key")
             self.assertEqual(settings.get("yes_captcha_api_key"), "solver-key")
             self.assertEqual(settings.get("captcha_provider"), "yescaptcha")
+
+    def test_saves_custom_2captcha_compatible_provider_url(self):
+        with tempfile.TemporaryDirectory() as directory:
+            config_path = os.path.join(directory, "config.json")
+            configure_token(
+                "",
+                remember=False,
+                config_path=config_path,
+                captcha_key="solver-key",
+                captcha_provider="twocaptcha",
+                captcha_api_url="https://captcha.example/api/",
+            )
+            settings = config.Config(config_path)
+
+        self.assertEqual(settings.get("captcha_provider"), "twocaptcha")
+        self.assertEqual(settings.get("captcha_api_key"), "solver-key")
+        self.assertEqual(settings.get("captcha_api_url"), "https://captcha.example/api")
+
+    def test_rejects_insecure_custom_captcha_provider_url(self):
+        with tempfile.TemporaryDirectory() as directory:
+            with self.assertRaisesRegex(ValueError, "must be HTTPS"):
+                configure_token(
+                    "",
+                    remember=False,
+                    config_path=os.path.join(directory, "config.json"),
+                    captcha_key="solver-key",
+                    captcha_provider="twocaptcha",
+                    captcha_api_url="http://captcha.example",
+                )
 
     def test_identifies_token_owner_from_verified_account_profile(self):
         profile = {"id": "123456789012345678", "username": "aria-owner"}
@@ -97,7 +127,7 @@ class TokenConfigTests(unittest.TestCase):
 
         self.assertEqual(json.loads(output.getvalue()), {"owner": owner})
         configure.assert_called_once_with("test-token", remember=True, owner_identity=owner,
-            captcha_key="", captcha_provider="")
+            captcha_key="", captcha_provider="", captcha_api_url="")
 
     def test_identify_action_prints_saved_account_identity(self):
         from token_config import main

@@ -178,6 +178,66 @@ class APIChallengeTests(unittest.TestCase):
         self.assertEqual([(p["name"], p["client_key"]) for p in providers],
                          [("YesCaptcha", "yes-config-key")])
 
+    def test_2captcha_compatible_provider_uses_configured_url_and_key(self):
+        import os
+
+        class Settings:
+            def get(self, key, default=None):
+                return {
+                    "captcha_api_key": "compatible-key",
+                    "captcha_provider": "twocaptcha",
+                    "captcha_api_url": "https://captcha.example/api",
+                }.get(key, default)
+
+        client = make_client(Mock())
+        env = {k: v for k, v in os.environ.items()
+               if k not in {"NOCAPTCHAAI_API_KEY", "YES_CAPTCHA_API_KEY"}}
+        with patch.dict(os.environ, env, clear=True), patch("config.Config", return_value=Settings()):
+            providers = client._get_captcha_provider_candidates()
+
+        self.assertEqual(providers, [{
+            "name": "2Captcha-compatible provider",
+            "base_url": "https://captcha.example/api",
+            "client_key": "compatible-key",
+        }])
+
+    def test_2captcha_compatible_provider_receives_discord_hcaptcha_task(self):
+        client = make_client(Mock())
+        client.header_spoofer.profile.user_agent = "Discord client"
+        response = Mock()
+        response.status_code = 200
+        response.json.return_value = {"errorId": 0, "taskId": "task-id"}
+        client.session.post.return_value = response
+        provider = {
+            "name": "2Captcha-compatible provider",
+            "base_url": "https://captcha.example/api",
+            "client_key": "compatible-key",
+        }
+
+        task_id = client._create_captcha_task(provider, {
+            "sitekey": "discord-site-key",
+            "rqdata": "discord-rqdata",
+            "website_url": "https://discord.com/channels/@me",
+        })
+
+        self.assertEqual(task_id, "task-id")
+        client.session.post.assert_called_once_with(
+            "https://captcha.example/api/createTask",
+            json={
+                "clientKey": "compatible-key",
+                "task": {
+                    "type": "HCaptchaTaskProxyless",
+                    "websiteURL": "https://discord.com/channels/@me",
+                    "websiteKey": "discord-site-key",
+                    "userAgent": "Discord client",
+                    "isInvisible": False,
+                    "rqdata": "discord-rqdata",
+                },
+            },
+            headers={"Content-Type": "application/json", "Accept": "application/json"},
+            timeout=30,
+        )
+
     def test_429_write_is_returned_without_automatic_replay(self):
         rate_limited = Mock()
         rate_limited.status_code = 429

@@ -125,14 +125,20 @@ class FetchProfileTests(unittest.TestCase):
             ("GET", "/users/@me"): FakeResponse(200, {
                 "id": "42", "username": "aria", "global_name": "Aria", "avatar": "a_hash",
                 "banner": "bhash", "accent_color": 0x5B8CFF, "premium_type": 2,
+                "primary_guild": {"identity_enabled": True, "tag": "sbf"},
             }),
             ("GET", "/users/@me/profile"): FakeResponse(200, {"user_profile": {"bio": "hi", "pronouns": "they"}}),
+            ("GET", "/users/@me/connections"): FakeResponse(200, [
+                {"type": "spotify"}, {"type": "steam"}, {"type": "spotify"},
+            ]),
         })
         profile = fetch_profile(api)
         self.assertEqual(profile["avatar_url"], "https://cdn.discordapp.com/avatars/42/a_hash.gif?size=256")
         self.assertEqual(profile["banner_url"], "https://cdn.discordapp.com/banners/42/bhash.png?size=600")
         self.assertEqual((profile["accent_color"], profile["bio"], profile["pronouns"]), ("#5b8cff", "hi", "they"))
         self.assertEqual(profile["premium_type"], 2)
+        self.assertEqual(profile["guild_tag"], "sbf")
+        self.assertEqual(profile["connected_platforms"], ["spotify", "steam"])
 
     def test_profile_lookup_failure_still_returns_the_account(self):
         api = FakeApi({

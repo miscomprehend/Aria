@@ -733,47 +733,66 @@
             <section class="account-profile-panel" id="accountProfilePanel" aria-label="Edit Discord profile" hidden>
                 <div class="account-panel-heading"><span>DISCORD PROFILE</span><span id="profileStatus">Loading…</span></div>
                 <form id="accountProfileForm" class="account-profile-form" autocomplete="off" novalidate>
-                    <div class="profile-media">
-                        <div class="profile-banner-preview" id="profileBannerPreview"><span>No banner</span></div>
-                        <img class="profile-avatar-preview" id="profileAvatarPreview" src="/static/images/aria-favicon.png" alt="Profile picture preview">
-                    </div>
-                    <div class="profile-media-controls">
-                        <div class="profile-media-group">
-                            <span class="profile-label">Profile picture</span>
-                            <div class="profile-media-actions">
-                                <label class="btn btn-ghost profile-file-btn">Upload image<input id="profileAvatarFile" type="file" accept="image/png,image/jpeg,image/gif,image/webp" hidden></label>
-                                <button class="btn btn-ghost" type="button" id="profileAvatarRemove">Remove</button>
+                    <div class="profile-editor-layout">
+                        <div class="profile-avatar-editor">
+                            <label class="profile-avatar-upload" for="profileAvatarFile">
+                                <img id="profileAvatarPreview" src="/static/images/aria-favicon.png" alt="Profile picture preview">
+                                <span>Click to upload</span>
+                                <input id="profileAvatarFile" type="file" accept="image/png,image/jpeg,image/gif,image/webp" hidden>
+                            </label>
+                            <button class="btn btn-ghost" type="button" id="profileAvatarRemove">Remove picture</button>
+                            <input class="setting-input profile-field" id="profileAvatarUrl" type="url" placeholder="Or paste a public image URL" inputmode="url" aria-label="Profile picture URL">
+                        </div>
+                        <div class="profile-editor-fields">
+                            <label class="profile-field-group profile-field-wide"><span class="profile-label">Display name</span>
+                                <input class="setting-input profile-field" id="profileDisplayName" type="text" maxlength="32" placeholder="Display name"></label>
+                            <label class="profile-field-group"><span class="profile-label">Pronouns</span>
+                                <input class="setting-input profile-field" id="profilePronouns" type="text" maxlength="40" placeholder="e.g. they/them"></label>
+                            <label class="profile-field-group"><span class="profile-label">Banner <small id="profileBannerNote">needs Nitro</small></span>
+                                <div class="profile-media-actions">
+                                    <label class="btn btn-ghost profile-file-btn">Upload image<input id="profileBannerFile" type="file" accept="image/png,image/jpeg,image/gif,image/webp" hidden></label>
+                                    <button class="btn btn-ghost" type="button" id="profileBannerRemove">Remove</button>
+                                </div>
+                                <input class="setting-input profile-field" id="profileBannerUrl" type="url" placeholder="Paste a public https:// image link" inputmode="url"></label>
+                            <label class="profile-field-group profile-field-wide"><span class="profile-label">About me <small id="profileBioCount">0/190</small></span>
+                                <textarea class="setting-input profile-field" id="profileBio" rows="3" maxlength="190" placeholder="Tell people about yourself"></textarea></label>
+                            <div class="profile-field-group profile-field-wide">
+                                <span class="profile-label">Accent color</span>
+                                <div class="profile-accent-row">
+                                    <input id="profileAccent" type="color" value="#69b7ff" aria-label="Accent color">
+                                    <label class="logger-toggle"><input id="profileAccentClear" type="checkbox"><span>No accent color</span></label>
+                                </div>
                             </div>
-                            <input class="setting-input profile-field" id="profileAvatarUrl" type="url" placeholder="…or paste a public https:// image link" inputmode="url">
-                        </div>
-                        <div class="profile-media-group">
-                            <span class="profile-label">Banner <small id="profileBannerNote">needs Nitro</small></span>
-                            <div class="profile-media-actions">
-                                <label class="btn btn-ghost profile-file-btn">Upload image<input id="profileBannerFile" type="file" accept="image/png,image/jpeg,image/gif,image/webp" hidden></label>
-                                <button class="btn btn-ghost" type="button" id="profileBannerRemove">Remove</button>
-                            </div>
-                            <input class="setting-input profile-field" id="profileBannerUrl" type="url" placeholder="…or paste a public https:// image link" inputmode="url">
                         </div>
                     </div>
-                    <label class="profile-field-group"><span class="profile-label">Display name</span>
-                        <input class="setting-input profile-field" id="profileDisplayName" type="text" maxlength="32" placeholder="Display name"></label>
-                    <label class="profile-field-group"><span class="profile-label">Pronouns</span>
-                        <input class="setting-input profile-field" id="profilePronouns" type="text" maxlength="40" placeholder="e.g. they/them"></label>
-                    <label class="profile-field-group profile-field-wide"><span class="profile-label">About me <small id="profileBioCount">0/190</small></span>
-                        <textarea class="setting-input profile-field" id="profileBio" rows="4" maxlength="190" placeholder="Tell people about yourself"></textarea></label>
-                    <div class="profile-field-group">
-                        <span class="profile-label">Accent color</span>
-                        <div class="profile-accent-row">
-                            <input id="profileAccent" type="color" value="#5b8cff" aria-label="Accent color">
-                            <label class="logger-toggle"><input id="profileAccentClear" type="checkbox"><span>No accent color</span></label>
-                        </div>
-                    </div>
-                    <div class="account-actions profile-field-wide">
+                    <div class="account-actions profile-form-actions">
                         <button class="btn btn-primary" type="submit" id="profileSaveBtn">Save changes</button>
                         <button class="btn btn-ghost" type="button" id="profileResetBtn">Reset</button>
                         <span class="profile-message" id="profileMessage" role="status" aria-live="polite"></span>
                     </div>
                 </form>
+                <section class="profile-preview-section" aria-label="Profile preview">
+                    <div class="profile-preview-heading"><span>PROFILE PREVIEW</span><span>LIVE / DISCORD</span></div>
+                    <div class="profile-preview-card" id="profilePreviewCard">
+                        <div class="profile-preview-banner" id="profileBannerPreview"><span>ARIA PROFILE</span></div>
+                        <div class="profile-preview-body">
+                            <div class="profile-preview-avatar-wrap">
+                                <img class="profile-preview-avatar" id="profilePreviewAvatar" src="/static/images/aria-favicon.png" alt="">
+                                <i id="profilePreviewStatus" aria-label="Runtime offline"></i>
+                            </div>
+                            <div class="profile-preview-content">
+                                <div class="profile-preview-name-row">
+                                    <strong id="profilePreviewName">Aria user</strong>
+                                    <span class="profile-guild-tag" id="profileGuildTag" hidden></span>
+                                </div>
+                                <span class="profile-preview-handle" id="profilePreviewHandle">@account</span>
+                                <span class="profile-preview-pronouns" id="profilePreviewPronouns" hidden></span>
+                                <p class="profile-preview-bio" id="profilePreviewBio">Your profile bio will appear here.</p>
+                                <div class="profile-platform-badges" id="profilePlatformBadges" aria-label="Connected platforms"></div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
             </section>
         </section>
 

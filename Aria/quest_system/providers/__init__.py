@@ -1,6 +1,6 @@
 """Captcha solving providers."""
 
 from .nocaptcha import NoCaptchaSolver
-from .yescaptcha import YesCaptchaSolver
+from .yescaptcha import TwoCaptchaCompatibleSolver, YesCaptchaSolver
 
-__all__ = ['NoCaptchaSolver', 'YesCaptchaSolver']
+__all__ = ['NoCaptchaSolver', 'YesCaptchaSolver', 'TwoCaptchaCompatibleSolver']

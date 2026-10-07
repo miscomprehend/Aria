@@ -52,21 +52,28 @@ Aria includes automatic captcha solving to handle Discord's captcha challenges. 
 
 ### Setup
 
-1. Get an API key from [2Captcha](https://2captcha.com/)
-2. Edit `config.json`:
+1. Choose a supported captcha provider that can solve Discord hCaptcha
+   challenges. The desktop setup supports NoCaptchaAI, YesCaptcha, and any
+   2Captcha-compatible provider.
+2. Enter the provider API key in desktop setup. For a 2Captcha-compatible
+   provider, also enter its HTTPS API base URL (default:
+   `https://api.2captcha.com`).
+
+For manual configuration, set the provider and key in `config.json`:
 ```json
 {
-  "captcha_enabled": true,
   "captcha_api_key": "your_2captcha_api_key_here",
-  "captcha_service": "2captcha"
+  "captcha_provider": "twocaptcha",
+  "captcha_api_url": "https://api.2captcha.com"
 }
 ```
 
 ### Supported Services
 
-- **2Captcha** (recommended)
-- AntiCaptcha
-- CapMonster
+- NoCaptchaAI
+- YesCaptcha
+- Any provider implementing the 2Captcha-compatible `createTask` and
+  `getTaskResult` API with `HCaptchaTaskProxyless` support
 
 ### Web Dashboard
 

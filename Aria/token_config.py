@@ -3,6 +3,7 @@ import json
 import re
 import sys
 from contextlib import redirect_stdout
+from urllib.parse import urlsplit
 
 import warnings
 
@@ -16,7 +17,23 @@ except ImportError:
     pass
 
 
-CAPTCHA_PROVIDERS = {"nocaptchaai", "yescaptcha"}
+CAPTCHA_PROVIDERS = {"nocaptchaai", "yescaptcha", "twocaptcha"}
+
+
+def _validate_captcha_api_url(value: str) -> str:
+    api_url = str(value or "").strip().rstrip("/")
+    parsed = urlsplit(api_url)
+    if (
+        len(api_url) > 2048
+        or parsed.scheme.lower() != "https"
+        or not parsed.hostname
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.query
+        or parsed.fragment
+    ):
+        raise ValueError("The captcha provider API URL must be HTTPS and must not contain credentials, a query, or a fragment.")
+    return api_url
 
 
 def identify_token_owner(token: str) -> dict[str, str]:
@@ -65,6 +82,7 @@ def configure_token(
     owner_identity: dict[str, str] | None = None,
     captcha_key: str = "",
     captcha_provider: str = "",
+    captcha_api_url: str = "",
 ) -> None:
     if remember and not token:
         raise ValueError("Token is required when remembering it.")
@@ -76,11 +94,14 @@ def configure_token(
         settings = config.Config(config_path)
     settings.config["token"] = stored_token
     if captcha_key:
+        if captcha_provider not in CAPTCHA_PROVIDERS:
+            raise ValueError("Choose a supported captcha provider.")
         settings.config["captcha_api_key"] = captcha_key
-        if captcha_provider in CAPTCHA_PROVIDERS:
-            settings.config["captcha_provider"] = captcha_provider
-            if captcha_provider == "yescaptcha":
-                settings.config["yes_captcha_api_key"] = captcha_key
+        settings.config["captcha_provider"] = captcha_provider
+        if captcha_provider == "yescaptcha":
+            settings.config["yes_captcha_api_key"] = captcha_key
+        elif captcha_provider == "twocaptcha":
+            settings.config["captcha_api_url"] = _validate_captcha_api_url(captcha_api_url)
     if owner_identity:
         _save_owner_identity(settings, owner_identity)
     settings.save_config()
@@ -103,12 +124,13 @@ def main() -> None:
     token = sys.stdin.readline().rstrip("\r\n")
     captcha_key = sys.stdin.readline().strip()
     captcha_provider = sys.stdin.readline().strip().lower()
+    captcha_api_url = sys.stdin.readline().strip()
     if action == "save" and not token:
         raise ValueError("Token is required when remembering it.")
     owner_identity = identify_token_owner(token) if token else None
     configure_token(
         token, remember=action == "save", owner_identity=owner_identity,
-        captcha_key=captcha_key, captcha_provider=captcha_provider,
+        captcha_key=captcha_key, captcha_provider=captcha_provider, captcha_api_url=captcha_api_url,
     )
     print(json.dumps({"owner": owner_identity}))
 
