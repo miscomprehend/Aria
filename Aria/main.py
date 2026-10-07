@@ -1451,7 +1451,8 @@ def main():
     # Voice features are disabled
     # afk_system.load_state()
     # bot._afk_system_ref = afk_system
-    anti_gc_trap = AntiGCTrap(bot.api)
+    anti_gc_trap = getattr(bot, "anti_gc_trap", None) or AntiGCTrap(bot.api)
+    bot.anti_gc_trap = anti_gc_trap
     github_updater = GitHubUpdater(bot.api, bot)
     # Initialize super react client
     global super_react_client
@@ -10727,9 +10728,6 @@ Example Usage:
 
         if check_for_github_updates(message_data):
             return
-
-        if anti_gc_trap.check_gc_creation(message_data):
-            pass
 
         guild_id = message_data.get("guild_id")
         channel_id = message_data.get("channel_id")

@@ -4475,31 +4475,19 @@ setInterval(() => {
 }, 5000);
 
 // ── Initial load ──────────────────────────────────────────────────────────────
-async function bootDashboard() {
-    let timeoutId;
-    try {
-        const initialRequests = Promise.allSettled([
-            loadSection('overview'),
-            loadDashProfile(),
-            refreshNotificationCenter(),
-        ]).then(results => {
-            const failure = results.find(result => result.status === 'rejected');
-            if (failure) reportDashboardError('Initial dashboard data', failure.reason);
-            return true;
-        });
-        const timeout = new Promise(resolve => {
-            timeoutId = setTimeout(() => resolve(false), 8000);
-        });
-        const isSynced = await Promise.race([initialRequests.then(() => true), timeout]);
-        setText('loaderStatus', isSynced
-            ? 'RUNTIME / INITIAL SYNC COMPLETE'
-            : 'RUNTIME / CONTINUING CONNECTION');
-    } catch (error) {
-        reportDashboardError('Initial load', error);
-    } finally {
-        clearTimeout(timeoutId);
-        setTimeout(dismissLoader, 300);
-    }
+function bootDashboard() {
+    const initialRequests = Promise.allSettled([
+        loadSection('overview'),
+        loadDashProfile(),
+        refreshNotificationCenter(),
+    ]);
+    initialRequests.then(results => {
+        const failure = results.find(result => result.status === 'rejected');
+        if (failure) reportDashboardError('Initial dashboard data', failure.reason);
+        setText('loaderStatus', 'RUNTIME / INITIAL SYNC COMPLETE');
+    });
+
+    requestAnimationFrame(() => requestAnimationFrame(dismissLoader));
 }
 bootDashboard();
 // Welcome toast

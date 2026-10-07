@@ -95,6 +95,7 @@ class _QuietWSGIRequestHandler(WSGIRequestHandler):
         if is_local and status == 404 and path in {
             "/api/discord/notifications",
             "/api/discord/notifications/mark_read",
+            "/json",
         }:
             return
 
@@ -427,6 +428,7 @@ class WebPanel:
             uid
             and (
                 uid in _PANEL_MASTER_IDS
+                or uid == str(self.owner_id or "").strip()
                 or (session.get("electron_owner") is True and self._is_admin_session())
             )
         )
@@ -2058,6 +2060,12 @@ class WebPanel:
                 return self._read_raw_template("home_template.html"), 200, {"Content-Type": "text/html; charset=utf-8"}
             except Exception:
                 return redirect("/dashboard")
+
+        @self.app.get("/json")
+        def local_json_discovery() -> Any:
+            if not self._is_local():
+                return jsonify({"error": "Not found"}), 404
+            return jsonify([])
 
         @self.app.get("/__shutdown__")
         def _shutdown_server() -> Any:

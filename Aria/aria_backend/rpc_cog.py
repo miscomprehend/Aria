@@ -336,6 +336,11 @@ class RPC(Cog, ASCIIMixin):
     def __init__(self, bot):
         super().__init__(bot)
         self._active: dict = persistence.get("rpc", {})
+        active_stack = persistence.get("rpc_active_stack", [])
+        self._active_stack: list = (
+            [dict(item) for item in active_stack if isinstance(item, dict)][:5]
+            if isinstance(active_stack, list) else []
+        )
         self._cache: dict = {}
         self._rotation_tasks: dict = {}
         self._keepalive_task = None
@@ -354,13 +359,25 @@ class RPC(Cog, ASCIIMixin):
 
     def _save_rpc(self):
         persistence.set_key("rpc", self._active)
+        persistence.set_key("rpc_active_stack", self._active_stack)
+
+    def _active_commands(self):
+        return self._active_stack if self._active_stack else list(self._active.values())
+
+    async def _build_active_activities(self):
+        activities = []
+        for command in self._active_commands():
+            activity = await self._build_activity(command)
+            if activity:
+                activities.append(activity)
+        return activities
 
     @listener()
     async def on_ready(self, *_):
         self._cache.clear()
         if self._keepalive_task is None or self._keepalive_task.done():
             self._keepalive_task = asyncio.ensure_future(self._keepalive_loop())
-        if self._active:
+        if self._active or self._active_stack:
             asyncio.ensure_future(self._reapply())
         saved_multi = persistence.get("multiplatform", [])
         if saved_multi:
@@ -376,7 +393,7 @@ class RPC(Cog, ASCIIMixin):
         # it back until its next tick, up to 25 minutes later. Reapply right
         # away so a resume never leaves the presence looking "randomly
         # stopped" for that long.
-        if self._active:
+        if self._active or self._active_stack:
             asyncio.ensure_future(self._reapply())
 
     def _dashboard_queue_path(self) -> str:
@@ -417,8 +434,9 @@ class RPC(Cog, ASCIIMixin):
                 self._stop_rotation(rt)
             self._stop_named_rotation()
             self._active = dict(rpc)
+            self._active_stack = []
             self._save_rpc()
-            acts = [a for a in [await self._build_activity(c) for c in self._active.values()] if a]
+            acts = await self._build_active_activities()
             await self._send_payload(acts)
 
         elif action == "stop":
@@ -427,6 +445,7 @@ class RPC(Cog, ASCIIMixin):
             self._stop_named_rotation()
             await self._send_payload([])
             self._active.clear()
+            self._active_stack = []
             self._save_rpc()
 
         elif action == "preset_save":
@@ -452,6 +471,7 @@ class RPC(Cog, ASCIIMixin):
                     for rt in list(self._rotation_tasks):
                         self._stop_rotation(rt)
                     self._active.clear()
+                    self._active_stack = []
                     self._save_rpc()
                     self._stop_named_rotation()
                     self._named_rotation_task = asyncio.ensure_future(self._run_named_rotation())
@@ -476,7 +496,7 @@ class RPC(Cog, ASCIIMixin):
     async def _reapply(self):
         await asyncio.sleep(3)
         try:
-            acts = [a for a in [await self._build_activity(c) for c in self._active.values()] if a]
+            acts = await self._build_active_activities()
             if acts:
                 await self._send_payload(acts)
         except Exception:
@@ -485,10 +505,10 @@ class RPC(Cog, ASCIIMixin):
     async def _keepalive_loop(self):
         while True:
             await asyncio.sleep(_KEEPALIVE_INTERVAL)
-            if not self._active:
+            if not self._active and not self._active_stack:
                 continue
             try:
-                acts = [a for a in [await self._build_activity(c) for c in self._active.values()] if a]
+                acts = await self._build_active_activities()
                 if acts:
                     await self._send_payload(acts)
             except asyncio.CancelledError:
@@ -1009,7 +1029,7 @@ class RPC(Cog, ASCIIMixin):
                 "usage: .rpc <type> [key=value ...]",
                 "  imglink=<url>  spoof=true  rotate_interval=20",
                 "presets: .rpc preset save/load/list/delete <name>",
-                "stack:   .rpc stack add <type> [kv...] | apply (or run) | remove <type> | list | clear",
+                "stack:   .rpc stack add <type> [kv...] | apply (or run) | remove <type|#> | list | clear",
                 "rotation:.rpc rotation add <secs> <type> [kv...] | start | stop | list | remove <#> | clear",
             ], delay=15)
             return
@@ -1023,6 +1043,7 @@ class RPC(Cog, ASCIIMixin):
             self._stop_named_rotation()
             await self._send_payload([])
             self._active.clear()
+            self._active_stack = []
             self._save_rpc()
             await self.asuccess(ctx, "rich presence cleared", delay=15)
             return
@@ -1035,9 +1056,13 @@ class RPC(Cog, ASCIIMixin):
                 if not name:
                     await self.aerror(ctx, "usage: .rpc preset save <name>", delay=15)
                     return
-                self._presets[name] = dict(self._active)
+                self._presets[name] = (
+                    [dict(item) for item in self._active_stack]
+                    if self._active_stack else dict(self._active)
+                )
                 self._save_presets()
-                await self.asuccess(ctx, f"preset '{name}' saved ({len(self._active)} slot(s))", delay=15)
+                slot_count = len(self._active_stack) if self._active_stack else len(self._active)
+                await self.asuccess(ctx, f"preset '{name}' saved ({slot_count} slot(s))", delay=15)
 
             elif sub == "load":
                 if not name or name not in self._presets:
@@ -1047,9 +1072,18 @@ class RPC(Cog, ASCIIMixin):
                 for rt in list(self._rotation_tasks):
                     self._stop_rotation(rt)
                 self._stop_named_rotation()
-                self._active = dict(self._presets[name])
+                preset = self._presets[name]
+                if isinstance(preset, list):
+                    self._active_stack = [dict(item) for item in preset if isinstance(item, dict)][:5]
+                    self._active = {
+                        item["rpc_type"]: item for item in self._active_stack
+                        if item.get("rpc_type")
+                    }
+                else:
+                    self._active = dict(preset)
+                    self._active_stack = []
                 self._save_rpc()
-                acts = [a for a in [await self._build_activity(c) for c in self._active.values()] if a]
+                acts = await self._build_active_activities()
                 await self._send_payload(acts)
                 await self.asuccess(ctx, f"preset '{name}' loaded", delay=15)
 
@@ -1057,7 +1091,11 @@ class RPC(Cog, ASCIIMixin):
                 if not self._presets:
                     await self.aprint(ctx, "Presets", ["no presets saved"], delay=15)
                     return
-                lines = [f"{n}: {list(v.keys())}" for n, v in self._presets.items()]
+                lines = [
+                    f"{n}: {[entry.get('rpc_type', '?') for entry in v]}"
+                    if isinstance(v, list) else f"{n}: {list(v.keys())}"
+                    for n, v in self._presets.items()
+                ]
                 await self.aprint(ctx, "Presets", lines, delay=12)
 
             elif sub == "delete":
@@ -1091,29 +1129,45 @@ class RPC(Cog, ASCIIMixin):
                     await self.aerror(ctx, f"unknown type '{rt}' — valid: {', '.join(_RPC_TYPES)}", delay=10)
                     return
 
-                self._stack = [e for e in self._stack if e.get("rpc_type") != rt]
+                if len(self._stack) >= 5:
+                    await self.aerror(ctx, "RPC stack supports up to five simultaneous activities.", delay=10)
+                    return
                 self._stack.append(inner_cmd)
                 self._save_stack()
                 await self.asuccess(ctx, f"stack: {len(self._stack)} slot(s) — added {rt}", delay=15)
 
             elif sub == "remove":
-                rt = args[2].lower() if len(args) > 2 else ""
-                before = len(self._stack)
-                self._stack = [e for e in self._stack if e.get("rpc_type") != rt]
-                self._save_stack()
-                if len(self._stack) < before:
-                    await self.asuccess(ctx, f"removed {rt} from stack", delay=15)
+                selector = args[2].lower() if len(args) > 2 else ""
+                removed = None
+                if selector.isdigit():
+                    index = int(selector) - 1
+                    if 0 <= index < len(self._stack):
+                        removed = self._stack.pop(index)
                 else:
-                    await self.aerror(ctx, f"'{rt}' not in stack", delay=15)
+                    index = next(
+                        (i for i, entry in enumerate(self._stack) if entry.get("rpc_type") == selector),
+                        None,
+                    )
+                    if index is not None:
+                        removed = self._stack.pop(index)
+                self._save_stack()
+                if removed:
+                    await self.asuccess(ctx, f"removed {removed.get('rpc_type', 'activity')} from stack", delay=15)
+                else:
+                    await self.aerror(ctx, f"'{selector}' is not a stack entry", delay=15)
 
             elif sub in ("apply", "run"):
                 if not self._stack:
                     await self.aerror(ctx, "stack is empty — add entries first", delay=15)
                     return
+                if len(self._stack) > 5:
+                    await self.aerror(ctx, "RPC stack contains more than five activities; remove entries before applying.", delay=15)
+                    return
                 for rt in list(self._rotation_tasks):
                     self._stop_rotation(rt)
                 self._stop_named_rotation()
                 self._active = {e["rpc_type"]: e for e in self._stack}
+                self._active_stack = [dict(entry) for entry in self._stack]
                 self._save_rpc()
                 acts = [a for a in [await self._build_activity(e) for e in self._stack] if a]
                 await self._send_payload(acts)
@@ -1139,7 +1193,7 @@ class RPC(Cog, ASCIIMixin):
                 await self.aprint(ctx, "Stack Usage", [
                     ".rpc stack add <type> [key=val ...]   — types: " + ", ".join(_RPC_TYPES),
                     ".rpc stack apply                      — push all slots as simultaneous activities",
-                    ".rpc stack remove <type>              — remove one slot",
+                    ".rpc stack remove <type|#>            — remove one slot (first matching type)",
                     ".rpc stack list                       — show pending slots",
                     ".rpc stack clear                      — wipe all slots",
                     "keys: imglink= details= state= name= large_text= small_text= spoof=true",
@@ -1229,6 +1283,7 @@ class RPC(Cog, ASCIIMixin):
         if rpc_type == "clear":
             await self._build_and_send(cmd)
             self._active.clear()
+            self._active_stack = []
             self._save_rpc()
             await self.asuccess(ctx, "rich presence cleared", delay=15)
             return
@@ -1237,6 +1292,7 @@ class RPC(Cog, ASCIIMixin):
         variants = _split_rotatable(cmd)
         rotating = len(variants) > 1
 
+        self._active_stack = []
         self._active[rpc_type] = variants[0]
         self._save_rpc()
         await self._build_and_send(variants[0])
@@ -1264,6 +1320,7 @@ class RPC(Cog, ASCIIMixin):
             self._stop_rotation(rt)
         await self._send_payload([])
         self._active.clear()
+        self._active_stack = []
         self._save_rpc()
         await self.asuccess(ctx, "rich presence cleared", delay=15)
 
@@ -1344,7 +1401,7 @@ class RPC(Cog, ASCIIMixin):
             return
         self._status = rest
 
-        merged = [a for a in [await self._build_activity(c) for c in self._active.values()] if a]
+        merged = await self._build_active_activities()
         await self._send_payload(merged)
         await self.asuccess(ctx, f"status set to {rest}", delay=5)
 
