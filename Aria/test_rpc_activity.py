@@ -2,16 +2,51 @@ import unittest
 
 from rpc_activity import (
     RPC_APP_IDS,
+    RPC_GENERIC_ASSET_ID,
     RPC_PROVIDER_CONFIG,
     RPC_TYPE_ALIASES,
     RPC_TYPE_GROUPS,
     RPC_TYPES,
+    apply_rpc_spoofing,
     build_rpc_activity,
     parse_rpc_key_values,
 )
 
 
 class RpcActivityTests(unittest.TestCase):
+    def test_spoof_activity_type_supports_all_dashboard_modes(self):
+        expected_types = {
+            "playing": 0,
+            "watching": 3,
+            "listening": 2,
+            "streaming": 1,
+            "competing": 5,
+        }
+        for spoof_type, expected_type in expected_types.items():
+            activity = {"type": 0, "name": "Example", "url": "https://twitch.tv/old"}
+            apply_rpc_spoofing(
+                activity,
+                spoof_type,
+                "https://youtube.com/@aria" if spoof_type == "streaming" else None,
+            )
+            self.assertEqual(activity["type"], expected_type, spoof_type)
+            if spoof_type == "streaming":
+                self.assertEqual(activity["url"], "https://youtube.com/@aria")
+            else:
+                self.assertNotIn("url", activity)
+
+    def test_spoof_none_preserves_activity_and_custom_status(self):
+        activity = {"type": 0, "name": "Example"}
+        apply_rpc_spoofing(activity, "none")
+        self.assertEqual(activity, {"type": 0, "name": "Example"})
+        status = {"type": 4, "name": "Custom Status"}
+        apply_rpc_spoofing(status, "streaming", "invalid")
+        self.assertEqual(status, {"type": 4, "name": "Custom Status"})
+
+    def test_spoof_type_rejects_unknown_values(self):
+        with self.assertRaisesRegex(ValueError, "Unsupported spoof activity type"):
+            apply_rpc_spoofing({"type": 0, "name": "Example"}, "invalid")
+
     def test_parser_preserves_quoted_values_and_splits_button_lists(self):
         values = parse_rpc_key_values(
             'name="My Game" details="Ranked match" '
@@ -31,6 +66,27 @@ class RpcActivityTests(unittest.TestCase):
         )
         self.assertEqual((watching["type"], watching["name"], watching["details"]), (3, "Arcane", "Season 2"))
         self.assertEqual((competing["type"], competing["name"]), (5, "Ranked tournament"))
+        self.assertEqual(watching["application_id"], "1556537786209796146")
+        self.assertEqual(competing["application_id"], "1556537786209796146")
+        for activity in (watching, competing):
+            self.assertEqual(activity["assets"]["large_image"], RPC_GENERIC_ASSET_ID)
+            self.assertEqual(activity["assets"]["small_image"], RPC_GENERIC_ASSET_ID)
+
+    def test_generic_activity_fills_only_missing_image_with_aria_asset(self):
+        activity = build_rpc_activity(
+            "playing",
+            {"name": "Game", "large_image": "game-cover"},
+            now_ms=1000,
+        )
+        self.assertEqual(activity["assets"]["large_image"], "game-cover")
+        self.assertEqual(activity["assets"]["small_image"], RPC_GENERIC_ASSET_ID)
+
+        custom_app = build_rpc_activity(
+            "playing",
+            {"name": "Game", "app_id": "123456789", "large_image": "game-cover"},
+            now_ms=1000,
+        )
+        self.assertNotIn("small_image", custom_app.get("assets", {}))
 
     def test_custom_status_and_custom_activity(self):
         status = build_rpc_activity(

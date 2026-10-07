@@ -142,7 +142,7 @@ class Nitro(Cog, ASCIIMixin):
             await self.asuccess(ctx, "Nitro sniper disabled.")
         elif arg == "clear":
             await self.asuccess(ctx, f"Nitro cache cleared ({self.clear_codes()} codes).")
-        elif arg in ("", "stats", "status"):
+        elif arg in ("stats", "status"):
             s = self.get_stats()
             await send_temp(
                 ctx,

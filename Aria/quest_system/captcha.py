@@ -113,7 +113,7 @@ class CaptchaSolver:
             result = await self._solver.hcaptcha(
                 data.captcha_sitekey,
                 'https://discord.com/channels/@me',
-                options,
+                options=options,
                 rotate=self._rotate_callback,
             )
             return result.get('gRecaptchaResponse', '')

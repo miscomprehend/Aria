@@ -586,6 +586,39 @@ class WebPanelControlTests(unittest.TestCase):
         })
         self.assertEqual(response.status_code, 400)
 
+    def test_rpc_spoof_accepts_each_activity_type(self):
+        self.authenticated = True
+        with self.client.session_transaction() as active_session:
+            active_session["user_id"] = _PANEL_MASTER_ID
+        expected_types = {
+            "playing": 0,
+            "watching": 3,
+            "listening": 2,
+            "streaming": 1,
+            "competing": 5,
+        }
+        for spoof_type, expected_type in expected_types.items():
+            response = self.client.post("/api/rpc", json={
+                "action": "set",
+                "spoof_type": spoof_type,
+                "stream_url": "https://twitch.tv/aria",
+                "activity": {
+                    "type": 0,
+                    "name": "Example",
+                    "application_id": "123456789012345678",
+                    "assets": {"large_image": "custom-image"},
+                },
+            })
+            self.assertEqual(response.status_code, 200, spoof_type)
+            activity = response.json["activity"]
+            self.assertEqual(activity["type"], expected_type, spoof_type)
+            self.assertEqual(activity["application_id"], "123456789012345678")
+            self.assertEqual(activity["assets"]["large_image"], "custom-image")
+            self.assertEqual(
+                activity.get("url"),
+                "https://twitch.tv/aria" if spoof_type == "streaming" else None,
+            )
+
     def test_rpc_display_name_overrides_title_after_app_id_detection(self):
         self.authenticated = True
         with self.client.session_transaction() as active_session:
@@ -642,6 +675,26 @@ class WebPanelControlTests(unittest.TestCase):
             normalized["assets"]["large_image"],
             "mp:attachments/123/456/cover.png",
         )
+
+    def test_generic_rpc_fills_unset_large_and_small_images_with_aria_asset(self):
+        from rpc_activity import RPC_GENERIC_ASSET_ID
+
+        normalized = panel._normalize_rpc_activity({
+            "type": 0,
+            "name": "My Activity",
+            "application_id": RPC_GENERIC_ASSET_ID,
+            "assets": {"large_image": "custom-large"},
+        })
+        self.assertEqual(normalized["assets"]["large_image"], "custom-large")
+        self.assertEqual(normalized["assets"]["small_image"], RPC_GENERIC_ASSET_ID)
+
+        normalized = panel._normalize_rpc_activity({
+            "type": 0,
+            "name": "My Activity",
+            "application_id": RPC_GENERIC_ASSET_ID,
+        })
+        self.assertEqual(normalized["assets"]["large_image"], RPC_GENERIC_ASSET_ID)
+        self.assertEqual(normalized["assets"]["small_image"], RPC_GENERIC_ASSET_ID)
 
     def test_hosted_rpc_uses_child_and_instance_specific_profile_store(self):
         self.authenticated = True

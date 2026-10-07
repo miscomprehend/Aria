@@ -1,4 +1,5 @@
 import asyncio, os, sys, types, unittest
+from unittest.mock import AsyncMock, patch
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
@@ -44,6 +45,17 @@ def run(coro): return asyncio.run(coro)
 
 
 class NitroTests(unittest.TestCase):
+    def test_bare_command_shows_usage_instead_of_stats(self):
+        cog = nitro_cog.Nitro(FakeBot(FakeHttp()))
+        ctx = object()
+        with patch.object(nitro_cog, "send_temp", new_callable=AsyncMock) as send_temp:
+            run(cog.nitro(ctx))
+
+        send_temp.assert_awaited_once()
+        self.assertIs(send_temp.await_args.args[0], ctx)
+        self.assertIn("nitro", send_temp.await_args.args[1].lower())
+        self.assertNotIn("nitro_status", send_temp.await_args.args[1].lower())
+
     def test_extracts_links_and_contextual_codes(self):
         self.assertEqual(nitro_cog.extract_codes("https://discord.gift/AbCdEfGhIjKlMnOp"), ["AbCdEfGhIjKlMnOp"])
         self.assertEqual(nitro_cog.extract_codes("hello AbCdEfGhIjKlMnOp"), [])
@@ -77,6 +89,76 @@ class GiveawayTests(unittest.TestCase):
         run(self.cog.on_message_create(msg)); run(self.cog.on_message_create(msg))
         self.assertEqual([c[1] for c in self.http.calls], ["/interactions"])
         self.assertEqual(self.http.calls[0][2]["json"]["data"]["custom_id"], "gw_enter")
+        self.assertEqual(self.cog.stats["entered"], 1)
+
+    def test_v2_components_detect_giveaway_and_extract_all_entry_emojis(self):
+        msg = {
+            "id": "10", "channel_id": "5", "guild_id": "4",
+            "author": {"id": "7", "bot": True},
+            "components": [{
+                "type": 17,
+                "components": [{
+                    "type": 9,
+                    "components": [{
+                        "type": 10,
+                        "content": "Giveaway! React with 🫶🏽 or <:entry:123456789012345678> to enter.",
+                    }],
+                    "accessory": {
+                        "type": 2, "label": "Enter", "custom_id": "giveaway:enter",
+                    },
+                }],
+            }],
+        }
+        run(self.cog.on_message_create(msg))
+        self.assertEqual(self.http.calls[0][1], "/interactions")
+        self.assertEqual(self.cog.stats["entered"], 1)
+
+    def test_v2_reaction_instructions_accept_unicode_and_custom_emoji(self):
+        msg = {
+            "id": "13", "channel_id": "5", "guild_id": "4",
+            "author": {"id": "7", "bot": True},
+            "components": [{
+                "type": 17,
+                "components": [{
+                    "type": 10,
+                    "content": (
+                        "🎁 Giveaway! React with 🫶🏽 or "
+                        "<:entry:123456789012345678> to enter."
+                    ),
+                }],
+            }],
+        }
+        run(self.cog.on_message_create(msg))
+        self.assertEqual(
+            [call[1] for call in self.http.calls],
+            [
+                "/channels/5/messages/13/reactions/%F0%9F%AB%B6%F0%9F%8F%BD/@me",
+                "/channels/5/messages/13/reactions/entry:123456789012345678/@me",
+            ],
+        )
+        self.assertEqual(self.cog.stats["entered"], 1)
+
+    def test_message_update_can_add_giveaway_content_and_components(self):
+        created = {
+            "id": "11", "channel_id": "5", "guild_id": "4",
+            "author": {"id": "7", "bot": True}, "content": "Please wait...",
+        }
+        updated = {
+            "id": "11",
+            "components": [{
+                "type": 17,
+                "components": [{
+                    "type": 10,
+                    "content": "Giveaway! Click to enter.",
+                }, {
+                    "type": 2, "label": "Enter", "custom_id": "giveaway:enter",
+                }],
+            }],
+        }
+        run(self.cog.on_message_create(created))
+        self.assertEqual(self.http.calls, [])
+        run(self.cog.on_message_update(updated))
+        self.assertEqual(self.http.calls[0][1], "/interactions")
         self.assertEqual(self.cog.stats["entered"], 1)
 
     def test_reaction_fallback_and_non_bot_ignored(self):

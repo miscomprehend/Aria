@@ -1705,7 +1705,7 @@ async def start_realbot(token: str, app_id: str, guild_id: str = ""):
 
     @tree.command(name="nitro", description="Nitro gift sniper")
     @user_installable
-    async def _nitro(interaction, action: Literal["on", "off", "clear", "stats"] = "stats"):
+    async def _nitro(interaction, action: Literal["on", "off", "clear", "stats"]):
         if _nitro_cog is None:
             await _rpc_reply(interaction, "Log into your account in Aria first."); return
         if action in ("on", "off"):

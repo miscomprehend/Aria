@@ -7,8 +7,121 @@ import re
 
 GIVEAWAY_KEYWORDS = [
     "giveaway", "prize", "hosted by", "ends in", "react to win", "🎉",
-    "win", "winner", "congratulations", "reward", "raffle", "event", "drop", "claim your prize"
+    "win", "winner", "congratulations", "reward", "raffle", "event", "drop",
+    "claim your prize", "enter to win", "react to enter", "click to enter",
+    "join to win", "give away", "🎁", "🎊", "🎈", "🪅", "🥳",
 ]
+_CUSTOM_EMOJI = re.compile(r"<(a?):([^:>]+):([0-9]{15,25})>")
+_ENTRY_INSTRUCTIONS = ("react", "reaction", "emoji", "entry", "enter", "join", "click")
+_GIVEAWAY_EMOJIS = ("🎉", "🎁", "🎊", "🎈", "🪅", "🥳")
+
+
+def iter_component_nodes(node):
+    if isinstance(node, list):
+        for item in node:
+            yield from iter_component_nodes(item)
+    elif isinstance(node, dict):
+        yield node
+        for key in ("components", "components_v2", "items", "accessory", "children", "elements", "nodes"):
+            if node.get(key):
+                yield from iter_component_nodes(node[key])
+
+
+def component_text(message_data: dict) -> str:
+    roots = list(message_data.get("components") or []) + list(message_data.get("components_v2") or [])
+    parts = []
+    for node in iter_component_nodes(roots):
+        for key in ("content", "label", "description", "placeholder", "title", "text"):
+            value = node.get(key)
+            if isinstance(value, str):
+                parts.append(value)
+        emoji = node.get("emoji")
+        if isinstance(emoji, str):
+            parts.append(emoji)
+        elif isinstance(emoji, dict):
+            name, emoji_id = emoji.get("name"), emoji.get("id")
+            if emoji_id and name:
+                animated = "a" if emoji.get("animated") else ""
+                parts.append(f"<{animated}:{name}:{emoji_id}>")
+            elif name:
+                parts.append(str(name))
+    return " ".join(parts)
+
+
+def extract_entry_emojis(text: str) -> list[str]:
+    lowered = text.lower()
+    instruction_positions = [
+        lowered.find(term)
+        for term in _ENTRY_INSTRUCTIONS
+        if lowered.find(term) >= 0
+    ]
+    has_instruction = bool(instruction_positions)
+    relevant_text = text[min(instruction_positions):] if has_instruction else ""
+    custom_text = relevant_text or text
+    matches = [
+        (
+            match.start(),
+            match.end(),
+            f"{'a:' if match.group(1) else ''}{match.group(2)}:{match.group(3)}",
+        )
+        for match in _CUSTOM_EMOJI.finditer(custom_text)
+    ]
+
+    i = 0
+    while i < len(relevant_text):
+        char = relevant_text[i]
+        codepoint = ord(char)
+        start = i
+        if char in "#*0123456789":
+            end = i + 1
+            if end < len(relevant_text) and relevant_text[end] == "\ufe0f":
+                end += 1
+            if end < len(relevant_text) and relevant_text[end] == "\u20e3":
+                matches.append((start, end + 1, relevant_text[start:end + 1]))
+                i = end + 1
+                continue
+        is_emoji = (
+            0x1F000 <= codepoint <= 0x1FAFF
+            or 0x2600 <= codepoint <= 0x27BF
+            or 0x1F1E6 <= codepoint <= 0x1F1FF
+            or char in "©®™"
+        )
+        if not is_emoji:
+            i += 1
+            continue
+        end = i + 1
+        if 0x1F1E6 <= codepoint <= 0x1F1FF and end < len(relevant_text):
+            next_codepoint = ord(relevant_text[end])
+            if 0x1F1E6 <= next_codepoint <= 0x1F1FF:
+                end += 1
+        while end < len(relevant_text):
+            next_char = relevant_text[end]
+            next_codepoint = ord(next_char)
+            if (
+                next_char in {"\ufe0e", "\ufe0f", "\u20e3"}
+                or 0x1F3FB <= next_codepoint <= 0x1F3FF
+                or 0x0300 <= next_codepoint <= 0x036F
+            ):
+                end += 1
+            elif next_char == "\u200d" and end + 1 < len(relevant_text):
+                end += 2
+            else:
+                break
+        matches.append((start, end, relevant_text[start:end]))
+        i = end
+
+    if not has_instruction and not matches:
+        for emoji in _GIVEAWAY_EMOJIS:
+            position = text.find(emoji)
+            if position >= 0:
+                matches.append((position, position + len(emoji), emoji))
+
+    matches.sort(key=lambda item: item[0])
+    result = []
+    for _, _, emoji in matches:
+        if emoji not in result:
+            result.append(emoji)
+    return result
 
 
 class GiveawaySniper:
@@ -16,6 +129,7 @@ class GiveawaySniper:
         self.api = api_client
         self.enabled = False
         self._entered = set()          # message IDs already entered
+        self._entering = set()
         self._lock = threading.Lock()
         self.stats = {"entered": 0, "won": 0, "failed": 0}
         self.last_win = None           # {"sender", "sender_id", "source", "channel_id", "guild_id"}
@@ -24,7 +138,7 @@ class GiveawaySniper:
     # Public entry point — called from bot.py MESSAGE_CREATE
     # ------------------------------------------------------------------
 
-    def check_message(self, message_data: dict):
+    def check_message(self, message_data: dict, check_win: bool = True):
         if not self.enabled:
             return
 
@@ -37,9 +151,10 @@ class GiveawaySniper:
             return
 
         # Win detection — any message that mentions us
-        threading.Thread(
-            target=self._check_win, args=(message_data,), daemon=True
-        ).start()
+        if check_win:
+            threading.Thread(
+                target=self._check_win, args=(message_data,), daemon=True
+            ).start()
 
         # Giveaway entry — bot, webhook, or app messages
         is_webhook = bool(message_data.get("webhook_id"))
@@ -64,7 +179,7 @@ class GiveawaySniper:
                 embed_parts.append(str(field.get("value") or ""))
             embed_parts.append(str((embed.get("footer") or {}).get("text") or ""))
             embed_parts.append(str((embed.get("author") or {}).get("name") or ""))
-        return content + " " + " ".join(embed_parts).lower()
+        return content + " " + " ".join(embed_parts + [component_text(message_data)]).lower()
 
     def _is_giveaway(self, message_data: dict) -> bool:
         return any(kw in self._full_text(message_data) for kw in GIVEAWAY_KEYWORDS)
@@ -76,7 +191,6 @@ class GiveawaySniper:
         return False
 
     def _entry_emoji_from_text(self, message_data: dict):
-        # Prefer explicit "react with X" style instructions from content/embeds.
         parts = [str(message_data.get("content") or "")]
         for embed in message_data.get("embeds") or []:
             parts.append(str(embed.get("title") or ""))
@@ -86,63 +200,12 @@ class GiveawaySniper:
                 parts.append(str(field.get("value") or ""))
             parts.append(str((embed.get("footer") or {}).get("text") or ""))
 
-        text = "\n".join(parts)
-        text_lower = text.lower()
-
-        # 1) Custom Discord emoji token like <:name:id> or <a:name:id>
-        custom_near_react = re.search(
-            r"react(?:\s+with|\s+using|\s+to)?[^\n<]{0,60}(<a?:[A-Za-z0-9_~]{2,32}:[0-9]{15,25}>)",
-            text,
-            flags=re.IGNORECASE,
-        )
-        if custom_near_react:
-            token = custom_near_react.group(1)
-            m = re.match(r"<(a?):([^:>]+):([0-9]{15,25})>", token)
-            if m:
-                animated = bool(m.group(1))
-                name = m.group(2)
-                eid = m.group(3)
-                prefix = "a:" if animated else ""
-                return f"{prefix}{name}:{eid}"
-
-        # 2) Unicode emoji near react instructions (common giveaway styles)
-        for emo in ["🎉", "🎁", "🪅", "🥳", "✅", "☑️", "🎊", "🎈", "🤑", "💰", "💎", "⭐", "🔥"]:
-            if emo in text and ("react" in text_lower or "entry" in text_lower or "enter" in text_lower):
-                return urllib.parse.quote(emo)
-
-        # 3) Any custom emoji in text if giveaway keywords are present
-        custom_any = re.search(r"<(a?):([^:>]+):([0-9]{15,25})>", text)
-        if custom_any:
-            animated = bool(custom_any.group(1))
-            name = custom_any.group(2)
-            eid = custom_any.group(3)
-            prefix = "a:" if animated else ""
-            return f"{prefix}{name}:{eid}"
-
-        return ""
+        parts.append(component_text(message_data))
+        return extract_entry_emojis("\n".join(parts))
 
     # ------------------------------------------------------------------
     # Entry logic — button first, reactions fallback
     # ------------------------------------------------------------------
-
-    def _iter_component_nodes(self, node):
-        # Supports classic, v2, and future Discord component payloads.
-        # Recursively yields all dict nodes in any nested structure.
-        if isinstance(node, list):
-            for item in node:
-                yield from self._iter_component_nodes(item)
-            return
-
-        if not isinstance(node, dict):
-            return
-
-        yield node
-
-        # Future-proof: check all possible child keys
-        for key in ("components", "items", "accessory", "children", "elements", "nodes"):  # add more as Discord evolves
-            child = node.get(key)
-            if child:
-                yield from self._iter_component_nodes(child)
 
     def _button_candidates(self, message_data: dict):
         roots = []
@@ -150,7 +213,7 @@ class GiveawaySniper:
         roots.extend(message_data.get("components_v2") or [])
 
         buttons = []
-        for node in self._iter_component_nodes(roots):
+        for node in iter_component_nodes(roots):
             if int(node.get("type") or 0) != 2:
                 continue
             if not node.get("custom_id"):
@@ -191,12 +254,13 @@ class GiveawaySniper:
         if not emoji:
             return ""
         if isinstance(emoji, str):
+            if re.fullmatch(r"(?:a:)?[^:]+:\d{15,25}", emoji):
+                return emoji.removeprefix("a:")
             return urllib.parse.quote(emoji)
         eid = emoji.get("id")
         name = emoji.get("name") or ""
         if eid:
-            prefix = "a:" if emoji.get("animated") else ""
-            return f"{prefix}{name}:{eid}"
+            return f"{name}:{eid}"
         return urllib.parse.quote(name) if name else ""
 
     def _try_enter(self, message_data: dict):
@@ -206,50 +270,52 @@ class GiveawaySniper:
         msg_id = str(message_data.get("id", ""))
 
         with self._lock:
-            if msg_id in self._entered:
+            if not msg_id or msg_id in self._entered or msg_id in self._entering:
+                return
+            self._entering.add(msg_id)
+
+        try:
+            if self._already_reacted(message_data):
                 return
 
-        if self._already_reacted(message_data):
-            return
+            button = self._first_button(message_data)
+            reactions = self._reaction_identifiers(message_data)
+            for emoji in self._entry_emoji_from_text(message_data):
+                encoded = self._encode_emoji(emoji)
+                if encoded and encoded not in reactions:
+                    reactions.append(encoded)
 
-        button = self._first_button(message_data)
-        reactions = self._reaction_identifiers(message_data)
-        text_entry = self._entry_emoji_from_text(message_data)
-        if text_entry and text_entry not in reactions:
-            reactions.append(text_entry)
+            success = False
+            if button:
+                success = self._click_button(message_data, button)
+            if not success and reactions:
+                success = self._add_reactions(message_data, reactions)
+            if not success and not button and not reactions:
+                success = self._add_reactions(message_data, [urllib.parse.quote("🎉")])
 
-        with self._lock:
-            if msg_id in self._entered:
-                return
-            self._entered.add(msg_id)
-
-        success = False
-        if button:
-            success = self._click_button(message_data, button)
-        if not success and reactions:
-            success = self._add_reactions(message_data, reactions)
-        # Fallback: fresh giveaway has no reactions/buttons yet — try standard 🎉
-        if not success and not button and not reactions:
-            success = self._add_reactions(message_data, [urllib.parse.quote("🎉")])
-
-        if success:
-            self.stats["entered"] += 1
-            guild = message_data.get("guild_id", "DM")
-            channel = message_data.get("channel_id", "?")
-            ts = time.strftime("%H:%M:%S")
-            print(
-                f"\033[1;34m[GIVEAWAY]\033[0m [{ts}] Entered | guild={guild} "
-                f"| channel={channel} | msg={msg_id} | total={self.stats['entered']}"
-            )
-        else:
-            self.stats["failed"] += 1
-            guild = message_data.get("guild_id", "DM")
-            channel = message_data.get("channel_id", "?")
-            ts = time.strftime("%H:%M:%S")
-            print(
-                f"\033[1;31m[GIVEAWAY]\033[0m [{ts}] Failed entry | guild={guild} "
-                f"| channel={channel} | msg={msg_id} | total_failed={self.stats['failed']}"
-            )
+            if success:
+                with self._lock:
+                    self._entered.add(msg_id)
+                self.stats["entered"] += 1
+                guild = message_data.get("guild_id", "DM")
+                channel = message_data.get("channel_id", "?")
+                ts = time.strftime("%H:%M:%S")
+                print(
+                    f"\033[1;34m[GIVEAWAY]\033[0m [{ts}] Entered | guild={guild} "
+                    f"| channel={channel} | msg={msg_id} | total={self.stats['entered']}"
+                )
+            else:
+                self.stats["failed"] += 1
+                guild = message_data.get("guild_id", "DM")
+                channel = message_data.get("channel_id", "?")
+                ts = time.strftime("%H:%M:%S")
+                print(
+                    f"\033[1;31m[GIVEAWAY]\033[0m [{ts}] Failed entry | guild={guild} "
+                    f"| channel={channel} | msg={msg_id} | total_failed={self.stats['failed']}"
+                )
+        finally:
+            with self._lock:
+                self._entering.discard(msg_id)
 
     def _click_button(self, message_data: dict, button: dict) -> bool:
         guild_id = message_data.get("guild_id")
@@ -336,7 +402,7 @@ class GiveawaySniper:
         if not user_id:
             return
 
-        content = (message_data.get("content") or "").lower()
+        content = self._full_text(message_data)
         mentions = message_data.get("mentions") or []
 
         mentioned = (

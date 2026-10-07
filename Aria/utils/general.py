@@ -5,7 +5,6 @@ from typing import Dict
 
 import discord
 from discord.ext import commands
-from discord import PremiumType
 
 logger = logging.getLogger(__name__)
 
@@ -17,11 +16,9 @@ async def detect_message_limit(bot: commands.Bot) -> int:
     """Detect the max message length for the bot user. Returns 4000 for Nitro, 2000 otherwise."""
     try:
         if bot.user.id not in MAX_MESSAGE_LENGTH:
-            has_nitro = bot.user.premium_type in (
-                PremiumType.nitro,
-                PremiumType.nitro_classic,
-                PremiumType.nitro_basic,
-            )
+            premium_type = getattr(bot.user, "premium_type", None)
+            premium_value = getattr(premium_type, "value", premium_type)
+            has_nitro = premium_value in {1, 2, 3}
             limit = 4000 if has_nitro else 2000
             MAX_MESSAGE_LENGTH[bot.user.id] = limit
             logger.info(f"Message limit for {bot.user.name}: {limit} (Nitro: {has_nitro})")
