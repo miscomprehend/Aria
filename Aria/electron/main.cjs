@@ -250,8 +250,21 @@ function requestOwnerSession(port, token) {
 
 async function authenticateElectronOwner() {
   if (!desktopAuthToken || !dashboardUrl) return;
-  const port = Number(new URL(dashboardUrl).port);
-  const cookie = await requestOwnerSession(port, desktopAuthToken);
+  let cookie = null;
+  let authenticatedUrl = null;
+  for (const port of PORTS) {
+    try {
+      cookie = await requestOwnerSession(port, desktopAuthToken);
+      authenticatedUrl = `http://${HOST}:${port}`;
+      break;
+    } catch {
+      // Other local panels do not hold this process's one-time owner token.
+    }
+  }
+  if (!cookie || !authenticatedUrl) {
+    throw new Error("Could not sign in to the Electron-owned dashboard. Restart Aria and check its backend log.");
+  }
+  dashboardUrl = authenticatedUrl;
   await session.defaultSession.cookies.set({
     url: dashboardUrl,
     name: cookie.name,
@@ -770,29 +783,23 @@ app.whenReady().then(async () => {
     logMessage("INFO", "Starting Aria desktop.");
     installMenu();
     await createLoadingWindow();
-    logMessage("INFO", "Checking for an existing Aria web panel.");
-    updateStartupStatus("Looking for a local Aria dashboard...");
-    dashboardUrl = await findDashboard();
-    if (!dashboardUrl) {
-      logMessage("INFO", "No existing panel found; starting a private backend.");
-      updateStartupStatus("Starting your private Aria runtime...");
-      getBackendContext();
-      if (hasSavedToken()) {
-        try {
-          const ownerIdentity = await identifySavedTokenOwner();
-          desktopOwnerId = String(ownerIdentity.id || "");
-          logMessage("INFO", `Verified saved account ${ownerIdentity.username} (${ownerIdentity.id}) as the desktop owner.`);
-        } catch (error) {
-          logMessage("ERROR", `Could not refresh the saved token owner identity: ${error.message}`);
-        }
+    logMessage("INFO", "Starting a private Electron-owned dashboard backend.");
+    updateStartupStatus("Starting your private Aria runtime...");
+    getBackendContext();
+    if (hasSavedToken()) {
+      try {
+        const ownerIdentity = await identifySavedTokenOwner();
+        desktopOwnerId = String(ownerIdentity.id || "");
+        logMessage("INFO", `Verified saved account ${ownerIdentity.username} (${ownerIdentity.id}) as the desktop owner.`);
+      } catch (error) {
+        logMessage("ERROR", `Could not refresh the saved token owner identity: ${error.message}`);
+        throw new Error("Could not verify the saved account as the dashboard owner. Check your connection and try again.");
       }
-      startBackend();
-      dashboardUrl = await waitForDashboard();
-      updateStartupStatus("Signing into your owner dashboard...");
-      await authenticateElectronOwner();
-    } else {
-      logMessage("INFO", `Using existing panel at ${dashboardUrl}; its normal login remains enabled.`);
     }
+    startBackend();
+    dashboardUrl = await waitForDashboard();
+    updateStartupStatus("Signing into your owner dashboard...");
+    await authenticateElectronOwner();
     updateStartupStatus("Opening your dashboard...");
     createWindow();
     if (backendProcess && !hasSavedToken()) {

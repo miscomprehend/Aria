@@ -19,7 +19,12 @@ from rpc_profiles import RPCProfileStore
 from hosted_command_registry import write_command_registry
 from hosted_rpc_bridge import dispatch_hosted_rpc, start_hosted_rpc_worker
 from friends_tools import FriendsTools
-from webpanel import WebPanel, _PANEL_MASTER_ID, _PANEL_SECONDARY_OWNER_ID
+from webpanel import (
+    WebPanel,
+    _PANEL_MASTER_ID,
+    _PANEL_SECONDARY_OWNER_ID,
+    _QuietWSGIRequestHandler,
+)
 from formatter import VERSION
 
 
@@ -104,6 +109,35 @@ class WebPanelControlTests(unittest.TestCase):
 
     def tearDown(self):
         self.temp_dir.cleanup()
+
+    def test_local_json_discovery_404_is_not_logged(self):
+        handler = object.__new__(_QuietWSGIRequestHandler)
+        handler.path = "/json"
+        handler.client_address = ("127.0.0.1", 54321)
+
+        with patch("webpanel.WSGIRequestHandler.log_request") as parent_log_request:
+            handler.log_request(404, "-")
+
+        parent_log_request.assert_not_called()
+
+    def test_nonlocal_json_404_remains_logged(self):
+        handler = object.__new__(_QuietWSGIRequestHandler)
+        handler.path = "/json"
+        handler.client_address = ("192.0.2.1", 54321)
+
+        with patch("webpanel.WSGIRequestHandler.log_request") as parent_log_request:
+            handler.log_request(404, "-")
+
+        parent_log_request.assert_called_once_with(404, "-")
+
+    def test_local_json_discovery_returns_empty_list(self):
+        response = self.client.get("/json")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json(), [])
+
+    def test_remote_json_discovery_remains_not_found(self):
+        response = self.client.get("/json", environ_overrides={"REMOTE_ADDR": "192.0.2.1"})
+        self.assertEqual(response.status_code, 404)
 
     def _profile_api(self, responses=None):
         responses = responses or {}
@@ -320,6 +354,29 @@ class WebPanelControlTests(unittest.TestCase):
 
         with panel.app.test_request_context("/"):
             session["user_id"] = _PANEL_SECONDARY_OWNER_ID
+            self.assertTrue(panel._is_owner_session())
+
+    def test_configured_non_master_owner_gets_owner_dashboard_controls(self):
+        from flask import session
+
+        panel.owner_id = "configured-electron-owner"
+        panel._load_dashboard_users = lambda: {}
+        panel._load_access_requests = lambda: []
+        panel._bot_data = lambda: {}
+        self.authenticated = True
+        with self.client.session_transaction() as active_session:
+            active_session["user_id"] = panel.owner_id
+            active_session["role"] = "admin"
+
+        profile_response = self.client.get("/api/dash/me")
+        owner_summary_response = self.client.get("/api/owner/summary")
+
+        self.assertEqual(profile_response.status_code, 200)
+        self.assertTrue(profile_response.json["profile"]["is_admin"])
+        self.assertTrue(profile_response.json["profile"]["is_owner"])
+        self.assertEqual(owner_summary_response.status_code, 200)
+        with panel.app.test_request_context("/"):
+            session["user_id"] = panel.owner_id
             self.assertTrue(panel._is_owner_session())
 
     def test_docs_page_is_public_and_linked_from_public_pages(self):
@@ -1794,6 +1851,31 @@ class WebPanelControlTests(unittest.TestCase):
         self.assertEqual(removed.json["stack"], [{"type": 0, "name": "Initial"}])
         self.assertTrue(self.client.post("/api/rpc/stack", json={"action": "clear"}).json["ok"])
         self.assertEqual(self.client.post("/api/rpc/stack", json={"action": "apply"}).status_code, 400)
+
+    def test_rpc_stack_applies_five_simultaneous_activities(self):
+        self.authenticated = True
+        with self.client.session_transaction() as active_session:
+            active_session["user_id"] = _PANEL_MASTER_ID
+
+        for index in range(5):
+            response = self.client.post("/api/rpc/stack", json={
+                "action": "add",
+                "activity": {"type": 0, "name": f"Activity {index}"},
+            })
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(len(response.json["stack"]), index + 1)
+
+        applied = self.client.post("/api/rpc/stack", json={"action": "apply"})
+        self.assertEqual(applied.status_code, 200)
+        self.assertEqual([item["name"] for item in panel.bot.activities], [
+            f"Activity {index}" for index in range(5)
+        ])
+
+        overflow = self.client.post("/api/rpc/stack", json={
+            "action": "add",
+            "activity": {"type": 0, "name": "One too many"},
+        })
+        self.assertEqual(overflow.status_code, 400)
 
     def test_presets_rotation_and_logger_routes(self):
         self.authenticated = True

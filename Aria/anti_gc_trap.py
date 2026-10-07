@@ -42,42 +42,86 @@ class AntiGCTrap:
     def check_gc_creation(self, channel_data):
         if not self.enabled:
             return False
-        
-        logger.debug(f"[GC TRAP DEBUG] Checking channel data")
-        
-        channel_type = channel_data.get("type", 0)
-        channel_id = channel_data.get("channel_id", "")
-        
-        if channel_type != 3:
+
+        if not isinstance(channel_data, dict):
             return False
-        
+        channel_type = channel_data.get("type")
+        if channel_type is not None:
+            try:
+                if int(channel_type) != 3:
+                    return False
+            except (TypeError, ValueError):
+                return False
+
+        channel_id = str(channel_data.get("id") or channel_data.get("channel_id") or "").strip()
         if not channel_id:
             return False
-        
-        
-        threading.Thread(target=self._handle_gc_trap, args=(channel_data,), daemon=True).start()
+
+        event_data = dict(channel_data)
+        event_data["channel_id"] = channel_id
+        threading.Thread(
+            target=self._handle_gc_trap,
+            args=(event_data,),
+            daemon=True,
+            name=f"anti-gc-{channel_id}",
+        ).start()
         return True
+
+    def _load_group_channel(self, channel_id):
+        try:
+            response = self.api.request("GET", f"/channels/{channel_id}")
+            if not response or response.status_code != 200:
+                return None
+            channel_data = response.json()
+            return channel_data if isinstance(channel_data, dict) else None
+        except Exception as e:
+            logger.error(f"[GC TRAP Lookup Error] {e}", exc_info=True)
+            return None
     
     def _handle_gc_trap(self, channel_data):
         time.sleep(1)
         
         try:
-            channel_id = channel_data.get("channel_id")
-            recipients = channel_data.get("recipients", [])
-            owner_id = channel_data.get("owner_id", "")
+            channel_id = str(channel_data.get("channel_id") or channel_data.get("id") or "")
+            channel_type = channel_data.get("type")
+            try:
+                channel_type = int(channel_type) if channel_type is not None else None
+            except (TypeError, ValueError):
+                return
+
+            recipients = channel_data.get("recipients")
+            owner_id = str(channel_data.get("owner_id") or "")
+            if channel_type is None or recipients is None or not owner_id:
+                resolved = self._load_group_channel(channel_id)
+                if not resolved:
+                    logger.warning(f"[GC TRAP] Could not verify group channel {channel_id}; skipping.")
+                    return
+                channel_data = {**channel_data, **resolved}
+                channel_id = str(channel_data.get("channel_id") or channel_data.get("id") or channel_id)
+                try:
+                    channel_type = int(channel_data.get("type"))
+                except (TypeError, ValueError):
+                    return
+                recipients = channel_data.get("recipients") or []
+                owner_id = str(channel_data.get("owner_id") or "")
+
+            if channel_type != 3:
+                logger.debug(f"[GC TRAP] Channel {channel_id} is not a group DM; skipping.")
+                return
+            if not owner_id:
+                logger.warning(f"[GC TRAP] Group channel {channel_id} has no verifiable owner; skipping.")
+                return
+            if not isinstance(recipients, list):
+                recipients = []
             
             logger.info(f"[GC TRAP] Processing GC: {channel_id}")
             logger.info(f"[GC TRAP] Members: {len(recipients)}, Owner: {owner_id}")
-            
-            if not recipients or len(recipients) <= 1:
-                logger.info("[GC TRAP] Not enough recipients")
-                return
             
             if str(owner_id) in self.whitelist:
                 logger.info(f"[GC TRAP] Owner {owner_id} is whitelisted, skipping")
                 return
             
-            if owner_id == self.api.user_id:
+            if str(owner_id) == str(getattr(self.api, "user_id", "") or ""):
                 logger.info("[GC TRAP] Bot is owner, skipping")
                 return
             

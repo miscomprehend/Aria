@@ -121,6 +121,71 @@ class RequestBoundaryTests(unittest.TestCase):
             "active-account-token",
         )
 
+    def test_wrong_tls_version_rebuilds_session_and_retries_once(self):
+        response = SimpleNamespace(status_code=204, headers={})
+        failed_session = Mock()
+        failed_session.delete.side_effect = RuntimeError(
+            "curl: (35) TLS connect error: WRONG_VERSION_NUMBER"
+        )
+        recovered_session = Mock()
+        recovered_session.delete.return_value = response
+        rate_limiter = Mock()
+        rate_limiter.get_wait_time.return_value = None
+        header_spoofer = Mock()
+        header_spoofer.session = failed_session
+        header_spoofer.get_protected_headers.return_value = {
+            "Authorization": "active-account-token",
+        }
+        header_spoofer.rebuild_session.side_effect = lambda: setattr(
+            header_spoofer, "session", recovered_session
+        )
+
+        client = object.__new__(DiscordAPIClient)
+        client.token = "active-account-token"
+        client.header_spoofer = header_spoofer
+        client.rate_limiter = rate_limiter
+        client.auth_failed = False
+        client.verification_blocked = False
+        client.health_monitor = None
+        client._rate_limit_log_times = {}
+        client._is_cacheable_get = Mock(return_value=False)
+        client._record_latency = Mock()
+
+        result = client.request("DELETE", "/channels/1/messages/2")
+
+        self.assertIs(result, response)
+        failed_session.delete.assert_called_once()
+        recovered_session.delete.assert_called_once()
+        header_spoofer.rebuild_session.assert_called_once()
+
+    def test_wrong_tls_version_retries_only_once(self):
+        session = Mock()
+        session.delete.side_effect = RuntimeError(
+            "curl: (35) TLS connect error: WRONG_VERSION_NUMBER"
+        )
+        rate_limiter = Mock()
+        rate_limiter.get_wait_time.return_value = None
+        header_spoofer = Mock()
+        header_spoofer.session = session
+        header_spoofer.get_protected_headers.return_value = {
+            "Authorization": "active-account-token",
+        }
+        client = object.__new__(DiscordAPIClient)
+        client.token = "active-account-token"
+        client.header_spoofer = header_spoofer
+        client.rate_limiter = rate_limiter
+        client.auth_failed = False
+        client.verification_blocked = False
+        client.health_monitor = None
+        client._rate_limit_log_times = {}
+        client._is_cacheable_get = Mock(return_value=False)
+        client._record_latency = Mock()
+
+        self.assertIsNone(client.request("DELETE", "/channels/1/messages/2"))
+
+        self.assertEqual(session.delete.call_count, 2)
+        header_spoofer.rebuild_session.assert_called_once()
+
     def test_profile_updates_use_protected_json_patch_headers(self):
         response = SimpleNamespace(status_code=200, headers={})
         discord_session = Mock()

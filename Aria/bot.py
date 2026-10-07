@@ -613,6 +613,7 @@ class DiscordBot:
 
                 elif t == "CHANNEL_RECIPIENT_ADD":
                     self._dispatch_cog_event("CHANNEL_RECIPIENT_ADD", data["d"])
+                    self._handle_channel_create(data["d"])
                     self._handle_group_chat_recipient_event(
                         "on_channel_recipient_add", data["d"]
                     )
@@ -1780,12 +1781,9 @@ class DiscordBot:
     def _handle_channel_create(self, channel_data: dict):
         """Handle CHANNEL_CREATE — used for Anti-GC-trap detection."""
         try:
-            trap_data = {
-                "channel_id": channel_data.get("id"),
-                "type": channel_data.get("type"),
-                "name": channel_data.get("name", ""),
-            }
-            self.anti_gc_trap.check_gc_creation(trap_data)
+            anti_gc_trap = getattr(self, "anti_gc_trap", None)
+            if anti_gc_trap is not None:
+                anti_gc_trap.check_gc_creation(channel_data)
         except Exception:
             pass
 
@@ -1810,8 +1808,13 @@ class DiscordBot:
             pass
 
     def _apply_persistent_activity(self):
-        """Re-send the current activity over the gateway after (re)connect."""
-        if self.activity and self.activity_persist:
+        """Re-send the full activity stack over the gateway after (re)connect."""
+        if not self.activity_persist:
+            return
+        activities = getattr(self, "activities", None)
+        if isinstance(activities, (list, tuple)) and activities:
+            self.set_activities(activities)
+        elif self.activity:
             self.set_activity(self.activity)
 
     def _active_account_id(self) -> str:

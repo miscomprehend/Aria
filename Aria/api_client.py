@@ -692,7 +692,7 @@ class DiscordAPIClient:
                 max_retries: int = 3, retry_count: int = 0,
                 json: Optional[Any] = None, files: Optional[Any] = None,
                 timeout: float = 30, _base_url: str = "https://discord.com/api/v9",
-                _global_retry: int = 0) -> Optional[Any]:
+                _global_retry: int = 0, _transport_retry: int = 0) -> Optional[Any]:
         if json is not None and data is None:
             data = json
         """
@@ -797,6 +797,7 @@ class DiscordAPIClient:
                                     timeout=timeout,
                                     _base_url=_base_url,
                                     _global_retry=_global_retry + 1,
+                                    _transport_retry=_transport_retry,
                                 )
 
                         self._block_verification(endpoint)
@@ -856,6 +857,29 @@ class DiscordAPIClient:
 
         except Exception as e:
             msg = str(e)
+            tls_version_error = "wrong_version_number" in msg.casefold() or "wrong version number" in msg.casefold()
+            if tls_version_error and _transport_retry < 1:
+                try:
+                    self.header_spoofer.rebuild_session()
+                except Exception as rebuild_error:
+                    print(f"[REQUEST-ERROR] {method} {endpoint}: TLS session recovery failed: {rebuild_error}")
+                    return None
+                print(f"[NETWORK] TLS handshake failed for {endpoint}; rebuilt session and retrying once.")
+                return self.request(
+                    method,
+                    endpoint,
+                    data=data,
+                    params=params,
+                    headers=headers,
+                    max_retries=max_retries,
+                    retry_count=retry_count,
+                    json=json,
+                    files=files,
+                    timeout=timeout,
+                    _base_url=_base_url,
+                    _global_retry=_global_retry,
+                    _transport_retry=_transport_retry + 1,
+                )
             if "curl: (23)" in msg or "Failure writing output" in msg or "SSLError" in msg:
                 return None
             print(f"[REQUEST-ERROR] {method} {endpoint}: {e}")

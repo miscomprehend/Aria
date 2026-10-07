@@ -264,6 +264,41 @@ class GatewayLifecycleTests(unittest.TestCase):
         self.assertEqual([item["name"] for item in bot.activities], ["Game", "Show"])
         self.assertEqual(bot.ws.payload["d"]["activities"], bot.activities)
 
+    def test_persistent_activity_restore_keeps_all_five_activities(self):
+        bot = object.__new__(DiscordBot)
+        class Socket:
+            def __init__(self):
+                self.payload = None
+            def send(self, payload):
+                self.payload = json.loads(payload)
+
+        bot.ws = Socket()
+        bot.identified = True
+        bot.connection_active = True
+        bot._current_status = "online"
+        bot._last_activity_signature = None
+        bot.activity_persist = True
+        bot.activities = [{"type": index % 6, "name": f"Activity {index}"} for index in range(5)]
+        bot.activity = bot.activities[0]
+
+        bot._apply_persistent_activity()
+
+        self.assertEqual(bot.ws.payload["d"]["activities"], bot.activities)
+
+    def test_channel_create_keeps_full_payload_for_anti_gc(self):
+        bot = object.__new__(DiscordBot)
+        bot.anti_gc_trap = Mock()
+        event = {
+            "id": "123",
+            "type": 3,
+            "owner_id": "456",
+            "recipients": [{"id": "789"}],
+        }
+
+        bot._handle_channel_create(event)
+
+        bot.anti_gc_trap.check_gc_creation.assert_called_once_with(event)
+
     def test_async_bridge_routes_dispatch_through_one_bot_callback(self):
         bot = make_bot()
         bot.config = {"gateway_compress": False}

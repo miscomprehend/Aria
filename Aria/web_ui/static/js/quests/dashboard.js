@@ -13,14 +13,20 @@ class QuestDashboard {
       claimable: []
     };
     this.autoComplete = false;
+    this.questLoadPromise = null;
+    this.questRefreshTimer = null;
+    this.questDataLoaded = false;
+    this.lastQuestDataSuccess = 0;
     this.init();
   }
 
   init() {
     this.setupEventListeners();
-    this.loadQuestData();
-    this.updateStats();
-    this.hideLoader();
+    this.loadQuestData().finally(() => this.hideLoader());
+    this.questRefreshTimer = window.setInterval(() => {
+      const refreshDue = !this.questDataLoaded || Date.now() - this.lastQuestDataSuccess >= 5 * 60 * 1000;
+      if (!document.hidden && refreshDue) this.loadQuestData();
+    }, 30 * 1000);
   }
 
   setupEventListeners() {
@@ -46,7 +52,9 @@ class QuestDashboard {
     let body = null;
     try { body = await response.json(); } catch (e) { /* non-JSON error page */ }
     if (!response.ok || (body && body.ok === false)) {
-      throw new Error((body && body.error) || `HTTP ${response.status}`);
+      const error = new Error((body && body.error) || `HTTP ${response.status}`);
+      error.status = response.status;
+      throw error;
     }
     return body || {};
   }
@@ -56,25 +64,64 @@ class QuestDashboard {
   }
 
   async loadQuestData(force = false) {
+    if (this.questLoadPromise) return this.questLoadPromise;
+    this.questLoadPromise = this.fetchQuestData(force);
     try {
-      const data = await this.api('/api/quests/@me' + (force ? '?refresh=1' : ''));
-      const quests = Array.isArray(data.quests) ? data.quests : [];
-      const now = Date.now();
-      const live = quests.filter(q => !q.config?.expires_at || new Date(q.config.expires_at).getTime() > now || q.user_status?.completed_at);
-      this.quests.active = live.filter(q => q.user_status?.enrolled_at && !q.user_status?.completed_at);
-      this.quests.available = live.filter(q => !q.user_status?.enrolled_at);
-      this.quests.completed = live.filter(q => q.user_status?.completed_at);
-      this.quests.claimable = live.filter(q => q.user_status?.completed_at && !q.user_status?.claimed_at);
-      this.autoComplete = !!data.auto_complete;
-      this.syncAutoButton();
-      this.renderQuests();
-      this.updateStats();
-      return true;
-    } catch (error) {
-      console.error('Failed to load quests:', error);
-      this.showToast('Quests: ' + error.message, 'error');
-      return false;
+      return await this.questLoadPromise;
+    } finally {
+      this.questLoadPromise = null;
     }
+  }
+
+  async fetchQuestData(force = false) {
+    const maxAttempts = 5;
+    let lastError = null;
+    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+      try {
+        const data = await this.api('/api/quests/@me' + (force ? '?refresh=1' : ''));
+        if (!Array.isArray(data.quests)) {
+          throw new Error('Quest API returned an invalid quest list.');
+        }
+        const quests = data.quests;
+        const now = Date.now();
+        const live = quests.filter(q => !this.isQuestExpired(q, now) || q.user_status?.completed_at);
+        this.quests.active = live.filter(q => q.user_status?.enrolled_at && !q.user_status?.completed_at);
+        this.quests.available = live.filter(q => !q.user_status?.enrolled_at && !q.user_status?.completed_at);
+        this.quests.completed = live.filter(q => q.user_status?.completed_at);
+        this.quests.claimable = live.filter(q => q.user_status?.completed_at && !q.user_status?.claimed_at);
+        this.autoComplete = !!data.auto_complete;
+        this.questDataLoaded = true;
+        this.lastQuestDataSuccess = Date.now();
+        this.syncAutoButton();
+        this.renderQuests();
+        this.updateStats();
+        return true;
+      } catch (error) {
+        lastError = error;
+        const retryable = !error.status || error.status >= 500;
+        if (!retryable || attempt === maxAttempts) break;
+        await new Promise(resolve => window.setTimeout(resolve, attempt * 1000));
+      }
+    }
+
+    console.error('Failed to load quests:', lastError);
+    if (!this.questDataLoaded) this.setQuestStatsUnavailable();
+    this.showToast('Quests: ' + (lastError?.message || 'Unable to load quests.'), 'error');
+    return false;
+  }
+
+  isQuestExpired(quest, now) {
+    const expiresAt = quest?.config?.expires_at;
+    if (expiresAt === null || expiresAt === undefined || expiresAt === '') return false;
+
+    let timestamp;
+    if (typeof expiresAt === 'number' || /^\d+(?:\.\d+)?$/.test(String(expiresAt).trim())) {
+      timestamp = Number(expiresAt);
+      if (timestamp > 0 && timestamp < 1e12) timestamp *= 1000;
+    } else {
+      timestamp = Date.parse(expiresAt);
+    }
+    return Number.isFinite(timestamp) && timestamp <= now;
   }
 
   syncAutoButton() {
@@ -262,6 +309,13 @@ class QuestDashboard {
     this.setText('[data-badge="available"]' , this.quests.available.length);
     this.setText('[data-badge="completed"]' , this.quests.completed.length);
     this.setText('[data-badge="claimable"]' , this.quests.claimable.length);
+  }
+
+  setQuestStatsUnavailable() {
+    ['active', 'available', 'completed', 'claimable'].forEach(stat => {
+      this.setText(`[data-stat="${stat}"]`, '—');
+      this.setText(`[data-badge="${stat}"]`, '—');
+    });
   }
 
   async enrollQuest(questId, quiet = false) {

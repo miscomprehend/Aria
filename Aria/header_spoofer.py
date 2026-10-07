@@ -390,6 +390,19 @@ class HeaderSpoofer:
         except Exception:
             pass
 
+    def rebuild_session(self):
+        """Replace the transport while preserving the active browser profile."""
+        old_session = getattr(self, "session", None)
+        if old_session is not None:
+            close = getattr(old_session, "close", None)
+            if callable(close):
+                try:
+                    close()
+                except Exception as error:
+                    print(f"[NETWORK] Failed to close prior HTTP session: {error}")
+        self.session = self._create_session()
+        self._update_session_headers()
+
     def _generate_fingerprint(self) -> str:
         """Generate realistic Discord-style fingerprint"""
         # Discord fingerprints follow pattern: <timestamp_ms>.<random_64bit>
@@ -655,18 +668,9 @@ class HeaderSpoofer:
         # Full transport teardown: this prevents session bleed when a keep-alive
         # connection is reused across a user-agent / fingerprint change.
         try:
-            if getattr(self, "session", None) is not None:
-                close = getattr(self.session, "close", None)
-                if callable(close):
-                    close()
-        except Exception:
-            pass
-
-        try:
-            self.session = self._create_session()
+            self.rebuild_session()
         except Exception:
             self.session = None
-        self._update_session_headers()
 
     def rotate_user_agent(self) -> Dict[str, str]:
         """Return a fully synchronized UA + header profile and rebuild the live transport.
