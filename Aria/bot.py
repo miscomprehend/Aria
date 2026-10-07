@@ -133,6 +133,9 @@ class DiscordBot:
         self._reconnect_stop = threading.Event()
         self._reconnect_thread = None
         self._last_connection_attempt = 0.0
+        self._reconnect_initial_delay = 0.25
+        self._reconnect_backoff_base = 0.5
+        self._reconnect_backoff_max = 15.0
         self._consecutive_failures = 0
         self._max_consecutive_failures = 15  # Increased from 10
         self._heartbeat_missed_count = 0
@@ -580,21 +583,27 @@ class DiscordBot:
 
                 elif t == "MESSAGE_UPDATE":
                     self._dispatch_cog_event("MESSAGE_UPDATE", data["d"])
+                    updated_message = data["d"]
                     try:
-                        mid = data["d"].get("id")
-                        cid = data["d"].get("channel_id")
-                        new_content = data["d"].get("content")
+                        mid = updated_message.get("id")
+                        cid = updated_message.get("channel_id")
                         before = self._msg_cache.get(mid) if mid else None
-                        self.message_logger.on_message_update(data["d"], before, owner_id=self.user_id)
-                        if mid and cid and new_content and mid in self._msg_cache:
-                            before = self._msg_cache[mid]
-                            if before.get("content") != new_content:
+                        merged = dict(before or {})
+                        merged.update(updated_message)
+                        self.message_logger.on_message_update(updated_message, before, owner_id=self.user_id)
+                        if mid:
+                            if cid and before and merged.get("content") and before.get("content") != merged.get("content"):
                                 self._esnipe_cache[cid] = {
                                     "before": before,
-                                    "after": data["d"],
+                                    "after": merged,
                                     "edited_at": time.time(),
                                 }
-                            self._msg_cache[mid] = data["d"]
+                            self._msg_cache[mid] = merged
+                        updated_message = merged
+                    except Exception:
+                        pass
+                    try:
+                        self.giveaway_sniper.check_message(updated_message, check_win=False)
                     except Exception:
                         pass
 
@@ -768,8 +777,13 @@ class DiscordBot:
             error_type = "REMOTE_HOST_LOST"
             self._connection_quality_score = max(0, self._connection_quality_score - 7)
             self._network_stability_score = max(0, self._network_stability_score - 10)
-        elif "Timeout" in error_str or "timed out" in error_str.lower():
-            error_type = "TIMEOUT"
+        elif (
+            "winerror 10060" in error_str.lower()
+            or "timed out" in error_str.lower()
+            or "timeout" in error_str.lower()
+            or "failed because the connected party did not properly respond" in error_str.lower()
+        ):
+            error_type = "CONNECTION_TIMEOUT"
             self._connection_quality_score = max(0, self._connection_quality_score - 10)
             self._network_stability_score = max(0, self._network_stability_score - 12)
         elif "SSL" in error_str or "certificate" in error_str.lower():
@@ -1239,12 +1253,13 @@ class DiscordBot:
                     return
 
                 if self._consecutive_failures:
-                    base_delay = float(getattr(self, "_reconnect_backoff_base", 2.0))
-                    delay = min(base_delay * (2 ** min(self._consecutive_failures - 1, 6)), 120.0)
+                    base_delay = float(getattr(self, "_reconnect_backoff_base", 0.5))
+                    max_delay = float(getattr(self, "_reconnect_backoff_max", 15.0))
+                    delay = min(base_delay * (2 ** min(self._consecutive_failures - 1, 6)), max_delay)
                     if self._reconnect_stop.wait(delay):
                         return
                 elif self._last_connection_attempt:
-                    delay = float(getattr(self, "_reconnect_initial_delay", 1.0))
+                    delay = float(getattr(self, "_reconnect_initial_delay", 0.25))
                     if self._reconnect_stop.wait(delay):
                         return
 
@@ -1947,11 +1962,26 @@ class DiscordBot:
 
         def _push():
             try:
-                response = api.request("PATCH", "/users/@me/settings", json=body)
-                code = getattr(response, "status_code", 200)
-                if response is None or code not in (200, 204):
+                response = api.request(
+                    "PATCH",
+                    "/users/@me/settings",
+                    json=body,
+                    timeout=10,
+                )
+                if response is None:
                     self._synced_custom_status = previous
-                    _console_print(f"\033[1;31m[RPC]\033[0m Custom status sync failed (HTTP {code}).")
+                    _console_print(
+                        "\033[1;31m[RPC]\033[0m Custom status sync failed "
+                        "(request returned no response; it may have timed out)."
+                    )
+                    return
+
+                code = getattr(response, "status_code", None)
+                if code not in (200, 204):
+                    self._synced_custom_status = previous
+                    _console_print(
+                        f"\033[1;31m[RPC]\033[0m Custom status sync failed (HTTP {code})."
+                    )
             except Exception as exc:
                 self._synced_custom_status = previous
                 _console_print(f"\033[1;31m[RPC]\033[0m Custom status sync failed: {exc}")

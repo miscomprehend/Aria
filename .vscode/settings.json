@@ -1,4 +1,7 @@
 {
+    "python.analysis.extraPaths": [
+        "Aria/aria_backend"
+    ],
     "python-envs.defaultEnvManager": "ms-python.python:venv",
     "githubPullRequests.ignoredPullRequestBranches": [
         "main"

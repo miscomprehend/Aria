@@ -16,6 +16,12 @@ from modifyself.http.route import Route
 import ansi
 import persistence
 from ascii_helper import ASCIIMixin, send_temp
+from giveaway import (
+    GIVEAWAY_KEYWORDS,
+    component_text,
+    extract_entry_emojis,
+    iter_component_nodes,
+)
 
 CATEGORY = "Giveaway"
 CATEGORY_DESC = "Giveaway sniper"
@@ -24,13 +30,12 @@ COMMANDS_INFO = {
     "giveaway": ("giveaway <on/off/stats>", "Toggle the giveaway sniper or show stats"),
 }
 
-GIVEAWAY_KEYWORDS = (
-    "giveaway", "prize", "hosted by", "ends in", "react to win", "🎉",
-    "winner", "raffle", "claim your prize",
-)
 _ENTRY_TERMS = ("enter", "join", "participate", "entries", "entry", "claim", "giveaway")
-_UNICODE_ENTRY = ("🎉", "🎁", "🪅", "🥳", "✅", "🎊", "🎈")
-_CUSTOM_EMOJI = re.compile(r"<(a?):([^:>]+):([0-9]{15,25})>")
+_MESSAGE_FIELDS = (
+    "id", "channel_id", "guild_id", "author", "webhook_id", "application_id",
+    "content", "embeds", "components", "components_v2", "reactions", "mentions",
+    "flags", "interaction_metadata",
+)
 
 
 def _g(o, k, d=None):
@@ -48,6 +53,12 @@ def message_text(message) -> str:
             parts.append(str(_g(field, "name", "") or ""))
             parts.append(str(_g(field, "value", "") or ""))
         parts.append(str(_g(_g(embed, "footer", {}) or {}, "text", "") or ""))
+        parts.append(str(_g(_g(embed, "author", {}) or {}, "name", "") or ""))
+    component_data = {
+        "components": _g(message, "components", []) or [],
+        "components_v2": _g(message, "components_v2", []) or [],
+    }
+    parts.append(component_text(component_data))
     return " ".join(parts)
 
 
@@ -57,14 +68,7 @@ def is_giveaway(message) -> bool:
 
 
 def iter_nodes(node):
-    if isinstance(node, list):
-        for item in node:
-            yield from iter_nodes(item)
-    elif isinstance(node, dict):
-        yield node
-        for key in ("components", "items", "accessory", "children"):
-            if node.get(key):
-                yield from iter_nodes(node[key])
+    yield from iter_component_nodes(node)
 
 
 def pick_button(message):
@@ -82,8 +86,10 @@ def encode_emoji(emoji) -> str:
     if not emoji:
         return ""
     if isinstance(emoji, str):
+        if re.fullmatch(r"(?:a:)?[^:]+:\d{15,25}", emoji):
+            return emoji.removeprefix("a:")
         return urllib.parse.quote(emoji)
-    name, eid = emoji.get("name") or "", emoji.get("id")
+    name, eid = _g(emoji, "name", "") or "", _g(emoji, "id")
     if eid:
         return f"{name}:{eid}"
     return urllib.parse.quote(name) if name else ""
@@ -97,16 +103,7 @@ def entry_emojis(message) -> list:
         enc = encode_emoji(_g(reaction, "emoji"))
         if enc:
             found.append(enc)
-    text = message_text(message)
-    lowered = text.lower()
-    custom = _CUSTOM_EMOJI.search(text)
-    if custom:
-        found.append(f"{custom.group(2)}:{custom.group(3)}")
-    elif any(w in lowered for w in ("react", "entry", "enter")):
-        for emoji in _UNICODE_ENTRY:
-            if emoji in text:
-                found.append(urllib.parse.quote(emoji))
-                break
+    found.extend(encode_emoji(emoji) for emoji in extract_entry_emojis(message_text(message)))
     return list(dict.fromkeys(found))
 
 
@@ -117,6 +114,9 @@ class Giveaway(Cog, ASCIIMixin):
         cfg = persistence.get("giveaway_cfg", {}) or {}
         self.enabled = bool(cfg.get("enabled")) if isinstance(cfg, dict) else False
         self.entered = set()
+        self.entering = set()
+        self._messages = {}
+        self._won_messages = set()
         self.stats = {"entered": 0, "won": 0, "failed": 0}
         self.last_win = None
 
@@ -127,10 +127,42 @@ class Giveaway(Cog, ASCIIMixin):
         user = getattr(self.bot, "user", None)
         return str(_g(user, "id", "") or "") if user else ""
 
+    @staticmethod
+    def _message_dict(message) -> dict:
+        if isinstance(message, dict):
+            return dict(message)
+        return {key: getattr(message, key) for key in _MESSAGE_FIELDS if hasattr(message, key)}
+
+    def _merge_message(self, message) -> dict:
+        incoming = self._message_dict(message)
+        mid = str(incoming.get("id") or "")
+        if not mid:
+            return incoming
+        merged = dict(self._messages.get(mid, {}))
+        merged.update(incoming)
+        self._messages[mid] = merged
+        if len(self._messages) > 500:
+            self._messages.pop(next(iter(self._messages)))
+        return merged
+
     @listener()
     async def on_message_create(self, message):
         if not self.enabled:
             return
+        message = self._merge_message(message)
+        author = _g(message, "author") or {}
+        my_id = await self._my_id()
+        if my_id and str(_g(author, "id", "") or "") == my_id:
+            return
+        self._check_win(message, my_id)
+        if _g(author, "bot") or _g(message, "webhook_id") or _g(message, "application_id"):
+            await self._try_enter(message)
+
+    @listener()
+    async def on_message_update(self, message):
+        if not self.enabled:
+            return
+        message = self._merge_message(message)
         author = _g(message, "author") or {}
         my_id = await self._my_id()
         if my_id and str(_g(author, "id", "") or "") == my_id:
@@ -142,11 +174,16 @@ class Giveaway(Cog, ASCIIMixin):
     def _check_win(self, message, my_id: str):
         if not my_id:
             return
-        content = str(_g(message, "content", "") or "").lower()
+        mid = str(_g(message, "id", "") or "")
+        if mid and mid in self._won_messages:
+            return
+        content = message_text(message).lower()
         mentioned = f"<@{my_id}>" in content or f"<@!{my_id}>" in content or any(
             str(_g(m, "id", "")) == my_id for m in _g(message, "mentions", []) or []
         )
-        if mentioned and any(w in content for w in ("congratulations", "won", "winner", "🎉")):
+        if mentioned and any(w in content for w in ("congratulations", "congrats", "won", "winner", "🎉", "🎁")):
+            if mid:
+                self._won_messages.add(mid)
             self.stats["won"] += 1
             author = _g(message, "author") or {}
             self.last_win = _g(author, "username", "Unknown")
@@ -156,23 +193,27 @@ class Giveaway(Cog, ASCIIMixin):
         if not is_giveaway(message):
             return
         mid = str(_g(message, "id", "") or "")
-        if not mid or mid in self.entered:
+        if not mid or mid in self.entered or mid in self.entering:
             return
         if any(_g(r, "me") for r in _g(message, "reactions", []) or []):
             return
-        self.entered.add(mid)
-
-        button = pick_button(message)
-        emojis = entry_emojis(message)
-        ok = False
-        if button:
-            ok = await self._click(message, button)
-        if not ok and emojis:
-            ok = await self._react(message, emojis)
-        if not ok and not button and not emojis:
-            ok = await self._react(message, [urllib.parse.quote("🎉")])
-        self.stats["entered" if ok else "failed"] += 1
-        print(f"[GIVEAWAY] {'Entered' if ok else 'Failed'} msg={mid}")
+        self.entering.add(mid)
+        try:
+            button = pick_button(message)
+            emojis = entry_emojis(message)
+            ok = False
+            if button:
+                ok = await self._click(message, button)
+            if not ok and emojis:
+                ok = await self._react(message, emojis)
+            if not ok and not button and not emojis:
+                ok = await self._react(message, [urllib.parse.quote("🎉")])
+            self.stats["entered" if ok else "failed"] += 1
+            if ok:
+                self.entered.add(mid)
+            print(f"[GIVEAWAY] {'Entered' if ok else 'Failed'} msg={mid}")
+        finally:
+            self.entering.discard(mid)
 
     async def _click(self, message, button) -> bool:
         author = _g(message, "author") or {}

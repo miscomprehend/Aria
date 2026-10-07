@@ -17,6 +17,7 @@ from modifyself.http.route import Route
 
 from ascii_helper import ASCIIMixin, asend
 import persistence
+from rpc_activity import RPC_APP_IDS, RPC_GENERIC_ASSET_ID
 
 _KEEPALIVE_INTERVAL = 25 * 60
 _DEFAULT_ROTATE_INTERVAL = 20
@@ -639,6 +640,14 @@ class RPC(Cog, ASCIIMixin):
         return key
 
     async def _build_activity(self, cmd: dict) -> Optional[dict]:
+        activity = await self._build_activity_payload(cmd)
+        if activity and str(activity.get("application_id") or "") == RPC_APP_IDS["generic"]:
+            assets = activity.setdefault("assets", {})
+            assets.setdefault("large_image", RPC_GENERIC_ASSET_ID)
+            assets.setdefault("small_image", RPC_GENERIC_ASSET_ID)
+        return activity
+
+    async def _build_activity_payload(self, cmd: dict) -> Optional[dict]:
         rpc_type = cmd.get("rpc_type", "").lower()
         # Freeze the "now" this activity's timestamps are anchored to the
         # first time it's built, and reuse it on every later rebuild of the
@@ -813,7 +822,7 @@ class RPC(Cog, ASCIIMixin):
             small_key = await small_img()
             act = {
                 "type": 0, "name": cmd.get("name", "Game")[:128],
-                "application_id": cmd.get("app_id") or "367827983903490050",
+                "application_id": cmd.get("app_id") or RPC_APP_IDS["generic"],
                 "timestamps": ts_now(),
             }
             if cmd.get("details"): act["details"] = cmd["details"][:128]
@@ -831,7 +840,7 @@ class RPC(Cog, ASCIIMixin):
             small_key = await small_img()
             act = {
                 "type": 3, "name": cmd.get("name", "Show")[:128],
-                "application_id": cmd.get("app_id") or "367827983903490050",
+                "application_id": cmd.get("app_id") or RPC_APP_IDS["generic"],
             }
             if cmd.get("details"): act["details"] = cmd["details"][:128]
             if cmd.get("state"):   act["state"]   = cmd["state"][:128]
@@ -881,7 +890,7 @@ class RPC(Cog, ASCIIMixin):
             small_key = await small_img()
             act = {
                 "type": 5, "name": cmd.get("name", "Tournament")[:128],
-                "application_id": cmd.get("app_id") or "367827983903490050",
+                "application_id": cmd.get("app_id") or RPC_APP_IDS["generic"],
                 "timestamps": ts_now(),
             }
             if cmd.get("details"): act["details"] = cmd["details"][:128]
@@ -901,7 +910,7 @@ class RPC(Cog, ASCIIMixin):
             si_key = await self._get_asset_key(si_url) if si_url else None
             act = {
                 "type": act_type, "name": name,
-                "application_id": cmd.get("app_id") or "367827983903490050",
+                "application_id": cmd.get("app_id") or RPC_APP_IDS["generic"],
             }
             if cmd.get("details"): act["details"] = cmd["details"][:128]
             if cmd.get("state"):   act["state"]   = cmd["state"][:128]

@@ -44,10 +44,11 @@ RPC_APP_IDS = {
     "playstation": "1470539864909943067",
     "crunchyroll": "981509069309354054",
     "vrchat": "1498387526501535835",
-    "generic": "367827983903490050",
+    "generic": "1556537786209796146",
     "listening": "534203414247112723",
     "streaming": "111299001912",
 }
+RPC_GENERIC_ASSET_ID = "1556537786209796146"
 
 RPC_TYPES = (
     "custom_status", "playing", "watching", "listening", "streaming",
@@ -164,7 +165,7 @@ def _stream_url(value):
 
 
 def apply_rpc_spoofing(activity, enabled=False, stream_url=None):
-    """Present eligible activities as streaming using the configured stream URL."""
+    """Override an activity's visible type, optionally using a stream URL."""
     if not isinstance(activity, dict):
         return activity
     try:
@@ -173,11 +174,36 @@ def apply_rpc_spoofing(activity, enabled=False, stream_url=None):
         raise ValueError("activity type must be numeric") from exc
     if activity_type == 4:
         return activity
-    if activity_type == 1:
+
+    spoof_types = {
+        "playing": 0,
+        "watching": 3,
+        "listening": 2,
+        "streaming": 1,
+        "competing": 5,
+    }
+    if isinstance(enabled, bool):
+        spoof_type = "streaming" if enabled else "none"
+    else:
+        spoof_type = str(enabled or "none").strip().lower()
+        if spoof_type in {"true", "1", "yes"}:
+            spoof_type = "streaming"
+        elif spoof_type in {"false", "0", "no", ""}:
+            spoof_type = "none"
+
+    if spoof_type != "none" and spoof_type not in spoof_types:
+        raise ValueError(f"Unsupported spoof activity type: {spoof_type}")
+
+    if spoof_type == "none":
+        if activity_type == 1:
+            activity["url"] = _stream_url(stream_url or activity.get("url"))
+        return activity
+
+    activity["type"] = spoof_types[spoof_type]
+    if spoof_type == "streaming":
         activity["url"] = _stream_url(stream_url or activity.get("url"))
-    elif str(enabled).lower() in {"true", "1", "yes"}:
-        activity["type"] = 1
-        activity["url"] = _stream_url(stream_url)
+    else:
+        activity.pop("url", None)
     return activity
 
 
@@ -322,6 +348,8 @@ def build_rpc_activity(rpc_type, values, resolve_asset=None, now_ms=None, provid
         label_field = sources.pop()
         raw = next((values.get(source) for source in sources if values.get(source)), "")
         raw = str(raw or "").strip()
+        if not raw and app_id == RPC_APP_IDS["generic"]:
+            raw = RPC_GENERIC_ASSET_ID
         if not raw and target == "large_image":
             raw = str((provider or {}).get("asset") or "").strip()
         if raw and resolve_asset and raw.startswith(("http://", "https://", "mp:", "attachments/")):

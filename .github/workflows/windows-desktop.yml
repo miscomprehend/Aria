@@ -16,7 +16,28 @@ permissions:
   contents: read
 
 jobs:
+  test:
+    name: Python tests
+    runs-on: windows-latest
+    timeout-minutes: 45
+    env:
+      PYTHONUTF8: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install Python dependencies
+        working-directory: Aria
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+      - name: Run Python tests
+        working-directory: Aria
+        run: python -m unittest discover -v
+
   build:
+    name: Windows desktop installer
     runs-on: windows-latest
     timeout-minutes: 45
     env:
@@ -56,9 +77,6 @@ jobs:
                   if image.format != 'ICO':
                       raise SystemExit(f'{path} must be an ICO')
           "
-      - name: Run Python tests
-        working-directory: Aria
-        run: python -m unittest discover -v
       - name: Build Windows installer
         working-directory: Aria
         run: npm run dist

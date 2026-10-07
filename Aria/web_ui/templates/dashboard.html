@@ -1262,11 +1262,15 @@
                         </div>
 
                         <div class="setting-row setting-row-compact rpc-spoof-row" id="rpcSpoofRow" data-rpc-activity-only>
-                            <div><div class="setting-label">Spoof activity type</div><div class="setting-sub">Choose None or Streaming</div></div>
+                            <div><div class="setting-label">Spoof activity type</div><div class="setting-sub">Override how this activity type is displayed</div></div>
                             <div class="setting-controls">
                                 <select id="rpcSpoofType" class="setting-input small" onchange="updateRpcPreview()">
                                     <option value="none">None</option>
-                                    <option value="streaming">Streaming</option>
+                                    <option value="playing">Playing</option>
+                                    <option value="watching">Watching</option>
+                                    <option value="listening">Listening to</option>
+                                    <option value="streaming">Stream (live)</option>
+                                    <option value="competing">Competing in</option>
                                 </select>
                             </div>
                         </div>

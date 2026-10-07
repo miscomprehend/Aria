@@ -2244,17 +2244,25 @@ async function loadWidgets() {
 
 // ── RPC ───────────────────────────────────────────────────────────────────────
 const RPC_TYPE_LABELS = ['Playing', 'Streaming', 'Listening to', 'Watching', '', 'Competing in'];
-const DEFAULT_RPC_APPLICATION_ID = '367827983903490050';
+const RPC_SPOOF_ACTIVITY_TYPES = {
+    none: null,
+    playing: 0,
+    watching: 3,
+    listening: 2,
+    streaming: 1,
+    competing: 5,
+};
+const DEFAULT_RPC_APPLICATION_ID = '1556537786209796146';
 const RPC_DRAFT_STORAGE_KEY = 'aria_rpc_draft_v1';
 let _rpcDraftRestored = false;
 let _rpcActiveActivities = [];
 
 const RPC_TYPE_CONFIG = {
-    0: { activityType: 0, label: 'Playing a game', applicationId: '367827983903490050' },
+    0: { activityType: 0, label: 'Playing a game', applicationId: DEFAULT_RPC_APPLICATION_ID },
     1: { activityType: 1, label: 'Streaming', applicationId: '111299001912' },
     2: { activityType: 2, label: 'Listening to', applicationId: '534203414247112723' },
-    3: { activityType: 3, label: 'Watching', applicationId: '367827983903490050' },
-    5: { activityType: 5, label: 'Competing in', applicationId: '367827983903490050' },
+    3: { activityType: 3, label: 'Watching', applicationId: DEFAULT_RPC_APPLICATION_ID },
+    5: { activityType: 5, label: 'Competing in', applicationId: DEFAULT_RPC_APPLICATION_ID },
     spotify: { activityType: 2, label: 'Listening to', applicationId: '3201606009684', name: 'Spotify' },
     youtube: { activityType: 3, label: 'Watching', applicationId: '111299001912', name: 'YouTube' },
     crunchyroll: { activityType: 3, label: 'Watching', applicationId: '981509069309354054', name: 'Crunchyroll' },
@@ -2262,12 +2270,12 @@ const RPC_TYPE_CONFIG = {
     playstation: { activityType: 0, label: 'Playing a game', applicationId: '1470539864909943067', name: 'Game', platform: 'ps5' },
     ps4: { activityType: 0, label: 'Playing a game', applicationId: '1470539864909943067', name: 'Game', platform: 'ps4' },
     vrchat: { activityType: 0, label: 'Playing VRChat', applicationId: '1498387526501535835', name: 'VRChat', platform: 'meta_quest' },
-    quest: { activityType: 0, label: 'Playing a game', applicationId: '367827983903490050', name: 'Game', platform: 'meta_quest' },
-    android: { activityType: 0, label: 'Playing a game', applicationId: '367827983903490050', name: 'Game', platform: 'android' },
-    ios: { activityType: 0, label: 'Playing a game', applicationId: '367827983903490050', name: 'Game', platform: 'ios' },
-    samsung: { activityType: 0, label: 'Playing a game', applicationId: '367827983903490050', name: 'Game', platform: 'samsung' },
-    desktop: { activityType: 0, label: 'Playing a game', applicationId: '367827983903490050', name: 'Game', platform: 'desktop' },
-    custom_status: { activityType: 4, label: 'Custom Status', applicationId: '367827983903490050', name: 'Custom Status', customStatus: true },
+    quest: { activityType: 0, label: 'Playing a game', applicationId: DEFAULT_RPC_APPLICATION_ID, name: 'Game', platform: 'meta_quest' },
+    android: { activityType: 0, label: 'Playing a game', applicationId: DEFAULT_RPC_APPLICATION_ID, name: 'Game', platform: 'android' },
+    ios: { activityType: 0, label: 'Playing a game', applicationId: DEFAULT_RPC_APPLICATION_ID, name: 'Game', platform: 'ios' },
+    samsung: { activityType: 0, label: 'Playing a game', applicationId: DEFAULT_RPC_APPLICATION_ID, name: 'Game', platform: 'samsung' },
+    desktop: { activityType: 0, label: 'Playing a game', applicationId: DEFAULT_RPC_APPLICATION_ID, name: 'Game', platform: 'desktop' },
+    custom_status: { activityType: 4, label: 'Custom Status', applicationId: DEFAULT_RPC_APPLICATION_ID, name: 'Custom Status', customStatus: true },
 };
 
 const RPC_APP_ID_BY_NAME = [
@@ -2432,10 +2440,11 @@ function syncRpcStreamingControls() {
     const row = document.getElementById('rpcStreamUrlRow');
     const typeConfig = getRpcTypeConfig(typeVal);
     const spoofType = document.getElementById('rpcSpoofType')?.value || 'none';
-    const spoofRequested = spoofType === 'streaming' && !typeConfig.customStatus && typeVal !== '1';
+    const spoof = spoofType !== 'none' && !typeConfig.customStatus;
+    const effectiveType = spoof ? RPC_SPOOF_ACTIVITY_TYPES[spoofType] : typeConfig.activityType;
     const spoofSelect = document.getElementById('rpcSpoofType');
-    if (spoofSelect) spoofSelect.disabled = typeConfig.customStatus || typeVal === '1';
-    if (row) row.style.display = typeVal === '1' || spoofRequested ? '' : 'none';
+    if (spoofSelect) spoofSelect.disabled = typeConfig.customStatus;
+    if (row) row.style.display = effectiveType === 1 ? '' : 'none';
 }
 
 function getRpcTimestamps(now = Date.now()) {
@@ -2731,9 +2740,9 @@ function updateRpcPreview() {
     const typeKey = String(document.getElementById('rpcType')?.value || '0');
     const typeConfig = getRpcTypeConfig(typeKey);
     const typeVal = typeConfig.activityType;
-    const spoof = (document.getElementById('rpcSpoofType')?.value || 'none') === 'streaming'
-        && !typeConfig.customStatus && typeVal !== 1;
-    const previewType = spoof ? 1 : typeVal;
+    const spoofType = document.getElementById('rpcSpoofType')?.value || 'none';
+    const spoof = spoofType !== 'none' && !typeConfig.customStatus;
+    const previewType = spoof ? RPC_SPOOF_ACTIVITY_TYPES[spoofType] : typeVal;
     const name      = (document.getElementById('rpcNameInput')?.value    || '').trim();
     const details   = (document.getElementById('rpcDetailsInput')?.value || '').trim();
     const state     = (document.getElementById('rpcStateInput')?.value   || '').trim();
@@ -2746,13 +2755,15 @@ function updateRpcPreview() {
 
     // Activity header text
     const headerEl = document.querySelector('.discord-activity-header');
-    if (headerEl) headerEl.textContent = spoof ? 'Streaming' : typeConfig.label || RPC_ACTIVITY_HEADERS[typeVal] || 'Playing a game';
+    if (headerEl) headerEl.textContent = spoof
+        ? RPC_ACTIVITY_HEADERS[previewType] || typeConfig.label
+        : typeConfig.label || RPC_ACTIVITY_HEADERS[typeVal] || 'Playing a game';
 
     // Text fields in card
     // Use spoofed display name if provided, else real name
     setText('rpcPreviewName', typeConfig.customStatus ? 'Custom Status' : name || typeConfig.name || '—');
     setText('rpcPreviewDetails', details || '');
-    setText('rpcPreviewState',   typeVal === 1 ? (streamUrl || state || '') : (state || ''));
+    setText('rpcPreviewState',   previewType === 1 ? (streamUrl || state || '') : (state || ''));
     const customStatusText = (document.getElementById('rpcCustomStatusTextInput')?.value || '').trim();
     const customStatusEmoji = (document.getElementById('rpcCustomStatusEmojiInput')?.value || '').trim();
     setText('rpcDiscordCustomStatus', [customStatusEmoji, customStatusText].filter(Boolean).join(' '));
@@ -2946,13 +2957,14 @@ async function applyRpc() {
     const button2Label = (document.getElementById('rpcButton2Label')?.value || '').trim();
     const button2Url = (document.getElementById('rpcButton2Url')?.value || '').trim();
     const appId = getEffectiveRpcAppId();
-    const spoof = (document.getElementById('rpcSpoofType')?.value || 'none') === 'streaming'
-        && !typeConfig.customStatus && type !== 1;
+    const spoofType = document.getElementById('rpcSpoofType')?.value || 'none';
+    const spoof = spoofType !== 'none' && !typeConfig.customStatus;
+    const effectiveType = spoof ? RPC_SPOOF_ACTIVITY_TYPES[spoofType] : type;
     const timestamps = getRpcTimestamps();
     if (!name) { showRpcMsg('Name is required.', false); return; }
     if (!timestamps) { showRpcMsg('Elapsed must be zero or more minutes and total must be greater than zero.', false); return; }
 
-    if (type === 1 || spoof) {
+    if (effectiveType === 1) {
         const streamHostOk = /^https?:\/\/(www\.)?(twitch\.(tv|com)|youtube\.com|youtu\.be)\//i.test(streamUrl);
         if (!streamHostOk) {
             showRpcMsg('Streaming type requires a valid Twitch or YouTube URL.', false);
@@ -2963,7 +2975,7 @@ async function applyRpc() {
     const activity = { type, name, application_id: appId, timestamps };
     if (details) activity.details = details;
     if (state) activity.state = state;
-    if (type === 1 && streamUrl) activity.url = streamUrl;
+    if (effectiveType === 1 && streamUrl) activity.url = streamUrl;
     
     // Build assets object properly for Discord API
     const assets = {};
@@ -2995,7 +3007,12 @@ async function applyRpc() {
     
     const retainedStatus = _rpcActiveActivities.filter(item => Number(item.type) === 4);
     const activities = [activity, ...retainedStatus].slice(0, 5);
-    const res = await postJSON('/api/rpc', { action: 'set', activity: activities, spoof, stream_url: streamUrl });
+    const res = await postJSON('/api/rpc', {
+        action: 'set',
+        activity: activities,
+        spoof_type: spoof ? spoofType : 'none',
+        stream_url: streamUrl,
+    });
     if (res && res.ok) {
         showRpcMsg('RPC set.', true);
         trackDashboardAction('rpc_set', `Set RPC ${name}`);
@@ -3305,16 +3322,17 @@ function buildRpcEditorActivity() {
     if (!name) return null;
     const timestamps = typeConfig.customStatus ? null : getRpcTimestamps();
     if (!typeConfig.customStatus && !timestamps) return null;
-    const spoof = draft.spoofType === 'streaming' && !typeConfig.customStatus && typeConfig.activityType !== 1;
+    const spoof = draft.spoofType !== 'none' && !typeConfig.customStatus;
+    const effectiveType = spoof ? RPC_SPOOF_ACTIVITY_TYPES[draft.spoofType] : typeConfig.activityType;
     const activity = typeConfig.customStatus
         ? { type: 4, name: 'Custom Status', state: name }
-        : { type: spoof ? 1 : typeConfig.activityType, name, application_id: getEffectiveRpcAppId(), timestamps };
+        : { type: effectiveType, name, application_id: getEffectiveRpcAppId(), timestamps };
     if (typeConfig.customStatus && draft.statusEmoji) activity.emoji = { name: draft.statusEmoji, id: null, animated: false };
     if (draft.display_name) activity.display_name = draft.display_name;
     if (typeConfig.platform) activity.platform = typeConfig.platform;
     if (!typeConfig.customStatus && draft.details) activity.details = draft.details;
     if (!typeConfig.customStatus && draft.state) activity.state = draft.state;
-    if ((typeConfig.activityType === 1 || spoof) && draft.streamUrl) activity.url = draft.streamUrl;
+    if (effectiveType === 1 && draft.streamUrl) activity.url = draft.streamUrl;
     const assets = {};
     if (draft.largeImage) assets.large_image = draft.largeImage;
     if (draft.largeImageText) assets.large_text = draft.largeImageText;

@@ -27,6 +27,7 @@ from urllib.parse import quote as _url_quote
 from rpc_profiles import RPCProfileStore, snapshot_current_activity
 from rpc_activity import (
     RPC_APP_IDS,
+    RPC_GENERIC_ASSET_ID,
     RPC_ACTIVITY_TYPES,
     RPC_TYPE_ALIASES,
     RPC_TYPE_GROUPS,
@@ -48,12 +49,7 @@ import importlib
 import formatter as fmt
 from profile_avatar import download_avatar_data_uri
 from profile_details import format_public_profile_details
-
-try:
-    from utils.general import is_valid_emoji
-except ImportError:
-    def is_valid_emoji(token):
-        return False
+from utils.general import is_valid_emoji
 
 web_panel = None
 
@@ -709,8 +705,9 @@ def send_playing_activity(bot, name, button_label=None, button_url=None, image_u
             pass
     
     activity["assets"] = {
-        "large_image": asset_key if asset_key else "game",
+        "large_image": asset_key or RPC_GENERIC_ASSET_ID,
         "large_text": name,
+        "small_image": RPC_GENERIC_ASSET_ID,
     }
 
     # Add buttons in Discord API format
@@ -2090,27 +2087,9 @@ def main():
         import formatter as fmt
         msg = None
         if not args:
-            stats = ctx["bot"].nitro_sniper.get_stats()
-            status = "ON" if stats["enabled"] else "OFF"
-            cmds = [
-                (f"{bot.prefix}nitro on", "Enable sniper"),
-                (f"{bot.prefix}nitro off", "Disable sniper"),
-                (f"{bot.prefix}nitro clear", "Clear cached codes"),
-                (f"{bot.prefix}nitro stats", "Show full stats"),
-            ]
-            body = "\n".join(
-                [
-                    f"{fmt.CYAN}{'Status':<15}{fmt.DARK}:: {fmt.RESET}{fmt.WHITE}{status}{fmt.RESET}",
-                    f"{fmt.CYAN}{'Claimed':<15}{fmt.DARK}:: {fmt.RESET}{fmt.WHITE}{stats['claimed']}{fmt.RESET}",
-                    f"{fmt.CYAN}{'Cached':<15}{fmt.DARK}:: {fmt.RESET}{fmt.WHITE}{stats['cached']}{fmt.RESET}",
-                    f"{fmt.CYAN}{'Last Claimed':<15}{fmt.DARK}:: {fmt.RESET}{fmt.WHITE}{stats.get('last_claimed') or 'never'}{fmt.RESET}",
-                    "",
-                    fmt.command_list(cmds),
-                ]
-            )
             msg = ctx["api"].send_message(
                 ctx["channel_id"],
-                fmt.sections("Nitro", body),
+                f"> Usage: `{bot.prefix}nitro on|off|clear|stats`",
             )
             return
         
@@ -8292,7 +8271,7 @@ Example Usage:
 
             "rpc activity": help_page(
                 f"{p}rpc <playing|listening|watching|competing|streaming> <key=value ...>",
-                "Set a generic activity. Quote values containing spaces; supported keys include name, details, state, app_id, elapsed_minutes, total_minutes, image_url, large_text, small_image, small_text, spoof, and stream_url. spoof=true presents supported activities as streaming; custom_status is unchanged.",
+                "Set a generic activity. Quote values containing spaces; supported keys include name, details, state, app_id, elapsed_minutes, total_minutes, image_url, large_text, small_image, small_text, spoof, and stream_url. spoof accepts playing, watching, listening, streaming, or competing (true remains an alias for streaming); custom_status is unchanged.",
                 "",
                 {"type": "section", "text": "Examples"},
                 f'{p}rpc watching name="Arcane" details="Season 2" state="Episode 1"',
@@ -8901,7 +8880,6 @@ Example Usage:
                     ("giveaway [on|off]", "Manage giveaway sniper"),
                     ("nitro clear", "Clear used codes"),
                     ("nitro stats", "Show stats"),
-                    ("nitro", "Show current status"),
                 ],
             },
 

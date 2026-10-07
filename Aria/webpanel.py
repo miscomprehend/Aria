@@ -34,10 +34,11 @@ from api_client import DiscordAPIClient
 from panel_security import load_panel_secret_key
 from rpc_profiles import RPCProfileStore, snapshot_current_activity
 import profile_editor
-from rpc_activity import RPC_APP_IDS, apply_rpc_spoofing
+from rpc_activity import RPC_APP_IDS, RPC_GENERIC_ASSET_ID, apply_rpc_spoofing
 from formatter import VERSION
 
 _DEFAULT_RPC_APPLICATION_ID = RPC_APP_IDS["generic"]
+_LEGACY_DEFAULT_RPC_APPLICATION_IDS = {"367827983903490050"}
 _RPC_APP_ID_HINTS: list[tuple[set[str], str]] = [
     ({"spotify"}, RPC_APP_IDS["spotify"]),
     ({"crunchyroll", "crunchy roll"}, RPC_APP_IDS["crunchyroll"]),
@@ -1229,12 +1230,24 @@ class WebPanel:
             app_id = ""
         else:
             explicit_app_id = str(activity.get("application_id") or "").strip()
-            app_id = explicit_app_id if explicit_app_id and explicit_app_id != _DEFAULT_RPC_APPLICATION_ID else self._infer_rpc_application_id(activity)
+            app_id = (
+                explicit_app_id
+                if explicit_app_id
+                and explicit_app_id != _DEFAULT_RPC_APPLICATION_ID
+                and explicit_app_id not in _LEGACY_DEFAULT_RPC_APPLICATION_IDS
+                else self._infer_rpc_application_id(activity)
+            )
             activity["application_id"] = app_id
         if display_name:
             activity["name"] = display_name
 
         assets = activity.get("assets")
+        if app_id == RPC_APP_IDS["generic"]:
+            if not isinstance(assets, dict):
+                assets = {}
+                activity["assets"] = assets
+            assets.setdefault("large_image", RPC_GENERIC_ASSET_ID)
+            assets.setdefault("small_image", RPC_GENERIC_ASSET_ID)
         if isinstance(assets, dict):
             for key in ("large_image", "small_image"):
                 value = assets.get(key)
@@ -3324,7 +3337,8 @@ class WebPanel:
                     activity = dict(incoming)
                     is_custom_status = int(activity.get("type", 0)) == 4
                     if not is_custom_status:
-                        apply_rpc_spoofing(activity, bool(data.get("spoof")), data.get("stream_url"))
+                        spoof_type = data.get("spoof_type", data.get("spoof", False))
+                        apply_rpc_spoofing(activity, spoof_type, data.get("stream_url"))
                     normalized_activities.append(self._normalize_rpc_activity(activity))
                 payload = normalized_activities[0] if single_activity else normalized_activities
                 response_activity = next(

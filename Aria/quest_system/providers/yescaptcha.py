@@ -179,10 +179,19 @@ class YesCaptchaSolver(RetryMixin):
         Returns:
             Solution with gRecaptchaResponse
         """
-        # BYPASS: Return a fixed token to bypass captcha solving
-        return {
-            'gRecaptchaResponse': 'bypass_token',
-        }
+        task: Dict[str, Any] = dict(options or {})
+        if proxy:
+            task.update({
+                'type': 'HCaptchaTask',
+                'proxy': proxy,
+            })
+        else:
+            task['type'] = 'HCaptchaTaskProxyless'
+        task.update({
+            'websiteURL': website_url,
+            'websiteKey': sitekey,
+        })
+        return await self.solve_task(task, rotate=rotate)
 
     async def image_captcha(
         self,
@@ -199,7 +208,19 @@ class YesCaptchaSolver(RetryMixin):
         Returns:
             Solution dict containing the recognized ``text``.
         """
-        # BYPASS: Return a fixed text to bypass image captcha solving
-        return {
-            'text': 'bypass'
-        }
+        body = str(image_base64 or '').strip()
+        if body.startswith('data:'):
+            _, _, body = body.partition(',')
+        if not body:
+            raise ValueError("Image captcha requires base64 image data")
+
+        solution = await self._solve_with_retries(
+            lambda: {
+                'type': 'ImageToTextTaskM1',
+                'body': body,
+            },
+            rotate=rotate,
+        )
+        if not isinstance(solution, dict):
+            raise ValueError('Image captcha provider returned an invalid solution payload')
+        return solution

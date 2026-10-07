@@ -181,7 +181,7 @@ class YesCaptchaTaskTests(unittest.IsolatedAsyncioTestCase):
         await solver.hcaptcha(
             "site-key",
             "https://example.com",
-            {
+            options={
                 "userAgent": "Mozilla/5.0 current-browser",
             },
         )

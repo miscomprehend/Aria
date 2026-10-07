@@ -12,6 +12,7 @@ from unittest.mock import AsyncMock, Mock, patch
 sys.path.insert(0, os.path.dirname(__file__))
 
 from bot import DiscordBot
+import bot as bot_module
 from async_gateway import AsyncDiscordGateway
 from core.client.platform import CLIENT_PROFILES, build_identify_payload
 from voice import SimpleVoice, VoiceClient
@@ -54,6 +55,54 @@ def make_bot():
 
 
 class GatewayLifecycleTests(unittest.TestCase):
+    def test_custom_status_timeout_logs_missing_response_without_fake_http_200(self):
+        bot = make_bot()
+        bot.api = Mock()
+        bot.api.request.return_value = None
+        bot._synced_custom_status = None
+        logs = []
+        thread_factory = Mock()
+        thread_factory.return_value.start.side_effect = lambda: thread_factory.call_args.kwargs["target"]()
+
+        with (
+            patch.object(bot_module.threading, "Thread", thread_factory),
+            patch.object(bot_module, "_console_print", logs.append),
+        ):
+            bot._sync_custom_status([
+                {"type": 4, "state": "Working", "emoji": {"name": "sparkles"}}
+            ])
+
+        bot.api.request.assert_called_once_with(
+            "PATCH",
+            "/users/@me/settings",
+            json={
+                "custom_status": {
+                    "text": "Working",
+                    "emoji_name": "sparkles",
+                    "emoji_id": None,
+                    "expires_at": None,
+                }
+            },
+            timeout=10,
+        )
+        self.assertIsNone(bot._synced_custom_status)
+        self.assertIn("no response", logs[0])
+        self.assertNotIn("HTTP 200", logs[0])
+
+    def test_windows_gateway_timeout_is_classified_and_reconnects(self):
+        bot = make_bot()
+        error = OSError(
+            "[WinError 10060] A connection attempt failed because the connected "
+            "party did not properly respond"
+        )
+
+        with patch.object(bot, "_schedule_reconnect") as schedule_reconnect:
+            bot.on_error(None, error)
+
+        self.assertEqual(bot._connection_quality_score, 90)
+        self.assertEqual(bot._network_stability_score, 88)
+        schedule_reconnect.assert_called_once_with("gateway error: CONNECTION_TIMEOUT")
+
     def test_message_create_does_not_wait_for_blocking_handler(self):
         bot = make_bot()
         bot._message_executor = ThreadPoolExecutor(
