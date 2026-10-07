@@ -23,18 +23,45 @@ except ImportError:
 
 _FALLBACK_BUILD = 324310  # Fallback build constant if live scrapers fail
 
-def get_latest_build() -> int:
+# Last successfully fetched build (+ timestamp). The live scrape downloads
+# discord.com + up to 8 JS bundles (~2-10s of blocking I/O) — far too slow
+# to run on every captcha retry. Cache the result for 1h; only the first
+# HeaderSpoofer ever pays for the scrape.
+_BUILD_CACHE: Dict[str, Any] = {"build": 0, "at": 0.0}
+_BUILD_CACHE_TTL = 3600.0
+
+
+def get_latest_build(force_refresh: bool = False) -> int:
     """Fetch the current Discord client build number from public JS assets.
 
     Returns the fallback build number if the fetch fails for any reason.
+    Successful results are cached process-wide for 1 hour so repeated
+    captcha rotations never re-scrape Discord's JS bundles on the hot path.
     """
+    if not force_refresh:
+        try:
+            cached_build = int(_BUILD_CACHE.get("build") or 0)
+            cached_at = float(_BUILD_CACHE.get("at") or 0.0)
+            if cached_build and (time.time() - cached_at) < _BUILD_CACHE_TTL:
+                return cached_build
+        except Exception:
+            pass
+
+    def _remember(build: int) -> int:
+        try:
+            _BUILD_CACHE["build"] = int(build)
+            _BUILD_CACHE["at"] = time.time()
+        except Exception:
+            pass
+        return int(build)
+
     try:
         import requests as _req  # use plain requests to avoid circular session issues
     except ImportError:
         return _FALLBACK_BUILD
 
     try:
-        resp = _req.get("https://discord.com", timeout=10,
+        resp = _req.get("https://discord.com", timeout=5,
                         headers={"User-Agent": "Mozilla/5.0"})
         if resp.status_code != 200:
             return _FALLBACK_BUILD
@@ -44,17 +71,19 @@ def get_latest_build() -> int:
         if not assets:
             return _FALLBACK_BUILD
 
-        # Walk the last few bundles — build number lives in one of them
-        for asset in reversed(assets[-8:]):
+        # Walk the last few bundles — build number lives in one of them.
+        # Cap at 3 bundles (newest first): each extra bundle is another
+        # full JS download (~1s+) on the hot path.
+        for asset in reversed(assets[-3:]):
             try:
                 js = _req.get(f"https://discord.com/assets/{asset}.js",
-                              timeout=10,
+                              timeout=5,
                               headers={"User-Agent": "Mozilla/5.0"}).text
                 m = re.search(r'buildNumber["\s]*:["\s]*(\d{5,6})', js)
                 if m:
                     build = int(m.group(1))
                     print(f"[BUILD] Detected Discord build: {build}")
-                    return build
+                    return _remember(build)
             except Exception:
                 continue
 
@@ -407,13 +436,24 @@ class HeaderSpoofer:
         random_part = random.randint(1000000000000000000, 9999999999999999999)
         return f"{timestamp_ms}.{random_part}"
 
-    def _fetch_fingerprint(self) -> tuple:
-        """Fetch/generate a fresh fingerprint for this request.
+    # Server-issued fingerprints are stable per session; the /experiments
+    # round-trip (~300-800ms) is pure latency on every request otherwise.
+    _FINGERPRINT_TTL = 600.0
 
-        Always generates a new fingerprint so every request batch rotates its
-        X-Fingerprint and X-Track values. The server-provided fingerprint is
-        still used when available, but never cached across calls.
+    def _fetch_fingerprint(self) -> tuple:
+        """Fetch/generate a fingerprint, cached for 10 minutes.
+
+        The server-provided fingerprint is stable per session, so reusing it
+        for 10 minutes is both faster (no /experiments round-trip per
+        request) and more browser-like than minting a fresh one every call.
+        ``rotate_profile`` still resets it for a genuinely fresh identity.
         """
+        now = time.time()
+        try:
+            if self.fingerprint and (now - float(self.cache_time or 0.0)) < self._FINGERPRINT_TTL:
+                return self.fingerprint, self.cookies
+        except Exception:
+            pass
         try:
             headers = {
                 "User-Agent": self.profile.user_agent,
@@ -438,9 +478,11 @@ class HeaderSpoofer:
             else:
                 self.fingerprint = self._generate_fingerprint()
                 self.cookies = f"locale={self.profile.locale}"
+            self.cache_time = time.time()
         except:
             self.fingerprint = self._generate_fingerprint()
             self.cookies = f"locale={self.profile.locale}"
+            self.cache_time = time.time()
 
         return self.fingerprint, self.cookies
 

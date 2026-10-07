@@ -64,10 +64,12 @@ class APIChallengeTests(unittest.TestCase):
 
         self.assertIs(response, challenge)
         self.assertTrue(client.verification_blocked)
-        # Initial request + 2 header-rotation retries before giving up.
-        self.assertEqual(client.header_spoofer.session.post.call_count, 3)
-        # A rotation per retry, plus one before the solve attempt.
-        self.assertEqual(client.header_spoofer.rotate_profile.call_count, 3)
+        # One attempt + one header-rotation bypass retry: the token must
+        # never be hammered with repeated hits on the same challenge.
+        self.assertEqual(client.header_spoofer.session.post.call_count, 2)
+        # One rotation for the bypass retry; the pre-solve rotation is
+        # light (session rebuild only, no new profile).
+        self.assertEqual(client.header_spoofer.rotate_profile.call_count, 1)
         client.header_spoofer.rebuild_session.assert_called()
 
     def test_nested_captcha_payload_is_extracted_for_profile_updates(self):
@@ -141,8 +143,8 @@ class APIChallengeTests(unittest.TestCase):
         self.assertIsNone(second)
         self.assertIs(fetched, listing)
         self.assertFalse(client.verification_blocked)
-        # Initial request + 2 header-rotation retries on the first enroll.
-        self.assertEqual(client.header_spoofer.session.post.call_count, 3)
+        # Initial request + 1 header-rotation bypass retry on the first enroll.
+        self.assertEqual(client.header_spoofer.session.post.call_count, 2)
 
     def test_quest_captcha_retries_with_solution_headers(self):
         challenge = Mock()
@@ -262,7 +264,10 @@ class APIChallengeTests(unittest.TestCase):
                 "sitekey": "discord-site-key",
                 "pageurl": "https://discord.com/channels/@me",
                 "userAgent": "Discord client",
-                "json": 0,
+                "json": 1,
+                "enterprise": 1,
+                "version": "enterprise",
+                "sentry": True,
                 "data": "discord-rqdata",
             },
             headers={"Content-Type": "application/x-www-form-urlencoded", "Accept": "text/plain"},
@@ -273,7 +278,8 @@ class APIChallengeTests(unittest.TestCase):
         client = make_client(Mock())
         response = Mock()
         response.status_code = 200
-        response.text = "OK|solved-token"
+        response.json.return_value = {"status": 1, "request": "solved-token"}
+        response.text = '{"status": 1, "request": "solved-token"}'
         client.session.get.return_value = response
         provider = {
             "name": "2Captcha",
@@ -288,10 +294,52 @@ class APIChallengeTests(unittest.TestCase):
         self.assertEqual(token, "solved-token")
         client.session.get.assert_called_once_with(
             "https://2captcha.com/res.php",
-            params={"key": "native-key", "action": "get", "id": "task-123", "json": 0},
-            headers={"Accept": "text/plain"},
+            params={"key": "native-key", "action": "get", "id": "task-123", "json": 1},
+            headers={"Accept": "application/json"},
             timeout=30,
         )
+
+    def test_native_2captcha_result_polls_res_php_plain_text_fallback(self):
+        client = make_client(Mock())
+        response = Mock()
+        response.status_code = 200
+        response.json.side_effect = ValueError("no json")
+        response.text = "OK|plain-token"
+        client.session.get.return_value = response
+        provider = {
+            "name": "2Captcha",
+            "base_url": "https://2captcha.com",
+            "client_key": "native-key",
+            "protocol": "twocaptcha",
+        }
+
+        with patch("api_client.time.sleep"):
+            token = client._poll_twocaptcha_result(provider, "task-123")
+
+        self.assertEqual(token, "plain-token")
+
+    def test_native_2captcha_plain_text_submit_parses_task_id(self):
+        client = make_client(Mock())
+        client.header_spoofer.profile.user_agent = "Discord client"
+        response = Mock()
+        response.status_code = 200
+        response.text = "OK|task-456"
+        response.headers = {}
+        response.json.side_effect = ValueError("no json")
+        client.session.post.return_value = response
+        provider = {
+            "name": "2Captcha",
+            "base_url": "https://2captcha.com",
+            "client_key": "native-key",
+            "protocol": "twocaptcha",
+        }
+
+        task_id = client._create_captcha_task(provider, {
+            "sitekey": "discord-site-key",
+            "website_url": "https://discord.com/channels/@me",
+        })
+
+        self.assertEqual(task_id, "task-456")
 
     def test_2captcha_compatible_provider_receives_discord_hcaptcha_task(self):
         client = make_client(Mock())

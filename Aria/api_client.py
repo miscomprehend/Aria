@@ -461,7 +461,13 @@ class DiscordAPIClient:
             "sitekey": challenge["sitekey"],
             "pageurl": website_url,
             "userAgent": self.header_spoofer.profile.user_agent,
-            "json": 0,
+            "json": 1,
+            # Enterprise payload for Cloudflare-challenged pages such as
+            # Discord: hands the worker the exact challenge context so it
+            # doesn't burn 20-40s rediscovering it (or bounce the task).
+            "enterprise": 1,
+            "version": "enterprise",
+            "sentry": True,
         }
         if challenge.get("rqdata"):
             params["data"] = challenge["rqdata"]
@@ -490,15 +496,33 @@ class DiscordAPIClient:
             print(f'[CAPTCHA] {provider["name"]} in.php failed with HTTP {getattr(response, "status_code", "no response")}')
             return None
 
-        body = str(getattr(response, "text", "") or "").strip()
-        if body.startswith("OK|"):
-            task_id = body[3:].strip()
-            if task_id:
-                return task_id
+        body_text = str(getattr(response, "text", "") or "").strip()
+        task_id = ""
+        error_text = ""
+        try:
+            payload = response.json() if "application/json" in str(
+                getattr(getattr(response, "headers", {}) or {}, "get", lambda *a, **k: "")("Content-Type", "")
+            ) else json.loads(body_text)
+            if isinstance(payload, dict):
+                if payload.get("status") == 1:
+                    task_id = str(payload.get("request") or "").strip()
+                else:
+                    error_text = str(payload.get("request") or body_text)
+            else:
+                error_text = body_text
+        except Exception:
+            # Plain-text fallback (json=0 style): OK|<id> or ERROR_*.
+            if body_text.startswith("OK|"):
+                task_id = body_text[3:].strip()
+            else:
+                error_text = body_text
+        if task_id:
+            return task_id
+        if not error_text:
             print(f'[CAPTCHA] {provider["name"]} in.php returned an empty task ID')
             return None
-        hint = " (check your 2Captcha API key or balance)" if body.startswith("ERROR_") else ""
-        print(f'[CAPTCHA] {provider["name"]} in.php error: {body[:200]}{hint}')
+        hint = " (check your 2Captcha API key or balance)" if "ERROR_" in error_text else ""
+        print(f'[CAPTCHA] {provider["name"]} in.php error: {error_text[:200]}{hint}')
         return None
 
     @staticmethod
@@ -597,9 +621,9 @@ class DiscordAPIClient:
                     "key": provider["client_key"],
                     "action": "get",
                     "id": task_id,
-                    "json": 0,
+                    "json": 1,
                 },
-                headers={"Accept": "text/plain"},
+                headers={"Accept": "application/json"},
                 timeout=30,
             )
         except Exception as exc:
@@ -610,6 +634,26 @@ class DiscordAPIClient:
             print(f'[CAPTCHA] {provider["name"]} res.php failed with HTTP {getattr(response, "status_code", "no response")}')
             return None
 
+        payload: Any = None
+        try:
+            payload = response.json()
+        except Exception:
+            payload = None
+        if isinstance(payload, dict):
+            status = payload.get("status")
+            request_value = str(payload.get("request") or "").strip()
+            if status == 1:
+                if request_value:
+                    return request_value
+                raise _CaptchaTaskFailed(f'{provider["name"]} returned OK without a token')
+            if request_value == "CAPCHA_NOT_READY":
+                return None
+            if request_value.startswith("ERROR_"):
+                raise _CaptchaTaskFailed(f'{provider["name"]} res.php error: {request_value}')
+            print(f'[CAPTCHA] {provider["name"]} res.php unexpected response: {request_value[:120]}')
+            return None
+
+        # Plain-text fallback for non-JSON replies.
         body = str(getattr(response, "text", "") or "").strip()
         if body == "CAPCHA_NOT_READY":
             return None
@@ -650,7 +694,7 @@ class DiscordAPIClient:
         print(f'[CAPTCHA] {provider["name"]} timed out waiting for task {task_id}')
         return None
 
-    def _rotate_captcha_transport(self):
+    def _rotate_captcha_transport(self, light: bool = False):
         """Rotate the browser profile and rebuild the TLS transport safely.
 
         Uses ``HeaderSpoofer.rebuild_session`` which validates the Chrome
@@ -659,10 +703,16 @@ class DiscordAPIClient:
         "Impersonating chrome132 is not supported" that happened when the old
         code built ``CurlSession(impersonate=browser_target)`` directly from an
         arbitrary ``chrome<major>`` profile value.
+
+        With ``light=True`` only the TLS session is rebuilt (no new profile,
+        no build-number scrape) so challenge-retry round-trips stay fast.
         """
         try:
-            self.header_spoofer.rotate_profile()
-            self.header_spoofer.rebuild_session()
+            if light:
+                self.header_spoofer.rebuild_session()
+            else:
+                self.header_spoofer.rotate_profile()
+                self.header_spoofer.rebuild_session()
         except Exception as exc:
             print(f"[CAPTCHA] TLS transport rotation failed: {exc}")
 
@@ -683,7 +733,21 @@ class DiscordAPIClient:
             print('[CAPTCHA] No captcha API key configured. Set NOCAPTCHAAI_API_KEY (or YES_CAPTCHA_API_KEY), or captcha_api_key in the Aria config.')
             return None
 
-        self._rotate_captcha_transport()
+        # Reuse a still-fresh token from an earlier challenge instead of
+        # paying for a brand-new solve every time (hCaptcha tokens stay valid
+        # ~2 minutes; reuse window kept to 90s).
+        try:
+            cached_token = str(getattr(self, "_last_captcha_token", "") or "").strip()
+            cached_at = float(getattr(self, "_last_captcha_token_at", 0.0) or 0.0)
+            if cached_token and (time.time() - cached_at) < 90.0:
+                provider = providers[0]
+                self._captcha_provider_name = f'{provider["name"]} (cached token)'
+                print(f'[CAPTCHA] Reusing token solved {time.time() - cached_at:.0f}s ago; skipping new solve.')
+                return cached_token
+        except Exception:
+            pass
+
+        self._rotate_captcha_transport(light=True)
 
         def _submit_one(provider: Dict[str, str]) -> Tuple[Dict[str, str], Optional[str]]:
             try:
@@ -729,6 +793,11 @@ class DiscordAPIClient:
                 if token:
                     self._captcha_provider_name = provider["name"]
                     print(f'[CAPTCHA] {provider["name"]} solved task {task_id} in {time.time() - started:.0f}s.')
+                    try:
+                        self._last_captcha_token = token
+                        self._last_captcha_token_at = time.time()
+                    except Exception:
+                        pass
                     return token
             now = time.time()
             if pending and now >= next_progress and now < deadline:
@@ -1039,18 +1108,17 @@ class DiscordAPIClient:
                 try:
                     challenge = self._extract_captcha_challenge(response_data)
                     if challenge:
-                        # First response to a challenge: rotate headers (new
-                        # browser profile, fingerprint, super properties and
-                        # TLS session) and retry. Discord often flags a stale
-                        # fingerprint rather than truly requiring a captcha;
-                        # a fresh header set clears it without paying a solver.
-                        if _header_rotations < 2 and not challenge.get("rqtoken"):
+                        # Single bypass rotation: Discord often flags a stale
+                        # fingerprint rather than truly requiring a captcha, so
+                        # retry once locally with fresh headers before paying a
+                        # solver. Exactly one retry keeps the token's request
+                        # count to: original + 1 bypass + 1 solved = 3 max.
+                        if _header_rotations < 1 and not challenge.get("rqtoken"):
                             try:
                                 self.header_spoofer.rotate_profile()
                             except Exception as rot_exc:
                                 print(f"[CAPTCHA] header rotation failed: {rot_exc}")
-                            print(f"[CAPTCHA] {endpoint} challenged; rotated headers and retrying "
-                                  f"(attempt {_header_rotations + 1}/2) before solving.")
+                            print(f"[CAPTCHA] {endpoint} challenged; rotated headers and retrying once before solving.")
                             return self.request(
                                 method,
                                 endpoint,
@@ -1084,7 +1152,7 @@ class DiscordAPIClient:
 
                                 provider_name = self._captcha_provider_name or "captcha provider"
                                 print(f"[CAPTCHA] Solved with {provider_name}; retrying {endpoint} ({retry_count + 1}/{max_retries})")
-                                return self.request(
+                                solved_response = self.request(
                                     method,
                                     endpoint,
                                     data=data,
@@ -1100,6 +1168,16 @@ class DiscordAPIClient:
                                     _transport_retry=_transport_retry,
                                     _header_rotations=_header_rotations,
                                 )
+                                # Token rejected again (stale/expired solve):
+                                # rotate once and let the outer solve run afresh
+                                # rather than hammering the endpoint.
+                                if (solved_response is not None
+                                        and getattr(solved_response, "status_code", None) in {400, 403}):
+                                    try:
+                                        self.header_spoofer.rotate_profile()
+                                    except Exception:
+                                        pass
+                                return solved_response
 
                         self._block_verification(endpoint)
                         print(f"[AUTH-CHALLENGE] Discord requires verification for {endpoint}; captcha solve failed or unavailable.")
