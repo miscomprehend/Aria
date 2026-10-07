@@ -21,8 +21,7 @@ except ImportError:
         Response = None
 
 
-_FALLBACK_BUILD = 305411  # April 2026 stable
-
+_FALLBACK_BUILD = 324310  # Fallback build constant if live scrapers fail
 
 def get_latest_build() -> int:
     """Fetch the current Discord client build number from public JS assets.
