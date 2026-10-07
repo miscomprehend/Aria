@@ -2,11 +2,13 @@ import contextlib
 import io
 import json
 import os
+from concurrent.futures import ThreadPoolExecutor
+import random
 import time
 import re
 import threading
 from collections import deque
-from typing import Callable, Dict, Any, Optional, List
+from typing import Callable, Dict, Any, Optional, List, Tuple
 from urllib.parse import parse_qsl, quote, urlsplit
 
 # Try curl_cffi, fallback to requests
@@ -34,6 +36,11 @@ class CachedAPIResponse:
 
     def json(self):
         return self._payload
+
+
+class _CaptchaTaskFailed(Exception):
+    """A provider task died (bad key, no balance, unsolvable) — drop that
+    task instead of polling it forever."""
 
 
 class RoutedSession:
@@ -228,17 +235,36 @@ class DiscordAPIClient:
             return False
         return time.time() < getattr(self, "_quest_captcha_blocked_until", 0.0)
 
-    def _block_verification(self, endpoint: str) -> None:
-        """Record an unsolved challenge.
+    _VERIFICATION_PAUSE_SECONDS = 300.0
 
-        Quest endpoints only pause quest writes for a few minutes, so a failed
-        quest captcha cannot take the whole client (and quest listing) offline.
+    def _block_verification(self, endpoint: str) -> None:
+        """Record an unsolved challenge as a time-limited write pause.
+
+        A failed captcha must never take commands down permanently: the pause
+        auto-expires after a few minutes so the bot keeps working. Quest
+        endpoints get their own shorter cooldown so a quest captcha cannot
+        block profile/guild writes either.
         """
         if self._is_quest_endpoint(endpoint):
             self._quest_captcha_blocked_until = time.time() + 300
             return
         self.verification_blocked = True
         self.verification_endpoint = endpoint
+        self.verification_blocked_until = time.time() + self._VERIFICATION_PAUSE_SECONDS
+        print(f"[AUTH-CHALLENGE] Writes paused for {int(self._VERIFICATION_PAUSE_SECONDS / 60)} min "
+              f"after unsolved captcha on {endpoint}; commands resume automatically.")
+
+    def _verification_paused(self) -> bool:
+        """True while the post-captcha write pause is active (auto-expires)."""
+        if not getattr(self, "verification_blocked", False):
+            return False
+        until = float(getattr(self, "verification_blocked_until", 0.0) or 0.0)
+        if until and time.time() >= until:
+            self.verification_blocked = False
+            self.verification_endpoint = None
+            print("[AUTH-CHALLENGE] Verification pause expired; commands active again.")
+            return False
+        return True
 
     def _extract_captcha_challenge(self, response_data: Dict[str, Any]) -> Optional[Dict[str, str]]:
         if not isinstance(response_data, dict):
@@ -475,95 +501,151 @@ class DiscordAPIClient:
         print(f'[CAPTCHA] {provider["name"]} in.php error: {body[:200]}{hint}')
         return None
 
-    def _poll_captcha_result(self, provider: Dict[str, str], task_id: str, timeout_seconds: float = 120.0) -> Optional[str]:
+    @staticmethod
+    def _jittered(base_seconds: float, fraction: float = 0.35) -> float:
+        """Humanize a fixed wait: ±fraction randomness so poll/backoff timing
+        never looks machine-regular. Result stays positive.
+
+        Example: _jittered(5.0) -> 3.25 .. 6.75 seconds.
+        """
+        try:
+            base = max(0.0, float(base_seconds))
+        except (TypeError, ValueError):
+            base = 0.0
+        spread = base * max(0.0, min(fraction, 1.0))
+        return max(0.25, base + random.uniform(-spread, spread))
+
+    def _jittered_sleep(self, base_seconds: float, fraction: float = 0.35) -> float:
+        """Sleep for a humanized duration; returns the actual seconds slept."""
+        duration = self._jittered(base_seconds, fraction)
+        if duration > 0:
+            time.sleep(duration)
+        return duration
+
+    def _fetch_yescaptcha_status(self, provider: Dict[str, str], task_id: str) -> Optional[str]:
+        """One getTaskResult check. Returns the token when ready, None while
+        still solving or on transient errors. Raises _CaptchaTaskFailed when
+        the provider reports the task as dead."""
+        try:
+            response = self.session.post(
+                f'{provider["base_url"]}/getTaskResult',
+                json={
+                    "clientKey": provider["client_key"],
+                    "taskId": task_id,
+                },
+                headers={"Content-Type": "application/json", "Accept": "application/json"},
+                timeout=30,
+            )
+        except Exception as exc:
+            print(f'[CAPTCHA] {provider["name"]} getTaskResult request failed: {exc}')
+            return None
+
+        if not response or getattr(response, "status_code", 0) != 200:
+            print(f'[CAPTCHA] {provider["name"]} getTaskResult failed with HTTP {getattr(response, "status_code", "no response")}')
+            return None
+
+        try:
+            payload_data = response.json()
+        except Exception as exc:
+            print(f'[CAPTCHA] {provider["name"]} getTaskResult invalid JSON response: {exc}')
+            return None
+
+        if payload_data.get("errorId"):
+            raise _CaptchaTaskFailed(f'{provider["name"]} getTaskResult error: {payload_data}')
+
+        status = str(payload_data.get("status") or "").strip().lower()
+        if status == "ready":
+            solution = payload_data.get("solution") or {}
+            token = str(solution.get("gRecaptchaResponse") or solution.get("token") or "").strip()
+            if token:
+                return token
+            raise _CaptchaTaskFailed(f'[CAPTCHA] {provider["name"]} returned ready status without token')
+        return None
+
+    def _poll_captcha_result(self, provider: Dict[str, str], task_id: str, timeout_seconds: float = 240.0) -> Optional[str]:
         if provider.get("protocol") == "twocaptcha":
             return self._poll_twocaptcha_result(provider, task_id, timeout_seconds)
 
-        deadline = time.time() + timeout_seconds
+        started = time.time()
+        deadline = started + timeout_seconds
+        next_progress = started + 30.0
         while time.time() < deadline:
-            payload = {
-                "clientKey": provider["client_key"],
-                "taskId": task_id,
-            }
             try:
-                response = self.session.post(
-                    f'{provider["base_url"]}/getTaskResult',
-                    json=payload,
-                    headers={"Content-Type": "application/json", "Accept": "application/json"},
-                    timeout=30,
-                )
-            except Exception as exc:
-                print(f'[CAPTCHA] {provider["name"]} getTaskResult request failed: {exc}')
-                time.sleep(3)
-                continue
-
-            if not response or getattr(response, "status_code", 0) != 200:
-                print(f'[CAPTCHA] {provider["name"]} getTaskResult failed with HTTP {getattr(response, "status_code", "no response")}')
-                time.sleep(3)
-                continue
-
-            try:
-                payload_data = response.json()
-            except Exception as exc:
-                print(f'[CAPTCHA] {provider["name"]} getTaskResult invalid JSON response: {exc}')
-                time.sleep(3)
-                continue
-
-            if payload_data.get("errorId"):
-                print(f'[CAPTCHA] {provider["name"]} getTaskResult error: {payload_data}')
+                token = self._fetch_yescaptcha_status(provider, task_id)
+            except _CaptchaTaskFailed as exc:
+                print(f'[CAPTCHA] {exc}')
                 return None
-
-            status = str(payload_data.get("status") or "").strip().lower()
-            if status == "ready":
-                solution = payload_data.get("solution") or {}
-                token = str(solution.get("gRecaptchaResponse") or solution.get("token") or "").strip()
-                if token:
-                    return token
-                print(f'[CAPTCHA] {provider["name"]} returned ready status without token')
-                return None
-
-            time.sleep(3)
+            if token:
+                return token
+            now = time.time()
+            if now >= next_progress and now < deadline:
+                print(f'[CAPTCHA] {provider["name"]} task {task_id} still solving ({now - started:.0f}s elapsed)...')
+                next_progress = now + 30.0
+            self._jittered_sleep(3)
 
         print(f'[CAPTCHA] {provider["name"]} timed out waiting for task {task_id}')
         return None
 
-    def _poll_twocaptcha_result(self, provider: Dict[str, str], task_id: str, timeout_seconds: float = 120.0) -> Optional[str]:
-        """Poll the native 2Captcha ``res.php`` endpoint for the solved token."""
-        deadline = time.time() + timeout_seconds
+    def _fetch_twocaptcha_status(self, provider: Dict[str, str], task_id: str) -> Optional[str]:
+        """One res.php check. Returns the token when ready, None while still
+        solving or on transient errors. Raises _CaptchaTaskFailed when the
+        provider reports the task as dead."""
+        try:
+            response = self.session.get(
+                f'{provider["base_url"]}/res.php',
+                params={
+                    "key": provider["client_key"],
+                    "action": "get",
+                    "id": task_id,
+                    "json": 0,
+                },
+                headers={"Accept": "text/plain"},
+                timeout=30,
+            )
+        except Exception as exc:
+            print(f'[CAPTCHA] {provider["name"]} res.php request failed: {exc}')
+            return None
+
+        if not response or getattr(response, "status_code", 0) != 200:
+            print(f'[CAPTCHA] {provider["name"]} res.php failed with HTTP {getattr(response, "status_code", "no response")}')
+            return None
+
+        body = str(getattr(response, "text", "") or "").strip()
+        if body == "CAPCHA_NOT_READY":
+            return None
+        if body.startswith("OK|"):
+            token = body[3:].strip()
+            if token:
+                return token
+            raise _CaptchaTaskFailed(f'{provider["name"]} returned OK without a token')
+        if body.startswith("ERROR_"):
+            raise _CaptchaTaskFailed(f'{provider["name"]} res.php error: {body}')
+        print(f'[CAPTCHA] {provider["name"]} res.php unexpected response: {body[:120]}')
+        return None
+
+    def _poll_twocaptcha_result(self, provider: Dict[str, str], task_id: str, timeout_seconds: float = 240.0) -> Optional[str]:
+        """Poll the native 2Captcha ``res.php`` endpoint for the solved token.
+
+        The first check fires immediately (no sleep-then-check delay), then
+        roughly every 5s with jitter. Progress is logged every 30s so long
+        solves stay visible in the logs instead of going silent.
+        """
+        started = time.time()
+        deadline = started + timeout_seconds
+        next_progress = started + 30.0
         while time.time() < deadline:
-            time.sleep(5)
             try:
-                response = self.session.get(
-                    f'{provider["base_url"]}/res.php',
-                    params={
-                        "key": provider["client_key"],
-                        "action": "get",
-                        "id": task_id,
-                        "json": 0,
-                    },
-                    headers={"Accept": "text/plain"},
-                    timeout=30,
-                )
-            except Exception as exc:
-                print(f'[CAPTCHA] {provider["name"]} res.php request failed: {exc}')
-                continue
-
-            if not response or getattr(response, "status_code", 0) != 200:
-                print(f'[CAPTCHA] {provider["name"]} res.php failed with HTTP {getattr(response, "status_code", "no response")}')
-                continue
-
-            body = str(getattr(response, "text", "") or "").strip()
-            if body == "CAPCHA_NOT_READY":
-                continue
-            if body.startswith("OK|"):
-                token = body[3:].strip()
-                if token:
-                    return token
-                print(f'[CAPTCHA] {provider["name"]} returned OK without a token')
+                token = self._fetch_twocaptcha_status(provider, task_id)
+            except _CaptchaTaskFailed as exc:
+                print(f'[CAPTCHA] {exc}')
                 return None
-            if body.startswith("ERROR_"):
-                print(f'[CAPTCHA] {provider["name"]} res.php error: {body}')
-                return None
+            if token:
+                return token
+            now = time.time()
+            if now >= next_progress and now < deadline:
+                print(f'[CAPTCHA] {provider["name"]} task {task_id} still solving ({now - started:.0f}s elapsed)...')
+                next_progress = now + 30.0
+            self._jittered_sleep(5)
 
         print(f'[CAPTCHA] {provider["name"]} timed out waiting for task {task_id}')
         return None
@@ -584,7 +666,14 @@ class DiscordAPIClient:
         except Exception as exc:
             print(f"[CAPTCHA] TLS transport rotation failed: {exc}")
 
-    def _solve_captcha_challenge(self, challenge: Dict[str, str]) -> Optional[str]:
+    def _solve_captcha_challenge(self, challenge: Dict[str, str], overall_timeout: float = 240.0) -> Optional[str]:
+        """Solve using every configured provider at once; first token wins.
+
+        Tasks are submitted to all providers in parallel, then polled
+        round-robin — a slow or dead key no longer blocks the working ones
+        behind a full sequential timeout. Progress is logged every 30s so
+        the logs never go silent during a long solve.
+        """
         if challenge.get("service") not in {"hcaptcha", ""}:
             print(f'[CAPTCHA] Unsupported captcha service: {challenge.get("service")}')
             return None
@@ -594,19 +683,64 @@ class DiscordAPIClient:
             print('[CAPTCHA] No captcha API key configured. Set NOCAPTCHAAI_API_KEY (or YES_CAPTCHA_API_KEY), or captcha_api_key in the Aria config.')
             return None
 
-        for provider in providers:
-            self._captcha_provider_name = provider["name"]
+        self._rotate_captcha_transport()
 
-            self._rotate_captcha_transport()
+        def _submit_one(provider: Dict[str, str]) -> Tuple[Dict[str, str], Optional[str]]:
+            try:
+                return provider, self._create_captcha_task(provider, challenge)
+            except Exception as exc:
+                print(f'[CAPTCHA] {provider.get("name", "provider")} task submission crashed: {exc}')
+                return provider, None
 
-            task_id = self._create_captcha_task(provider, challenge)
-            if not task_id:
-                continue
-            token = self._poll_captcha_result(provider, task_id)
-            if token:
-                return token
+        if len(providers) == 1:
+            submitted = [_submit_one(providers[0])]
+        else:
+            print(f'[CAPTCHA] Submitting captcha task to {len(providers)} providers in parallel...')
+            with ThreadPoolExecutor(max_workers=len(providers)) as pool:
+                submitted = list(pool.map(_submit_one, providers))
 
-            self._rotate_captcha_transport()
+        pending: List[Tuple[Dict[str, str], str]] = []
+        for provider, task_id in submitted:
+            if task_id:
+                print(f'[CAPTCHA] {provider["name"]} task {task_id} submitted; polling for solution...')
+                pending.append((provider, task_id))
+        if not pending:
+            print('[CAPTCHA] No provider accepted the captcha task.')
+            return None
+
+        started = time.time()
+        deadline = started + max(30.0, float(overall_timeout or 0))
+        next_progress = started + 30.0
+        while pending and time.time() < deadline:
+            for provider, task_id in list(pending):
+                try:
+                    if provider.get("protocol") == "twocaptcha":
+                        token = self._fetch_twocaptcha_status(provider, task_id)
+                    else:
+                        token = self._fetch_yescaptcha_status(provider, task_id)
+                except _CaptchaTaskFailed as exc:
+                    print(f'[CAPTCHA] {exc}; dropping {provider["name"]} task {task_id}.')
+                    pending = [(p, t) for p, t in pending
+                               if not (p.get("name") == provider.get("name") and t == task_id)]
+                    continue
+                except Exception as exc:
+                    print(f'[CAPTCHA] {provider["name"]} poll crashed: {exc}')
+                    continue
+                if token:
+                    self._captcha_provider_name = provider["name"]
+                    print(f'[CAPTCHA] {provider["name"]} solved task {task_id} in {time.time() - started:.0f}s.')
+                    return token
+            now = time.time()
+            if pending and now >= next_progress and now < deadline:
+                waiting = ", ".join(f'{p["name"]}({t})' for p, t in pending)
+                print(f'[CAPTCHA] still waiting ({now - started:.0f}s elapsed) on: {waiting}')
+                next_progress = now + 30.0
+            if pending and time.time() < deadline:
+                self._jittered_sleep(3)
+
+        names = ", ".join(p["name"] for p in providers)
+        print(f'[CAPTCHA] No solution from [{names}] after {overall_timeout:.0f}s.')
+        self._rotate_captcha_transport()
         return None
 
     def _check_circuit_breaker(self) -> bool:
@@ -819,7 +953,8 @@ class DiscordAPIClient:
                 max_retries: int = 3, retry_count: int = 0,
                 json: Optional[Any] = None, files: Optional[Any] = None,
                 timeout: float = 30, _base_url: str = "https://discord.com/api/v9",
-                _global_retry: int = 0, _transport_retry: int = 0) -> Optional[Any]:
+                _global_retry: int = 0, _transport_retry: int = 0,
+                _header_rotations: int = 0) -> Optional[Any]:
         if json is not None and data is None:
             data = json
         """
@@ -830,7 +965,10 @@ class DiscordAPIClient:
         if _global_retry > 10:
             print(f"[REQUEST-ERROR] {method} {endpoint}: exceeded global retry limit, aborting.")
             return None
-        if self.auth_failed or getattr(self, "verification_blocked", False):
+        # A pending verification only blocks writes; GETs (quest listing,
+        # guilds, channels) must keep working so the UI doesn't go dark.
+        # The write pause is time-limited and expires automatically.
+        if method != "GET" and (self.auth_failed or self._verification_paused()):
             return None
         if method != "GET" and self._quest_captcha_cooling_down(endpoint):
             return None
@@ -842,7 +980,9 @@ class DiscordAPIClient:
 
         wait_time = self.rate_limiter.get_wait_time(endpoint)
         if wait_time:
-            time.sleep(wait_time)
+            # Humanize bucket waits slightly so a burst of retries never
+            # lands on a perfectly regular cadence.
+            time.sleep(self._jittered(wait_time, 0.15))
 
         url = f"{_base_url}{endpoint}"
         request_headers = self.header_spoofer.get_protected_headers(self.token)
@@ -899,6 +1039,39 @@ class DiscordAPIClient:
                 try:
                     challenge = self._extract_captcha_challenge(response_data)
                     if challenge:
+                        # First response to a challenge: rotate headers (new
+                        # browser profile, fingerprint, super properties and
+                        # TLS session) and retry. Discord often flags a stale
+                        # fingerprint rather than truly requiring a captcha;
+                        # a fresh header set clears it without paying a solver.
+                        if _header_rotations < 2 and not challenge.get("rqtoken"):
+                            try:
+                                self.header_spoofer.rotate_profile()
+                            except Exception as rot_exc:
+                                print(f"[CAPTCHA] header rotation failed: {rot_exc}")
+                            print(f"[CAPTCHA] {endpoint} challenged; rotated headers and retrying "
+                                  f"(attempt {_header_rotations + 1}/2) before solving.")
+                            return self.request(
+                                method,
+                                endpoint,
+                                data=data,
+                                params=params,
+                                headers=headers,
+                                max_retries=max_retries,
+                                retry_count=retry_count,
+                                json=json,
+                                files=files,
+                                timeout=timeout,
+                                _base_url=_base_url,
+                                _global_retry=_global_retry + 1,
+                                _transport_retry=_transport_retry,
+                                _header_rotations=_header_rotations + 1,
+                            )
+
+                        # (The solve itself rotates the transport via
+                        # _solve_captcha_challenge, so the solved token goes
+                        # out on a fingerprint that never saw the challenge.)
+
                         if retry_count < max_retries:
                             solved_token = self._solve_captcha_challenge(challenge)
                             if solved_token:
@@ -925,6 +1098,7 @@ class DiscordAPIClient:
                                     _base_url=_base_url,
                                     _global_retry=_global_retry + 1,
                                     _transport_retry=_transport_retry,
+                                    _header_rotations=_header_rotations,
                                 )
 
                         self._block_verification(endpoint)

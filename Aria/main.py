@@ -1823,6 +1823,24 @@ def main():
             payload = resp.json() or {}
             if isinstance(payload, dict):
                 msg = str(payload.get("message", "")).strip()
+
+                # 50035 Invalid Form Body: the real reason lives in errors.
+                def _first_field_error(node):
+                    if isinstance(node, dict):
+                        errs = node.get("_errors")
+                        if isinstance(errs, list):
+                            for item in errs:
+                                if isinstance(item, dict) and item.get("message"):
+                                    return str(item["message"])
+                        for value in node.values():
+                            found = _first_field_error(value)
+                            if found:
+                                return found
+                    return ""
+
+                field_err = _first_field_error(payload.get("errors"))
+                if field_err:
+                    return f"{msg} ({field_err})" if msg else field_err
                 if msg:
                     return msg
         except Exception:

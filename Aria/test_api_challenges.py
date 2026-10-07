@@ -52,7 +52,7 @@ class APIChallengeTests(unittest.TestCase):
         self.assertIsNone(client.request("POST", "/channels/456/messages", data={"content": "later"}))
         client.header_spoofer.session.post.assert_called_once()
 
-    def test_403_captcha_challenge_blocks_without_header_rotation(self):
+    def test_403_captcha_challenge_rotates_headers_before_solving(self):
         challenge = Mock()
         challenge.status_code = 403
         challenge.headers = {}
@@ -64,11 +64,11 @@ class APIChallengeTests(unittest.TestCase):
 
         self.assertIs(response, challenge)
         self.assertTrue(client.verification_blocked)
-        client.header_spoofer.session.post.assert_called_once()
-        # Captcha solving rotates the transport to obtain a supported Chrome TLS
-        # impersonation rather than crashing on unsupported versions.
-        client.header_spoofer.rotate_profile.assert_called_once()
-        client.header_spoofer.rebuild_session.assert_called_once()
+        # Initial request + 2 header-rotation retries before giving up.
+        self.assertEqual(client.header_spoofer.session.post.call_count, 3)
+        # A rotation per retry, plus one before the solve attempt.
+        self.assertEqual(client.header_spoofer.rotate_profile.call_count, 3)
+        client.header_spoofer.rebuild_session.assert_called()
 
     def test_nested_captcha_payload_is_extracted_for_profile_updates(self):
         client = make_client(Mock())
@@ -141,7 +141,8 @@ class APIChallengeTests(unittest.TestCase):
         self.assertIsNone(second)
         self.assertIs(fetched, listing)
         self.assertFalse(client.verification_blocked)
-        self.assertEqual(client.header_spoofer.session.post.call_count, 1)
+        # Initial request + 2 header-rotation retries on the first enroll.
+        self.assertEqual(client.header_spoofer.session.post.call_count, 3)
 
     def test_quest_captcha_retries_with_solution_headers(self):
         challenge = Mock()

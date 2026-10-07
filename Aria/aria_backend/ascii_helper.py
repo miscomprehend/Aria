@@ -40,20 +40,25 @@ def _msg_ref(m):
 
 
 async def _send_and_expire(ctx, text, delay=15):
-    # delete the invoking command message immediately
-    try:
-        await ctx.message.delete()
-    except Exception as e:
-        _diag(f"could not delete command message: {e!r}")
-
+    # Send the reply FIRST, then delete the invoking command message. Deleting
+    # up front meant that when send() failed (e.g. writes blocked by a pending
+    # verification), the user's command vanished with no reply and no log of
+    # what they typed.
     m = None
     try:
         m = await ctx.send(text)
     except Exception as e:
         _diag(f"send() failed, no reply to auto-delete: {e!r}")
-        return
     if m is None:
         _diag("send() returned no message object — auto-delete timer NOT scheduled")
+
+    # delete the invoking command message
+    try:
+        await ctx.message.delete()
+    except Exception as e:
+        _diag(f"could not delete command message: {e!r}")
+
+    if m is None:
         return
 
     try:
