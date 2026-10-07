@@ -432,6 +432,12 @@ provider keys:
 - `NOCAPTCHAAI_API_KEY` (preferred)
 - `YES_CAPTCHA_API_KEY` (fallback)
 
+Desktop setup also supports any provider implementing the 2Captcha-compatible
+`createTask` / `getTaskResult` API and Discord hCaptcha tasks. Select
+**2Captcha-compatible**, enter its API key, and configure its HTTPS API base URL
+(default: `https://api.2captcha.com`). The provider must accept
+`HCaptchaTaskProxyless` tasks and Discord `rqdata` when present.
+
 These retries also cover Nitro gift redemption and giveaway-entry actions
 (button interactions and reaction joins) because they use the shared API
 request path.

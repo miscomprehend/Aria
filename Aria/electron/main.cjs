@@ -466,7 +466,7 @@ function runTokenConfig(action, token = "", captcha = {}) {
         reject(new Error(`Could not read the verified account identity: ${error.message}`));
       }
     });
-    child.once("spawn", () => child.stdin.end(action === "identify" ? "" : `${token}\n${captcha.key || ""}\n${captcha.provider || ""}\n`));
+    child.once("spawn", () => child.stdin.end(action === "identify" ? "" : `${token}\n${captcha.key || ""}\n${captcha.provider || ""}\n${captcha.apiUrl || ""}\n`));
     child.stdin.on("error", () => {});
   });
 }
@@ -474,8 +474,23 @@ function runTokenConfig(action, token = "", captcha = {}) {
 function normalizeCaptcha(payload) {
   const key = typeof payload?.captchaKey === "string" ? payload.captchaKey.trim() : "";
   if (key.length > 512 || /[\r\n]/.test(key)) throw new Error("Enter a valid captcha API key.");
-  const provider = payload?.captchaProvider === "yescaptcha" ? "yescaptcha" : "nocaptchaai";
-  return { key, provider };
+  const supportedProviders = new Set(["nocaptchaai", "yescaptcha", "twocaptcha"]);
+  const provider = typeof payload?.captchaProvider === "string" ? payload.captchaProvider : "nocaptchaai";
+  if (!supportedProviders.has(provider)) throw new Error("Choose a supported captcha provider.");
+  const apiUrl = typeof payload?.captchaApiUrl === "string" ? payload.captchaApiUrl.trim() : "";
+  if (apiUrl.length > 2048 || /[\r\n]/.test(apiUrl)) throw new Error("Enter a valid captcha provider API URL.");
+  if (provider === "twocaptcha") {
+    let parsedUrl;
+    try {
+      parsedUrl = new URL(apiUrl);
+    } catch {
+      throw new Error("Enter a valid HTTPS captcha provider API URL.");
+    }
+    if (parsedUrl.protocol !== "https:" || !parsedUrl.hostname || parsedUrl.username || parsedUrl.password || parsedUrl.search || parsedUrl.hash) {
+      throw new Error("The captcha provider API URL must be HTTPS and must not contain credentials, a query, or a fragment.");
+    }
+  }
+  return { key, provider, apiUrl };
 }
 
 function saveTokenConfig(token, remember, captcha = {}) {

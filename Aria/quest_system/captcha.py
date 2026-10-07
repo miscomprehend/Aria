@@ -21,6 +21,13 @@ except ImportError:
     _yescaptcha_available = False
     YesCaptchaSolver = None
 
+try:
+    from .providers.yescaptcha import TwoCaptchaCompatibleSolver
+    _twocaptcha_compatible_available = True
+except ImportError:
+    _twocaptcha_compatible_available = False
+    TwoCaptchaCompatibleSolver = None
+
 
 def _accepts_rotate(func: Any, *args: Any) -> bool:
     """Return True when ``func`` can be called with a ``rotate`` keyword."""
@@ -53,12 +60,14 @@ class CaptchaSolver:
         yescaptcha_key = str(os.environ.get('YES_CAPTCHA_API_KEY') or "").strip()
         configured_key = ""
         configured_provider = "nocaptchaai"
+        configured_api_url = ""
 
         try:
             import config as aria_config
             settings = aria_config.Config()
             configured_key = str(settings.get("captcha_api_key") or "").strip()
             configured_provider = str(settings.get("captcha_provider") or "nocaptchaai").strip().lower()
+            configured_api_url = str(settings.get("captcha_api_url") or "").strip()
             yescaptcha_key = yescaptcha_key or str(settings.get("yes_captcha_api_key") or "").strip()
         except Exception:
             pass
@@ -66,10 +75,21 @@ class CaptchaSolver:
         if configured_key:
             if configured_provider == "yescaptcha":
                 yescaptcha_key = yescaptcha_key or configured_key
+            elif configured_provider == "twocaptcha":
+                if _twocaptcha_compatible_available and TwoCaptchaCompatibleSolver:
+                    try:
+                        self._solver = TwoCaptchaCompatibleSolver(configured_key, configured_api_url)
+                        self._provider_name = self._solver.provider_name
+                    except Exception as error:
+                        print(f"Failed to initialize compatible captcha provider: {error}")
             else:
                 nocaptcha_key = nocaptcha_key or configured_key
 
-        if nocaptcha_key and _nocaptcha_available and NoCaptchaSolver:
+        if self._solver is None and configured_provider == "twocaptcha" and configured_key:
+            if not _twocaptcha_compatible_available:
+                print("Compatible captcha provider support is unavailable.")
+
+        if self._solver is None and nocaptcha_key and _nocaptcha_available and NoCaptchaSolver:
             try:
                 self._solver = NoCaptchaSolver(nocaptcha_key)
                 self._provider_name = 'NoCaptchaAI'
@@ -89,7 +109,7 @@ class CaptchaSolver:
         self._rotate_callback = rotate_callback
 
     async def solve_captcha(self, data: CaptchaDataFromRequest) -> str:
-        """Solve hCaptcha using NoCaptchaAI or YesCaptcha.
+        """Solve hCaptcha using the configured captcha provider.
 
         Args:
             data: Captcha data from Discord

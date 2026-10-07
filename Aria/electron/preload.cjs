@@ -1,8 +1,8 @@
 const { contextBridge, ipcRenderer } = require("electron");
 
 contextBridge.exposeInMainWorld("ariaSetup", {
-  saveToken: (token, remember, captchaKey, captchaProvider) =>
-    ipcRenderer.invoke("setup:save-token", { token, remember, captchaKey, captchaProvider }),
+  saveToken: (token, remember, captchaKey, captchaProvider, captchaApiUrl) =>
+    ipcRenderer.invoke("setup:save-token", { token, remember, captchaKey, captchaProvider, captchaApiUrl }),
   cancel: () => ipcRenderer.send("setup:cancel"),
 });
 

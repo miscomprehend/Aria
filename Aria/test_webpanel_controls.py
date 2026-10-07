@@ -182,6 +182,18 @@ class WebPanelControlTests(unittest.TestCase):
         self.assertEqual(invalid.status_code, 400)
         self.assertIn("190", invalid.get_json()["error"])
 
+    def test_account_profile_editor_has_live_preview_and_badge_slots(self):
+        template = (Path(__file__).resolve().parent / "web_ui" / "templates" / "dashboard.html").read_text(encoding="utf-8")
+        script = (Path(__file__).resolve().parent / "web_ui" / "static" / "js" / "script.js").read_text(encoding="utf-8")
+        styles = (Path(__file__).resolve().parent / "web_ui" / "static" / "css" / "aria_2026.css").read_text(encoding="utf-8")
+
+        for element_id in ("profileAvatarPreview", "profilePreviewCard", "profilePreviewName", "profileGuildTag", "profilePlatformBadges"):
+            self.assertIn(f'id="{element_id}"', template)
+        self.assertIn("function renderProfilePreview", script)
+        self.assertIn("connected_platforms", script)
+        self.assertIn(".profile-preview-card", styles)
+        self.assertIn(".profile-platform-badge", styles)
+
     def test_account_profile_reports_partial_failure(self):
         self._profile_api({("PATCH", "/users/@me"): _ProfileReply(
             400, {"errors": {"banner": {"_errors": [{"message": "Banner requires Nitro"}]}}})})
@@ -1876,6 +1888,47 @@ class WebPanelControlTests(unittest.TestCase):
             "activity": {"type": 0, "name": "One too many"},
         })
         self.assertEqual(overflow.status_code, 400)
+
+    def test_rpc_stack_retries_and_caches_external_image_assets(self):
+        self.authenticated = True
+        with self.client.session_transaction() as active_session:
+            active_session["user_id"] = _PANEL_MASTER_ID
+
+        class AssetApi:
+            rate_limiter = object()
+
+            def __init__(self):
+                self.responses = [
+                    _ProfileReply(429),
+                    _ProfileReply(200, {"external_assets": [{"external_asset_path": "external/stack-cover"}]}),
+                ]
+                self.calls = 0
+
+            def request(self, method, endpoint, data=None):
+                self.calls += 1
+                return self.responses.pop(0)
+
+            def create_dm(self, user_id):
+                raise AssertionError("RPC image registration must not create a self-DM")
+
+        api = AssetApi()
+        panel.api = api
+        activity = {
+            "type": 0,
+            "name": "Stacked image",
+            "application_id": "123456789",
+            "assets": {"large_image": "https://images.example/stack-cover.png"},
+        }
+        added = self.client.post("/api/rpc/stack", json={"action": "add", "activity": activity})
+        self.assertEqual(added.status_code, 200)
+
+        first_apply = self.client.post("/api/rpc/stack", json={"action": "apply"})
+        self.assertEqual(first_apply.status_code, 200)
+        self.assertEqual(panel.bot.activities[0]["assets"]["large_image"], "mp:external/stack-cover")
+
+        second_apply = self.client.post("/api/rpc/stack", json={"action": "apply"})
+        self.assertEqual(second_apply.status_code, 200)
+        self.assertEqual(api.calls, 2)
 
     def test_presets_rotation_and_logger_routes(self):
         self.authenticated = True

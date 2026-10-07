@@ -118,6 +118,8 @@ class WebPanel:
         self._update_info_cache: Optional[dict[str, Any]] = None
         self._update_info_checked_at = 0.0
         self._update_info_lock = threading.Lock()
+        self._rpc_asset_cache: dict[tuple[int, str, str], str] = {}
+        self._rpc_asset_cache_lock = threading.RLock()
 
         base_dir = os.path.dirname(__file__)
         self._webui_templates = os.path.join(base_dir, "web_ui", "templates")
@@ -1096,8 +1098,7 @@ class WebPanel:
         1. Already-normalized mp: assets are passed through
         2. Discord attachment URLs are converted to mp:attachments/ keys
         3. External HTTP URLs + valid app_id -> try registering as external asset
-        4. Fallback -> upload via DM to get an mp:attachments/ key
-        5. Last resort -> return raw URL (Discord clients may still render newer URLs)
+        4. Last resort -> return raw URL (Discord clients may still render newer URLs)
         """
         value = str(image_value or "").strip()
         if not value:
@@ -1138,45 +1139,60 @@ class WebPanel:
         
         # Try to register as external asset if app_id is available
         if app_id:
-            try:
-                resp = api.request(
-                    "POST",
-                    f"/applications/{app_id}/external-assets",
-                    data={"urls": [value]},
-                )
-                if resp and resp.status_code in (200, 201):
-                    payload = resp.json()
-                    if isinstance(payload, dict):
-                        payload = payload.get("external_assets") or payload.get("assets") or []
-                    if isinstance(payload, list) and payload:
-                        path = payload[0].get("external_asset_path") or payload[0].get("asset_path")
-                        if path:
-                            path = str(path).strip()
-                            # If the asset path is a URL, extract the attachment part
-                            if path.startswith(("http://", "https://")):
-                                attachment_match = re.match(
-                                    r"https?://(?:cdn\.discordapp\.com|media\.discordapp\.net)/(attachments/\d+/\d+/[^?#]+)",
-                                    path,
-                                    re.IGNORECASE,
-                                )
-                                if attachment_match:
-                                    path = attachment_match.group(1)
-                                else:
-                                    path = ""
-                            if path:
-                                return f"mp:{path}"
-            except Exception as e:
-                # External asset registration failed, continue to fallback
-                pass
+            asset_cache = getattr(self, "_rpc_asset_cache", None)
+            if asset_cache is None:
+                asset_cache = self._rpc_asset_cache = {}
+                self._rpc_asset_cache_lock = threading.RLock()
+            cache_key = (id(api), app_id, value)
+            with self._rpc_asset_cache_lock:
+                cached_key = asset_cache.get(cache_key)
+            if cached_key:
+                return cached_key
 
-        # Fallback: upload URL image to self-DM and use attachment media proxy key
-        try:
-            uploaded = self._upload_rpc_image_to_self_dm(api, value)
-            if uploaded:
-                return uploaded
-        except Exception as e:
-            # Upload to self-DM failed, continue to last resort
-            pass
+            response = None
+            for attempt in range(2):
+                try:
+                    response = api.request(
+                        "POST",
+                        f"/applications/{app_id}/external-assets",
+                        data={"urls": [value]},
+                    )
+                except Exception as error:
+                    print(f"[RPC-ASSET] Registration failed for application {app_id}: {type(error).__name__}")
+                    break
+                if (
+                    getattr(response, "status_code", None) == 429
+                    and attempt == 0
+                    and getattr(api, "rate_limiter", None) is not None
+                ):
+                    continue
+                break
+
+            if response and response.status_code in (200, 201):
+                payload = response.json()
+                if isinstance(payload, dict):
+                    payload = payload.get("external_assets") or payload.get("assets") or []
+                if isinstance(payload, list) and payload:
+                    path = payload[0].get("external_asset_path") or payload[0].get("asset_path")
+                    if path:
+                        path = str(path).strip()
+                        if path.startswith(("http://", "https://")):
+                            attachment_match = re.match(
+                                r"https?://(?:cdn\.discordapp\.com|media\.discordapp\.net)/(attachments/\d+/\d+/[^?#]+)",
+                                path,
+                                re.IGNORECASE,
+                            )
+                            path = attachment_match.group(1) if attachment_match else ""
+                        if path:
+                            asset_key = f"mp:{path}"
+                            with self._rpc_asset_cache_lock:
+                                asset_cache[cache_key] = asset_key
+                            return asset_key
+            elif response is not None:
+                print(
+                    f"[RPC-ASSET] Registration for application {app_id} "
+                    f"failed with HTTP {getattr(response, 'status_code', 'unknown')}"
+                )
 
         # Last resort: return raw URL - newer Discord clients may still render it
         # Log this so admins know images might not display properly
@@ -1256,63 +1272,6 @@ class WebPanel:
                 if isinstance(value, str) and value:
                     assets[key] = self._normalize_rpc_asset_key(value, app_id)
         return activity
-
-    def _upload_rpc_image_to_self_dm(self, api, image_url: str) -> Optional[str]:
-        """Upload an image URL to self-DM and return `mp:attachments/...` key."""
-        if not image_url or not api:
-            return None
-
-        try:
-            # Download source image
-            resp = api.request_external("GET", image_url, timeout=15)
-            if resp.status_code != 200:
-                return None
-            image_bytes = resp.content
-            content_type = (resp.headers.get("Content-Type") or "application/octet-stream").split(";", 1)[0].strip()
-            ext_map = {
-                "image/png": "png",
-                "image/jpeg": "jpg",
-                "image/jpg": "jpg",
-                "image/webp": "webp",
-                "image/gif": "gif",
-            }
-            ext = ext_map.get(content_type, "png")
-            raw_name = image_url.split("/")[-1].split("?", 1)[0]
-            filename = raw_name if ("." in raw_name and len(raw_name) <= 60) else f"rpc_asset.{ext}"
-
-            # Ensure account user id exists
-            if not getattr(api, "user_id", None):
-                try:
-                    api.get_user_info(force=False)
-                except Exception:
-                    pass
-            user_id = getattr(api, "user_id", None)
-            if not user_id:
-                return None
-
-            dm = api.create_dm(user_id)
-            if not dm or "id" not in dm:
-                return None
-
-            files = {"file": (filename, image_bytes, content_type)}
-            msg_resp = api.request(
-                "POST", f"/channels/{dm['id']}/messages", files=files
-            )
-            if msg_resp.status_code != 200:
-                return None
-            data = msg_resp.json() if hasattr(msg_resp, "json") else {}
-            attachments = data.get("attachments") if isinstance(data, dict) else []
-            if not attachments:
-                return None
-
-            url = attachments[0].get("url", "")
-            m = re.search(r"https?://(?:cdn\.discordapp\.com|media\.discordapp\.net)/attachments/(\d+)/(\d+)/([^?#]+)", url)
-            if not m:
-                return None
-            channel_id, attachment_id, file_name = m.groups()
-            return f"mp:attachments/{channel_id}/{attachment_id}/{file_name}"
-        except Exception as e:
-            return None
 
     def _resolve_afk_system(self):
         """Return a working AFK system instance from bot ref or module fallback."""

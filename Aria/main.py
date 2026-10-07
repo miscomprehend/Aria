@@ -1310,6 +1310,7 @@ def main():
             ("prefix", ";"),
             ("captcha_api_key", ""),
             ("captcha_provider", "nocaptchaai"),
+            ("captcha_api_url", "https://api.2captcha.com"),
             ("yes_captcha_api_key", ""),
         ):
             starter.setdefault(key, value)

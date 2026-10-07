@@ -156,3 +156,8 @@ button:disabled { cursor: wait; opacity: .65; }
   font: inherit;
   font-size: 13px;
 }
+
+#captcha-url {
+  width: 100%;
+  margin-top: 10px;
+}

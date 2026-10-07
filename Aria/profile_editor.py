@@ -51,6 +51,22 @@ def fetch_profile(api) -> Dict[str, Any]:
         payload = profile_response.json() or {}
         profile = payload.get("user_profile") or {}
 
+    primary_guild = account.get("primary_guild")
+    primary_guild = primary_guild if isinstance(primary_guild, dict) else {}
+    connections_response = api.request("GET", "/users/@me/connections")
+    connections = []
+    if connections_response is not None and getattr(connections_response, "status_code", None) == 200:
+        response_connections = connections_response.json()
+        if isinstance(response_connections, list):
+            seen_platforms = set()
+            for connection in response_connections:
+                if not isinstance(connection, dict):
+                    continue
+                platform = str(connection.get("type") or "").strip().lower()
+                if platform and platform not in seen_platforms:
+                    connections.append(platform)
+                    seen_platforms.add(platform)
+
     user_id = str(account.get("id") or "")
     accent = account.get("accent_color")
     return {
@@ -62,6 +78,8 @@ def fetch_profile(api) -> Dict[str, Any]:
         "accent_color": f"#{accent:06x}" if isinstance(accent, int) else "",
         "bio": str(profile.get("bio") or ""),
         "pronouns": str(profile.get("pronouns") or ""),
+        "guild_tag": str(primary_guild.get("tag") or "") if primary_guild.get("identity_enabled") else "",
+        "connected_platforms": connections,
         "premium_type": int(account.get("premium_type") or 0),
         "limits": {"global_name": MAX_DISPLAY_NAME, "bio": MAX_BIO, "pronouns": MAX_PRONOUNS},
     }

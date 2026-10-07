@@ -20,6 +20,7 @@ retry/rotation logic lives in ``base.RetryMixin``.
 import asyncio
 import json
 from typing import Callable, Dict, Any, Optional
+from urllib.parse import urlsplit
 import aiohttp
 
 from .base import RetryMixin
@@ -224,3 +225,23 @@ class YesCaptchaSolver(RetryMixin):
         if not isinstance(solution, dict):
             raise ValueError('Image captcha provider returned an invalid solution payload')
         return solution
+
+
+class TwoCaptchaCompatibleSolver(YesCaptchaSolver):
+    """YesCaptcha task-protocol client for configurable compatible providers."""
+
+    provider_name = "2Captcha-compatible provider"
+
+    def __init__(self, api_key: str, base_url: str, max_attempts: int = 3):
+        parsed = urlsplit(str(base_url or "").strip())
+        if (
+            parsed.scheme.lower() != "https"
+            or not parsed.hostname
+            or parsed.username is not None
+            or parsed.password is not None
+            or parsed.query
+            or parsed.fragment
+        ):
+            raise ValueError("Captcha provider API URL must be HTTPS without credentials, query, or fragment.")
+        super().__init__(api_key, max_attempts=max_attempts)
+        self.BASE_URL = base_url.rstrip("/")
