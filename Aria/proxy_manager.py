@@ -29,6 +29,7 @@ class ProxyManager:
                 idx = 0
             if idx < 0 or idx >= len(self.proxies):
                 idx = 0
+                self._save_rotation_state(0)  # repair a stale/out-of-range file
             self.current_proxy = self.proxies[idx]
         else:
             self.current_proxy = self.proxies[0]

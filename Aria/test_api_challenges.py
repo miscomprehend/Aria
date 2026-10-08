@@ -125,6 +125,36 @@ class APIChallengeTests(unittest.TestCase):
         self.assertEqual(second_call.kwargs["headers"]["X-Captcha-Rqtoken"], "rq-token")
         self.assertEqual(second_call.kwargs["headers"]["X-Captcha-Session-Id"], "session-id")
 
+    def test_rejected_solved_token_is_quarantined_immediately(self):
+        """A token rejected mid-retry-chain must be quarantined before the
+        nested retry reaches the cache-reuse branch — otherwise the same dead
+        token gets replayed for every remaining retry."""
+        challenge = Mock()
+        challenge.status_code = 400
+        challenge.headers = {}
+        challenge.json.return_value = {"captcha_sitekey": "site-key"}
+        still_challenged = Mock()
+        still_challenged.status_code = 400
+        still_challenged.headers = {}
+        still_challenged.json.return_value = {"captcha_sitekey": "site-key"}
+
+        client = make_client(challenge)
+        client.header_spoofer.session.patch.side_effect = [challenge, still_challenged, still_challenged, still_challenged, still_challenged]
+        solve_calls = []
+
+        def fake_solve(_challenge):
+            solve_calls.append(len(solve_calls))
+            return f"token-{len(solve_calls)}"
+
+        client._solve_captcha_challenge = Mock(side_effect=fake_solve)
+
+        with patch("api_client.time.sleep"):
+            client.request("PATCH", "/users/@me", data={"avatar": "data:image/png;base64,UE5H"})
+
+        # Retries 2 and 3 must solve FRESH tokens instead of replaying the
+        # rejected one from the cache.
+        self.assertEqual(len(solve_calls), 3)
+
     def _drive_challenge_retry(self, status_code, solved_token, side_effect=None):
         """Return ``(client, response)`` after driving one captcha challenge.
 

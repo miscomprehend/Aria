@@ -474,7 +474,17 @@ class DiscordAPIClient:
                        or "https://discord.com/channels/@me").strip()
 
         solver = TwoCaptcha(key)
-        kwargs: Dict[str, Any] = {}
+        kwargs: Dict[str, Any] = {
+            # Discord uses enterprise hCaptcha; without the enterprise flag
+            # 2Captcha solves the general widget and Discord rejects the token.
+            "enterprise": 1,
+        }
+        profile = getattr(getattr(self, "header_spoofer", None), "profile", None)
+        user_agent = str(getattr(profile, "user_agent", "") or "").strip()
+        if user_agent:
+            # Match the UA the submit request will send so the solve context
+            # matches the browser fingerprint.
+            kwargs["userAgent"] = user_agent
         if challenge.get("rqdata"):
             kwargs["data"] = challenge["rqdata"]
         try:
@@ -1269,6 +1279,21 @@ class DiscordAPIClient:
                         return response
                     challenge = self._extract_captcha_challenge(response_data)
                     if challenge:
+                        # If THIS request already carried a solved captcha token
+                        # and Discord is challenging us again, that token is
+                        # dead — quarantine it immediately, before any nested
+                        # retry can reach the cache-reuse branch and replay it.
+                        # (Quarantining only after the retry chain unwound let
+                        # the same rejected token be reused for retries 2 and 3.)
+                        incoming_token = str((headers or {}).get("X-Captcha-Key") or "").strip()
+                        if incoming_token:
+                            try:
+                                self._dead_captcha_token = incoming_token
+                                self._last_captcha_token = ""
+                                self._last_captcha_token_at = 0.0
+                            except Exception:
+                                pass
+                            print(f"[CAPTCHA] Solved token was rejected for {endpoint}; quarantining it and solving fresh.")
                         # Single bypass rotation: Discord often flags a stale
                         # fingerprint rather than truly requiring a captcha, so
                         # retry once locally with fresh headers before paying a
@@ -1399,11 +1424,16 @@ class DiscordAPIClient:
                     self._rate_limit_log_times[endpoint] = now
                 return response
 
-            # Update rate limit buckets
-            if "X-RateLimit-Bucket" in response.headers:
-                bucket_hash = self.rate_limiter.parse_bucket_hash(dict(response.headers))
+            # Update rate limit buckets (headers may not be a plain dict on
+            # every transport, so guard the membership test).
+            try:
+                bucket_headers = dict(response.headers)
+            except Exception:
+                bucket_headers = {}
+            if "X-RateLimit-Bucket" in bucket_headers:
+                bucket_hash = self.rate_limiter.parse_bucket_hash(bucket_headers)
                 self.rate_limiter.record_endpoint_bucket(endpoint, bucket_hash)
-                self.rate_limiter.update_bucket(bucket_hash, dict(response.headers))
+                self.rate_limiter.update_bucket(bucket_hash, bucket_headers)
 
             if response.status_code == 200 and self._is_cacheable_get(method, endpoint):
                 self._store_cached_response(endpoint, response)
