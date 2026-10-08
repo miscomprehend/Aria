@@ -443,6 +443,56 @@ class DiscordAPIClient:
             scheme = "http"
         return f"{scheme}:{parsed.hostname}:{parsed.port}:{parsed.username or ''}:{parsed.password or ''}"
 
+    def _solve_with_2captcha_library(self, challenge: Dict[str, str], website_url: Optional[str] = None) -> Optional[str]:
+        """Solve via the official 2Captcha Python library, or return None.
+
+        Uses ``two_captcha.TwoCaptcha().hcaptcha(...)`` which submits, polls,
+        and returns ``{'code': <token>}`` in one call. Falls back silently to
+        None when the library is not installed or the key is not a native
+        2Captcha key, so the legacy raw-API path still runs.
+        """
+        try:
+            from twocaptcha import TwoCaptcha  # official: 2captcha/2captcha-python
+        except Exception:
+            return None
+
+        key = ""
+        try:
+            for provider in self._get_captcha_provider_candidates():
+                if provider.get("protocol") == "twocaptcha":
+                    key = provider.get("client_key") or ""
+                    break
+        except Exception:
+            key = ""
+        if not key:
+            return None
+
+        sitekey = str(challenge.get("sitekey") or "").strip()
+        if not sitekey:
+            return None
+        page_url = str(website_url or challenge.get("website_url") or challenge.get("page_url")
+                       or "https://discord.com/channels/@me").strip()
+
+        solver = TwoCaptcha(key)
+        kwargs: Dict[str, Any] = {}
+        if challenge.get("rqdata"):
+            kwargs["data"] = challenge["rqdata"]
+        try:
+            proxy_str, proxytype = self._session_captcha_proxy_2captcha()
+            if proxy_str:
+                # Library proxy shape: {'type': 'HTTPS'|'HTTP'|'SOCKS4'|'SOCKS5',
+                # 'uri': 'user:pass@host:port'}
+                kwargs["proxy"] = {"type": (proxytype or "HTTP").upper(), "uri": proxy_str}
+        except Exception:
+            pass
+        try:
+            result = solver.hcaptcha(sitekey, page_url, **kwargs)
+        except Exception as exc:
+            print(f'[CAPTCHA] 2Captcha library failed: {str(exc)[:200]}')
+            return None
+        token = str((result or {}).get("code") or "").strip()
+        return token or None
+
     def _create_captcha_task(self, provider: Dict[str, str], challenge: Dict[str, str]) -> Optional[str]:
         website_url = str(challenge.get("website_url") or challenge.get("page_url") or "https://discord.com/channels/@me").strip()
         if not website_url.startswith("https://"):
@@ -816,6 +866,22 @@ class DiscordAPIClient:
 
         self._rotate_captcha_transport(light=True)
 
+        # Preferred engine: the official 2Captcha Python library
+        # (https://github.com/2captcha/2captcha-python). It handles submit,
+        # polling, backoff, and error mapping internally and returns the
+        # solved token directly, so it avoids the raw in.php/res.php round
+        # trip entirely when it is installed.
+        library_token = self._solve_with_2captcha_library(challenge, website_url=None)
+        if library_token:
+            self._captcha_provider_name = "2Captcha (official library)"
+            print(f"[CAPTCHA] 2Captcha library solved the challenge.")
+            try:
+                self._last_captcha_token = library_token
+                self._last_captcha_token_at = time.time()
+            except Exception:
+                pass
+            return library_token
+
         def _submit_one(provider: Dict[str, str]) -> Tuple[Dict[str, str], Optional[str]]:
             try:
                 return provider, self._create_captcha_task(provider, challenge)
@@ -1188,6 +1254,19 @@ class DiscordAPIClient:
 
             if response.status_code in {400, 403}:
                 try:
+                    # A permanent form-body rate limit (e.g. AVATAR_RATE_LIMIT)
+                    # means Discord will reject every retry for this field no
+                    # matter what headers or captcha we send. Returning early
+                    # saves a wasted captcha solve and a burned request.
+                    early_detail = str((response_data or {}).get("message") or "")
+                    early_errors = (response_data or {}).get("errors") or {}
+                    errors_text = str(early_errors)
+                    if "_RATE_LIMIT" in errors_text or "_RATE_LIMIT" in early_detail:
+                        field_names = ", ".join(str(k) for k in early_errors) if isinstance(early_errors, dict) else ""
+                        print(f"[API-ERROR] {endpoint}: Discord rate-limited this change (50035"
+                              f"{f'; fields: {field_names}' if field_names else ''}); "
+                              f"no captcha can fix this — wait and try later. {early_detail}")
+                        return response
                     challenge = self._extract_captcha_challenge(response_data)
                     if challenge:
                         # Single bypass rotation: Discord often flags a stale

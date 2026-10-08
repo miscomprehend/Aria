@@ -29,6 +29,21 @@ from modifyself.http.route import Route
 
 EMIT = None
 
+# Discord 50035 sub-codes that mean "wait, not fix" — a retry cannot succeed.
+_RATE_LIMIT_HINTS = {
+    "AVATAR_RATE_LIMIT": "Discord limits how often the avatar can change. Wait about 10-30 minutes, then try again.",
+    "BANNER_RATE_LIMIT": "Discord limits how often the banner can change. Wait about 10-30 minutes, then try again.",
+}
+
+
+def _friendly_error(exc: Exception) -> str:
+    """Translate a Discord form-body error into a short, actionable message."""
+    text = str(exc)
+    for code, hint in _RATE_LIMIT_HINTS.items():
+        if code in text:
+            return hint
+    return text[:300]
+
 def _emit(obj: dict) -> None:
     if EMIT:
         try:
@@ -157,7 +172,7 @@ class Profile(Cog):
                     for k in me_patch
                 )
             except Exception as e:
-                errors.append(f"account update failed: {e}")
+                errors.append(f"account update failed: {_friendly_error(e)}")
 
         prof_patch: dict = {}
         if "bio" in fields:
@@ -180,7 +195,7 @@ class Profile(Cog):
                 if "pronouns" in prof_patch:
                     changed.append("pronouns")
             except Exception as e:
-                errors.append(f"profile update failed: {e}")
+                errors.append(f"profile update failed: {_friendly_error(e)}")
 
         return {"changed": changed, "errors": errors}
 

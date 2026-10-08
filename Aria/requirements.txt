@@ -12,6 +12,7 @@ websocket-client>=1.9.2,<2.0
 websockets>=17.2,<18.0
 urllib3>=2.8.0,<3.0
 wreq>=0.13.0,<1.0
+2captcha-python>=1.0.0
 modifyself @ git+https://github.com/sniffy-furry/modifyself.git@a73a469845f455edd1893f8e6326393bcde445f0
 
 selenium>=4.20.0,<5.0

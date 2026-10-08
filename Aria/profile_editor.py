@@ -164,7 +164,12 @@ def parse_update(payload: Dict[str, Any]) -> Tuple[Dict[str, Any], Dict[str, Any
 
 
 def _error_detail(response) -> str:
-    """Pull a readable message out of a Discord error body."""
+    """Pull a readable message out of a Discord error body.
+
+    Adds a hint for permanent form rate limits such as
+    ``AVATAR_RATE_LIMIT``; the failing field names are already reported by
+    the caller via the ``failed`` entries, so they are not duplicated here.
+    """
     try:
         body = response.json()
     except Exception:
@@ -183,7 +188,10 @@ def _error_detail(response) -> str:
                     return found
         return ""
 
-    return first_message(body.get("errors")) or str(body.get("message") or "")
+    detail = first_message(body.get("errors")) or str(body.get("message") or "")
+    if "_RATE_LIMIT" in detail:
+        detail = "Discord limits how often this can change — wait a while and try again. " + detail
+    return detail
 
 
 def _patch(api, endpoint: str, patch: Dict[str, Any], attempts: int = 3) -> Tuple[bool, str]:
