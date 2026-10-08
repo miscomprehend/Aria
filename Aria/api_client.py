@@ -9,7 +9,7 @@ import re
 import threading
 from collections import deque
 from typing import Callable, Dict, Any, Optional, List, Tuple
-from urllib.parse import parse_qsl, quote, urlsplit
+from urllib.parse import parse_qsl, quote, urlparse, urlsplit
 
 # Try curl_cffi, fallback to requests
 try:
@@ -383,6 +383,66 @@ class DiscordAPIClient:
             })
         return providers
 
+    def _session_egress_proxy(self) -> str:
+        """Return the proxy string the live HTTP session actually uses, or ''.
+
+        Read off the session's own ``proxies`` mapping rather than the proxy
+        manager's current entry: the manager can rotate ahead of/behind the
+        transport, and the only thing that matters for an IP-bound captcha
+        token is where the *submit request* will actually egress from.
+        """
+        try:
+            session = getattr(self.header_spoofer, "session", None)
+            proxies = getattr(session, "proxies", None) or {}
+            if isinstance(proxies, dict):
+                return str(proxies.get("https") or proxies.get("http") or "").strip()
+            return str(proxies or "").strip()
+        except Exception:
+            return ""
+
+    def _session_captcha_proxy_2captcha(self) -> Tuple[str, str]:
+        """Return (proxy, proxytype) for 2Captcha matching the session egress.
+
+        Returns ``('', '')`` when the session is not proxied so the solve runs
+        proxyless from the same (real) IP that will submit the token.
+        """
+        raw = self._session_egress_proxy()
+        if not raw:
+            return "", ""
+        try:
+            parsed = urlparse(raw)
+        except Exception:
+            return "", ""
+        if not parsed.hostname or not parsed.port:
+            return "", ""
+        scheme = (parsed.scheme or "http").lower()
+        if scheme == "https":
+            scheme = "http"
+        proxytype = {"http": "HTTP", "socks4": "SOCKS4", "socks5": "SOCKS5"}.get(scheme, "HTTP")
+        credentials = ""
+        if parsed.username:
+            credentials = f"{parsed.username}:{parsed.password or ''}@"
+        return f"{credentials}{parsed.hostname}:{parsed.port}", proxytype
+
+    def _session_captcha_proxy_yescaptcha(self) -> str:
+        """Return the session egress proxy in YesCaptcha 'type:host:port:user:pass' form.
+
+        Empty string when the session is not proxied (solve proxyless).
+        """
+        raw = self._session_egress_proxy()
+        if not raw:
+            return ""
+        try:
+            parsed = urlparse(raw)
+        except Exception:
+            return ""
+        if not parsed.hostname or not parsed.port:
+            return ""
+        scheme = (parsed.scheme or "http").lower()
+        if scheme == "https":
+            scheme = "http"
+        return f"{scheme}:{parsed.hostname}:{parsed.port}:{parsed.username or ''}:{parsed.password or ''}"
+
     def _create_captcha_task(self, provider: Dict[str, str], challenge: Dict[str, str]) -> Optional[str]:
         website_url = str(challenge.get("website_url") or challenge.get("page_url") or "https://discord.com/channels/@me").strip()
         if not website_url.startswith("https://"):
@@ -405,10 +465,14 @@ class DiscordAPIClient:
             payload["task"]["rqdata"] = challenge["rqdata"]
 
         # YesCaptcha-compatible providers that support the proxied task type
-        # get the active proxy so solving happens over the same IP.
+        # get the SAME active proxy the Discord session egresses through, so
+        # the challenge is solved on the IP that will submit the token.
+        # hCaptcha tokens are IP-bound: solving behind a different IP than the
+        # request guarantees a rejected token. Resolved through the spoofer so
+        # the solver and the session cannot drift apart, and read only when
+        # the session itself is proxied.
         try:
-            proxy_manager = getattr(self.header_spoofer, "proxy_manager", None)
-            proxy_str = proxy_manager.get_yescaptcha_proxy() if proxy_manager else ""
+            proxy_str = self._session_captcha_proxy_yescaptcha()
             if proxy_str and proxy_str.split(":")[0] in {"http", "socks4", "socks5"}:
                 payload["task"]["type"] = "HCaptchaTask"
                 payload["task"]["proxy"] = proxy_str
@@ -473,12 +537,10 @@ class DiscordAPIClient:
             params["data"] = challenge["rqdata"]
 
         try:
-            proxy_manager = getattr(self.header_spoofer, "proxy_manager", None)
-            if proxy_manager:
-                proxy_str, proxytype = proxy_manager.get_2captcha_proxy()
-                if proxy_str:
-                    params["proxy"] = proxy_str
-                    params["proxytype"] = proxytype
+            proxy_str, proxytype = self._session_captcha_proxy_2captcha()
+            if proxy_str:
+                params["proxy"] = proxy_str
+                params["proxytype"] = proxytype
         except Exception as exc:
             print(f'[CAPTCHA] proxy lookup failed, continuing proxyless: {exc}')
         try:
@@ -706,13 +768,15 @@ class DiscordAPIClient:
 
         With ``light=True`` only the TLS session is rebuilt (no new profile,
         no build-number scrape) so challenge-retry round-trips stay fast.
+        Note: ``rotate_profile`` already rebuilds the transport internally,
+        so the full path must NOT call ``rebuild_session`` again (that would
+        tear down a brand-new session and double the handshake cost).
         """
         try:
             if light:
                 self.header_spoofer.rebuild_session()
             else:
                 self.header_spoofer.rotate_profile()
-                self.header_spoofer.rebuild_session()
         except Exception as exc:
             print(f"[CAPTCHA] TLS transport rotation failed: {exc}")
 
@@ -735,11 +799,14 @@ class DiscordAPIClient:
 
         # Reuse a still-fresh token from an earlier challenge instead of
         # paying for a brand-new solve every time (hCaptcha tokens stay valid
-        # ~2 minutes; reuse window kept to 90s).
+        # ~2 minutes; reuse window kept to 90s). A token Discord already
+        # rejected is never reused — that caused the "cached token" death
+        # loop where the same dead token was replayed until max_retries.
         try:
             cached_token = str(getattr(self, "_last_captcha_token", "") or "").strip()
             cached_at = float(getattr(self, "_last_captcha_token_at", 0.0) or 0.0)
-            if cached_token and (time.time() - cached_at) < 90.0:
+            dead_token = str(getattr(self, "_dead_captcha_token", "") or "").strip()
+            if cached_token and (time.time() - cached_at) < 90.0 and cached_token != dead_token:
                 provider = providers[0]
                 self._captcha_provider_name = f'{provider["name"]} (cached token)'
                 print(f'[CAPTCHA] Reusing token solved {time.time() - cached_at:.0f}s ago; skipping new solve.')
@@ -1037,9 +1104,13 @@ class DiscordAPIClient:
         # A pending verification only blocks writes; GETs (quest listing,
         # guilds, channels) must keep working so the UI doesn't go dark.
         # The write pause is time-limited and expires automatically.
-        if method != "GET" and (self.auth_failed or self._verification_paused()):
+        # A retry that already carries a freshly-solved captcha key must be
+        # allowed through the pause — otherwise the solve is wasted and the
+        # endpoint is declared unverifiable while a valid token was in hand.
+        carries_solved_token = bool(str((headers or {}).get("X-Captcha-Key") or "").strip())
+        if method != "GET" and not carries_solved_token and (self.auth_failed or self._verification_paused()):
             return None
-        if method != "GET" and self._quest_captcha_cooling_down(endpoint):
+        if method != "GET" and not carries_solved_token and self._quest_captcha_cooling_down(endpoint):
             return None
 
         if self._is_cacheable_get(method, endpoint):
@@ -1052,6 +1123,17 @@ class DiscordAPIClient:
             # Humanize bucket waits slightly so a burst of retries never
             # lands on a perfectly regular cadence.
             time.sleep(self._jittered(wait_time, 0.15))
+
+        # Humanized pacing: jittered inter-request gap enforced by the spoofer
+        # so outbound traffic never leaves at machine-regular intervals.
+        # Skipped only when this call is itself the captcha-bypass retry (it
+        # already waited through the solve) — ordinary requests pace first.
+        pacer = getattr(self.header_spoofer, "wait_for_slot", None)
+        if callable(pacer) and _header_rotations == 0 and retry_count == 0:
+            try:
+                pacer()
+            except Exception:
+                pass
 
         url = f"{_base_url}{endpoint}"
         request_headers = self.header_spoofer.get_protected_headers(self.token)
@@ -1169,10 +1251,26 @@ class DiscordAPIClient:
                                     _header_rotations=_header_rotations,
                                 )
                                 # Token rejected again (stale/expired solve):
+                                # quarantine it so the cache-reuse branch never
+                                # replays a token Discord already refused, then
                                 # rotate once and let the outer solve run afresh
                                 # rather than hammering the endpoint.
-                                if (solved_response is not None
-                                        and getattr(solved_response, "status_code", None) in {400, 403}):
+                                solved_status = getattr(solved_response, "status_code", None) if solved_response is not None else None
+                                if solved_status is not None and solved_status < 400:
+                                    # The solve was accepted: drop any verification
+                                    # pause so later writes aren't wrongly blocked.
+                                    self.verification_blocked = False
+                                    self.verification_endpoint = None
+                                else:
+                                    # Rejected, or the retry never came back (a
+                                    # None from the retry/recursion guard). Either
+                                    # way the token is spent — quarantine it so the
+                                    # cache-reuse branch never replays it in a
+                                    # death loop.
+                                    try:
+                                        self._dead_captcha_token = solved_token
+                                    except Exception:
+                                        pass
                                     try:
                                         self.header_spoofer.rotate_profile()
                                     except Exception:

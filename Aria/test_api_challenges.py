@@ -26,6 +26,9 @@ def make_client(response):
     client._rate_limit_log_times = {}
     client._get_cached_response = Mock(return_value=None)
     client._captcha_provider_name = None
+    client._dead_captcha_token = ""
+    client._last_captcha_token = ""
+    client._last_captcha_token_at = 0.0
     return client
 
 
@@ -121,6 +124,64 @@ class APIChallengeTests(unittest.TestCase):
         self.assertEqual(second_call.kwargs["headers"]["X-Captcha-Key"], "solved-token")
         self.assertEqual(second_call.kwargs["headers"]["X-Captcha-Rqtoken"], "rq-token")
         self.assertEqual(second_call.kwargs["headers"]["X-Captcha-Session-Id"], "session-id")
+
+    def _drive_challenge_retry(self, status_code, solved_token, side_effect=None):
+        """Return ``(client, response)`` after driving one captcha challenge.
+
+        ``make_client`` wires the session to replay a single pending response
+        for every call; for a challenge flow we need the first POST to be the
+        challenge and the solved retry to be its own response.
+        """
+        challenge = Mock()
+        challenge.status_code = status_code
+        challenge.headers = {}
+        challenge.json.return_value = {"captcha_sitekey": "site-key"}
+        success = Mock()
+        success.status_code = 200
+        success.headers = {}
+        success.json.return_value = {"ok": True}
+
+        client = make_client(challenge)
+        client.header_spoofer.session.post.side_effect = side_effect or [challenge, success]
+        client.header_spoofer.rotate_profile = Mock()
+        client._solve_captcha_challenge = Mock(return_value=solved_token)
+        return client, success
+
+    def test_rejected_solved_token_is_quarantined_from_cache_reuse(self):
+        """A token Discord already refused must never be replayed by the
+        cache-reuse branch (the "cached token" death loop)."""
+        # First POST returns the challenge, second POST (with the solved
+        # token) is refused again by Discord — exactly the log sequence.
+        challenge = Mock()
+        challenge.status_code = 400
+        challenge.headers = {}
+        challenge.json.return_value = {"captcha_sitekey": "site-key"}
+        rejected = Mock()
+        rejected.status_code = 400
+        rejected.headers = {}
+        rejected.json.return_value = {"captcha_sitekey": "site-key"}
+
+        client, _ = self._drive_challenge_retry(400, "dead-token",
+                                                side_effect=[challenge, rejected])
+
+        with patch("api_client.time.sleep"):
+            client.request("POST", "/users/@me", data={"global_name": "Aria"})
+
+        # The rejected token must be recorded as dead so the reuse branch
+        # skips it on the next challenge instead of replaying it.
+        self.assertEqual(getattr(client, "_dead_captcha_token", ""), "dead-token")
+
+    def test_solved_write_clears_pending_verification_pause(self):
+        """When the captcha solve is accepted the pause must be lifted so
+        later writes aren't wrongly blocked for 5 minutes."""
+        client, success = self._drive_challenge_retry(400, "good-token")
+
+        with patch("api_client.time.sleep"):
+            response = client.request("POST", "/users/@me", data={"global_name": "Aria"})
+
+        self.assertIs(response, success)
+        self.assertFalse(client.verification_blocked)
+        self.assertIsNone(client.verification_endpoint)
 
     def test_unsolved_quest_captcha_pauses_only_quest_writes(self):
         challenge = Mock()
@@ -273,6 +334,76 @@ class APIChallengeTests(unittest.TestCase):
             headers={"Content-Type": "application/x-www-form-urlencoded", "Accept": "text/plain"},
             timeout=30,
         )
+
+    def test_solver_uses_session_egress_proxy(self):
+        """The captcha solver must be handed the exact proxy the Discord
+        session submits through, or the IP-bound token is rejected."""
+        client = make_client(Mock())
+        client.header_spoofer.profile.user_agent = "Discord client"
+        client.header_spoofer.session.proxies = {
+            "http": "http://user:pass@1.2.3.4:8080",
+            "https": "http://user:pass@1.2.3.4:8080",
+        }
+        response = Mock()
+        response.status_code = 200
+        response.text = "OK|task-123"
+        client.session.post.return_value = response
+        provider = {
+            "name": "2Captcha",
+            "base_url": "https://2captcha.com",
+            "client_key": "native-key",
+            "protocol": "twocaptcha",
+        }
+
+        client._create_captcha_task(provider, {"sitekey": "site-key"})
+
+        sent = client.session.post.call_args.kwargs["data"]
+        self.assertEqual(sent["proxy"], "user:pass@1.2.3.4:8080")
+        self.assertEqual(sent["proxytype"], "HTTP")
+
+    def test_solver_goes_proxyless_when_session_is_not_proxied(self):
+        """With no proxy on the session the solver must NOT be handed a proxy
+        (solving from one IP and submitting from another breaks the token)."""
+        client = make_client(Mock())
+        client.header_spoofer.profile.user_agent = "Discord client"
+        client.header_spoofer.session.proxies = {}
+        response = Mock()
+        response.status_code = 200
+        response.text = "OK|task-123"
+        client.session.post.return_value = response
+        provider = {
+            "name": "2Captcha",
+            "base_url": "https://2captcha.com",
+            "client_key": "native-key",
+            "protocol": "twocaptcha",
+        }
+
+        client._create_captcha_task(provider, {"sitekey": "site-key"})
+
+        sent = client.session.post.call_args.kwargs["data"]
+        self.assertNotIn("proxy", sent)
+        self.assertNotIn("proxytype", sent)
+
+    def test_yescaptcha_solver_uses_session_egress_proxy(self):
+        client = make_client(Mock())
+        client.header_spoofer.profile.user_agent = "Discord client"
+        client.header_spoofer.session.proxies = {"https": "socks5://1.2.3.4:1080"}
+        response = Mock()
+        response.status_code = 200
+        response.json.return_value = {"errorId": 0, "taskId": "yc-1"}
+        client.session.post.return_value = response
+        provider = {
+            "name": "YesCaptcha",
+            "base_url": "https://api.yescaptcha.com",
+            "client_key": "yes-key",
+            "protocol": "yescaptcha",
+        }
+
+        client._create_captcha_task(provider, {"sitekey": "site-key"})
+
+        task = client.session.post.call_args.kwargs["json"]["task"]
+        self.assertEqual(task["type"], "HCaptchaTask")
+        self.assertEqual(task["proxy"], "socks5:1.2.3.4:1080::")
 
     def test_native_2captcha_result_polls_res_php(self):
         client = make_client(Mock())

@@ -4,6 +4,7 @@ import json
 import base64
 import re
 import hashlib
+import threading
 from typing import Dict, Any, Optional
 
 # Try to import curl_cffi, fallback to requests if not available
@@ -187,7 +188,6 @@ class BrowserProfile:
     ]
 
     def __init__(self, browser_version: str = "146.0.0.0"):
-        timestamp = int(time.time())
         # Private RNG: seeded from OS entropy, never touches the global RNG.
         self._rng = random.Random()
 
@@ -224,8 +224,11 @@ class BrowserProfile:
             {"timezone": "Australia/Sydney", "locale": "en-AU"},
         ]
 
-        location_idx = timestamp % len(locations)
-        location = locations[location_idx]
+        # One independent random draw per profile: two profiles built in the
+        # same second no longer collapse to the same locale, and the chosen
+        # locale then stays fixed for the life of the profile (stable device
+        # fingerprint within a session; rotated only via rotate_profile).
+        location = self._rng.choice(locations)
 
         self.user_agent = ua_template
         self.locale = location['locale']
@@ -308,12 +311,29 @@ class HeaderSpoofer:
         # session before the profile caused the TLS fingerprint to be picked
         # from the default version even when a different one was requested.
         self.profile = BrowserProfile(self._browser_version)
+        # The proxy manager MUST exist before the transport is built: the
+        # session applies the active proxy at creation time, so a rebuilt
+        # session (rotate_profile) keeps egressing from the same IP instead
+        # of silently falling back to the host's real IP mid-captcha.
+        self.proxy_manager = None
+        self._init_proxy_manager()
         self.session: Any = self._create_session()
         self.build_number = get_latest_build()  # Fetched live; falls back to _FALLBACK_BUILD
         self._cached_super_properties: Optional[str] = None  # Stable per session
         self._cached_super_properties_hash: Optional[str] = None
-        self.proxy_manager = None
-        self._init_proxy_manager()
+        # Private RNG for rotation decisions: never touches the global RNG so
+        # captcha polling / backoff jitter elsewhere stays independent.
+        self._rng = random.Random()
+        # Guards rotation + session rebuild so concurrent request threads can
+        # never interleave a profile swap with a header build (which would
+        # emit a User-Agent from profile A with super-properties from B).
+        self._lock = threading.RLock()
+        # Humanized timing: minimum gap between outbound requests, with
+        # jitter applied in wait_for_slot(). Prevents machine-regular bursts
+        # from hammering Discord at fixed intervals.
+        self._last_request_at = 0.0
+        self._min_request_gap = 0.4
+        self._max_request_gap = 1.6
 
     def _init_proxy_manager(self):
         """Initialize proxy manager"""
@@ -322,6 +342,22 @@ class HeaderSpoofer:
             self.proxy_manager = ProxyManager()
         except:
             self.proxy_manager = None
+
+    def get_active_proxy(self) -> str:
+        """Return the proxy string the live transport egresses through, or ''.
+
+        Single source of truth for both the HTTP session and the captcha
+        solver: hCaptcha tokens are IP-bound, so the IP that solves the
+        challenge MUST be the IP that submits the token. Reading the proxy
+        from one accessor keeps the two from drifting apart.
+        """
+        manager = getattr(self, "proxy_manager", None)
+        if not manager:
+            return ""
+        try:
+            return str(manager.get_active_proxy() or "").strip()
+        except Exception:
+            return ""
 
     def _profile_major(self) -> int:
         """Return the major version of the active profile (default 124)."""
@@ -378,6 +414,7 @@ class HeaderSpoofer:
                 else:
                     session = CurlSession(impersonate="chrome110")
             session.trust_env = False
+            self._apply_proxy(session)
             return session
         except Exception:
             if Session is None:
@@ -385,12 +422,62 @@ class HeaderSpoofer:
             session = Session()
             session.verify = False
             session.trust_env = False
+            self._apply_proxy(session)
             return session
 
+    def _apply_proxy(self, session: Any) -> None:
+        """Route ``session`` through the active proxy, or clear it proxyless.
+
+        Called on every session (re)build so the egress IP is stable for the
+        lifetime of the transport. With no proxy configured the session is
+        explicitly left proxyless rather than inheriting ``trust_env`` state.
+        """
+        if session is None:
+            return
+        proxy = self.get_active_proxy()
+        try:
+            if proxy:
+                session.proxies = {"http": proxy, "https": proxy}
+            else:
+                session.proxies = {}
+        except Exception as exc:
+            print(f"[PROXY] Failed to apply proxy to session: {exc}")
+
     def set_proxy(self, proxy: str):
-        """Set proxy for the session"""
-        if self.session:
-            self.session.proxies = {"http": proxy, "https": proxy}
+        """Pin the egress proxy and keep the live transport + manager in sync.
+
+        Sets the proxy on the proxy manager (when present) AND applies it to
+        the live session, so the session's egress IP, the manager's reported
+        active proxy, and the captcha solver's proxy all agree. An empty
+        string clears the proxy and leaves the session explicitly proxyless.
+        """
+        normalized = str(proxy or "").strip()
+        manager = getattr(self, "proxy_manager", None)
+        if manager is not None:
+            try:
+                if normalized:
+                    manager.set_active_proxy(normalized)
+                else:
+                    manager.clear_proxy()
+            except AttributeError:
+                # Older manager without pinning helpers: fall back to nudging
+                # its current-proxy slot when one exists.
+                try:
+                    if hasattr(manager, "current_proxy"):
+                        manager.current_proxy = normalized or None
+                except Exception:
+                    pass
+            except Exception as exc:
+                print(f"[PROXY] Failed to pin proxy on manager: {exc}")
+        session = getattr(self, "session", None)
+        if session is not None:
+            try:
+                if normalized:
+                    session.proxies = {"http": normalized, "https": normalized}
+                else:
+                    session.proxies = {}
+            except Exception as exc:
+                print(f"[PROXY] Failed to apply proxy to session: {exc}")
 
     def initialize_with_token(self, token: str):
         """Initialize with bot token"""
@@ -416,7 +503,16 @@ class HeaderSpoofer:
             pass
 
     def rebuild_session(self):
-        """Replace the transport while preserving the active browser profile."""
+        """Replace the transport while preserving the active browser profile.
+
+        Runs under the rotation lock so a concurrent header build can never
+        read a half-swapped session/profile pair.
+        """
+        with self._rotation_lock():
+            self._rebuild_session_inner()
+
+    def _rebuild_session_inner(self):
+        """Lock-free session rebuild; caller must hold the rotation lock."""
         old_session = getattr(self, "session", None)
         if old_session is not None:
             close = getattr(old_session, "close", None)
@@ -429,11 +525,12 @@ class HeaderSpoofer:
         self._update_session_headers()
 
     def _generate_fingerprint(self) -> str:
-        """Generate realistic Discord-style fingerprint"""
+        """Generate realistic Discord-style fingerprint."""
         # Discord fingerprints follow pattern: <timestamp_ms>.<random_64bit>
         timestamp_ms = int(time.time() * 1000)
-        # 64-bit random value
-        random_part = random.randint(1000000000000000000, 9999999999999999999)
+        # 64-bit random value from the private RNG (never the global one).
+        rng = getattr(self, "_rng", None) or random
+        random_part = rng.randint(1000000000000000000, 9999999999999999999)
         return f"{timestamp_ms}.{random_part}"
 
     # Server-issued fingerprints are stable per session; the /experiments
@@ -552,14 +649,37 @@ class HeaderSpoofer:
     ) -> Dict[str, str]:
         """Get fully protected headers for Discord API with modern spoofing.
 
-        Header ORDER is randomized per call so repeated requests do not emit
-        an identical byte-for-byte header block — this is the rotation step.
+        Header ORDER is rotated per call (see ``_rotate_header_order``) so
+        repeated requests do not emit an identical byte-for-byte header block
+        — this is the rotation step. Everything is built under ``self._lock``
+        so a concurrent ``rotate_profile`` can never mix fields from two
+        profiles in one header block.
         """
-        if token:
-            self.token = token
+        with self._rotation_lock():
+            if token:
+                self.token = token
 
-        fingerprint, cookies = self._fetch_fingerprint()
+            fingerprint, cookies = self._fetch_fingerprint()
 
+            header_items = self._build_header_items(
+                fingerprint, cookies, rq_token, captcha_key, captcha_session_id
+            )
+            header_items = self._rotate_header_order(header_items)
+            return {name: value for name, value in header_items if value is not None}
+
+    def _build_header_items(
+        self,
+        fingerprint: str,
+        cookies: str,
+        rq_token: Optional[str] = None,
+        captcha_key: Optional[str] = None,
+        captcha_session_id: Optional[str] = None,
+    ) -> list:
+        """Assemble the full header list from the ACTIVE profile snapshot.
+
+        Split out of ``get_protected_headers`` so the header contract (which
+        names/values are sent) can be tested without network access.
+        """
         header_items = [
             ("Authorization", self.token or ""),
             ("User-Agent", self.profile.user_agent),
@@ -613,15 +733,11 @@ class HeaderSpoofer:
                 ("Sec-Fetch-User", "?1"),
             ])
 
-        # Avoid sending proxy-style IP headers by default; these can trigger Discord 403s on normal user requests.
-        # These headers are valuable only when an actual proxy/transport layer supports them.
-        # If you want to experiment with IP spoofing, enable it explicitly in the future.
-        # header_items.extend([
-        #     ("X-Forwarded-For", self.profile.x_forwarded_for),
-        #     ("X-Real-IP", self.profile.x_real_ip),
-        #     ("CF-Connecting-IP", self.profile.cf_connecting_ip),
-        #     ("True-Client-IP", self.profile.true_client_ip),
-        # ])
+        # NOTE: proxy-style IP headers (X-Forwarded-For / X-Real-IP /
+        # CF-Connecting-IP / True-Client-IP) are deliberately NOT sent: the
+        # profile still mints them, but emitting them on normal user requests
+        # triggers Discord 403s. Egress identity comes from the transport
+        # proxy (see get_active_proxy / set_proxy), not header spoofing.
 
         for custom in getattr(self.profile, "custom_headers", []):
             if isinstance(custom, dict):
@@ -636,9 +752,52 @@ class HeaderSpoofer:
             header_items.append(("X-Captcha-Key", captcha_key))
         if captcha_session_id:
             header_items.append(("X-Captcha-Session-Id", captcha_session_id))
+        return header_items
 
-        random.shuffle(header_items)
-        return {name: value for name, value in header_items if value is not None}
+    def _rotate_header_order(self, header_items: list) -> list:
+        """Rotate header order per call using the private RNG.
+
+        Returns a NEW list; the caller's list is never mutated. Authorization
+        stays pinned at the front (Discord clients always send it first)
+        while the remaining entries are shuffled, so every request carries an
+        identical header SET in a different byte ORDER.
+        """
+        items = list(header_items)
+        pinned = []
+        rest = []
+        for pair in items:
+            if pair and str(pair[0]).casefold() == "authorization":
+                pinned.append(pair)
+            else:
+                rest.append(pair)
+        self._rng.shuffle(rest)
+        return pinned + rest
+
+    def _rotation_lock(self):
+        """Return the rotation lock (created lazily for unpickled spoofers)."""
+        lock = getattr(self, "_lock", None)
+        if lock is None:
+            lock = threading.RLock()
+            self._lock = lock
+        return lock
+
+    def wait_for_slot(self) -> float:
+        """Sleep until the next humanized request slot; returns seconds slept.
+
+        Enforces a jittered minimum gap between outbound requests so traffic
+        never leaves at machine-regular intervals. Thread-safe.
+        """
+        with self._rotation_lock():
+            now = time.time()
+            earliest = self._last_request_at + self._rng.uniform(
+                self._min_request_gap, self._max_request_gap
+            )
+            delay = max(0.0, earliest - now)
+        if delay > 0:
+            time.sleep(delay)
+        with self._rotation_lock():
+            self._last_request_at = time.time()
+        return delay
 
     def get_websocket_headers(self) -> Dict[str, str]:
         """Get websocket headers"""
@@ -681,34 +840,42 @@ class HeaderSpoofer:
         return None
 
     def handle_response(self, response: Any) -> Optional[float]:
-        """Handle response"""
+        """Handle response; humanized 429 backoff using the private RNG."""
         if response.status_code == 429:
             retry_after = float(response.headers.get("Retry-After", "1.0"))
-            return retry_after + random.uniform(0.5, 2.0)
+            rng = getattr(self, "_rng", None) or random
+            return retry_after + rng.uniform(0.5, 2.0)
         return None
 
     def rotate_profile(self):
         """Rotate browser profile and reset all per-session cached values.
 
-        Picks a new random Chrome version from the supported list, tears down
-        the old TLS session (preventing keep-alive bleed across fingerprints),
-        and rebuilds a fresh session + headers. Call this before each new
-        request batch to rotate headers, fingerprint, and transport.
+        Picks a new random Chrome version from the supported list (private
+        RNG), tears down the old TLS session (preventing keep-alive bleed
+        across fingerprints), and rebuilds a fresh session + headers. Runs
+        under the rotation lock so concurrent header builds never mix fields
+        from the old and new profiles. Call this before each new request
+        batch to rotate headers, fingerprint, and transport.
         """
-        self.profile = BrowserProfile(random.choice(BrowserProfile._CHROME_VERSIONS))
-        self._browser_version = self.profile.browser_version
-        self.build_number = get_latest_build()
-        self.cache_time = 0
-        self.fingerprint = ""
-        self._cached_super_properties = None  # Force rebuild with new profile
-        self._cached_super_properties_hash = None
+        with self._rotation_lock():
+            rng = getattr(self, "_rng", None) or random
+            self.profile = BrowserProfile(rng.choice(BrowserProfile._CHROME_VERSIONS))
+            self._browser_version = self.profile.browser_version
+            self.build_number = get_latest_build()
+            self.cache_time = 0
+            self.fingerprint = ""
+            self._cached_super_properties = None  # Force rebuild with new profile
+            self._cached_super_properties_hash = None
 
-        # Full transport teardown: this prevents session bleed when a keep-alive
-        # connection is reused across a user-agent / fingerprint change.
-        try:
-            self.rebuild_session()
-        except Exception:
-            self.session = None
+            # Full transport teardown: this prevents session bleed when a keep-alive
+            # connection is reused across a user-agent / fingerprint change.
+            # (Inner variant: rotate_profile already holds the rotation lock,
+            # so this must NOT re-acquire it — RLock would allow it, but the
+            # explicit inner keeps the locking contract obvious.)
+            try:
+                self._rebuild_session_inner()
+            except Exception:
+                self.session = None
 
     def rotate_user_agent(self) -> Dict[str, str]:
         """Return a fully synchronized UA + header profile and rebuild the live transport.

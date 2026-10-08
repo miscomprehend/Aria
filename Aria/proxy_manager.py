@@ -129,6 +129,33 @@ class ProxyManager:
             self.current_proxy = self.proxies[0]
         return str(self.current_proxy or "")
 
+    def set_active_proxy(self, proxy: str) -> str:
+        """Pin the egress proxy; the normalizer validates the value first.
+
+        The pinned proxy becomes the single egress IP for the live session
+        AND the captcha solver, so IP-bound hCaptcha tokens are solved and
+        submitted from the same address. Raises ValueError on invalid input.
+        """
+        normalized = self._normalize_proxy(proxy)
+        if not normalized:
+            raise ValueError(f"Invalid proxy value: {proxy!r}")
+        if normalized not in self.proxies:
+            self.proxies.append(normalized)
+        self.current_proxy = normalized
+        try:
+            self._save_rotation_state(self.proxies.index(normalized))
+        except Exception:
+            pass
+        return normalized
+
+    def clear_proxy(self) -> None:
+        """Drop the pinned proxy; the transport goes explicitly proxyless."""
+        self.current_proxy = None
+        try:
+            self._save_rotation_state(0)
+        except Exception:
+            pass
+
     def get_2captcha_proxy(self):
         """Return the active proxy as a 2Captcha (proxy, proxytype) pair.
 

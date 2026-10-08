@@ -25,6 +25,7 @@ class _FakeNoCaptchaSolver:
     def __init__(self, api_key):
         self.api_key = api_key
 
+    # NoCaptcha is proxyless-only and does not accept a proxy kwarg.
     async def hcaptcha(self, sitekey, website_url, options=None, rotate=None):
         _FakeNoCaptchaSolver.called += 1
         _FakeNoCaptchaSolver.last_call = (sitekey, website_url, options, rotate)
@@ -39,9 +40,10 @@ class _FakeYesCaptchaSolver:
     def __init__(self, api_key):
         self.api_key = api_key
 
-    async def hcaptcha(self, sitekey, website_url, options=None, rotate=None):
+    async def hcaptcha(self, sitekey, website_url, proxy=None, options=None, rotate=None):
         _FakeYesCaptchaSolver.called += 1
         _FakeYesCaptchaSolver.last_call = (sitekey, website_url, options, rotate)
+        _FakeYesCaptchaSolver.last_proxy = proxy
         return {"gRecaptchaResponse": "yescaptcha-token"}
 
     async def image_captcha(self, image_base64):
@@ -68,7 +70,8 @@ class _FakeTwoCaptchaSolver:
         _FakeTwoCaptchaSolver.called += 1
         _FakeTwoCaptchaSolver.last_key = api_key
 
-    async def hcaptcha(self, sitekey, website_url, options=None, rotate=None):
+    async def hcaptcha(self, sitekey, website_url, proxy=None, options=None, rotate=None):
+        _FakeTwoCaptchaSolver.last_proxy = proxy
         return {"gRecaptchaResponse": "twocaptcha-token"}
 
     async def image_captcha(self, image_base64, rotate=None):

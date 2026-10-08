@@ -8,7 +8,11 @@ from .constants import Constants
 
 
 def _get_active_proxy_2captcha():
-    """Return (proxy, proxytype) for 2Captcha from the shared ProxyManager, or ('', '')."""
+    """Return (proxy, proxytype) for 2Captcha from the shared ProxyManager, or ('', '').
+
+    Prefers the proxy the live Discord session actually egresses through so
+    the solved hCaptcha token is minted on the same IP that submits it.
+    """
     try:
         from proxy_manager import ProxyManager
         return ProxyManager().get_2captcha_proxy()
